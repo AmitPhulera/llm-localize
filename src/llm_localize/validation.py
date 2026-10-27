@@ -1,5 +1,6 @@
 """Checks that catch LLM translations likely to break placeholders."""
 import re
+import string
 
 # Finds %-style placeholders, with optional name or position, flags, width,
 # precision and length (%s, %(name)s, %.2f, %(count)02d, Android's %1$s
@@ -35,6 +36,9 @@ def find_problem(source, translation):
     # each positional one consumes the next argument, so they must match in order
     if _positional(source_placeholders) != _positional(translation_placeholders):
         return "placeholders"
+    # A brace format string must stay one, e.g. "{name}" mustn't become "{name}}"
+    if _is_brace_format(source) and not _is_brace_format(translation):
+        return "placeholders"
     return None
 
 
@@ -56,3 +60,16 @@ def _positional(placeholders):
         [p for p in placeholders if p.startswith("%") and not p.startswith("%(") and p != "%%" and "$" not in p],
         [p for p in placeholders if p.startswith("{") and p[1:2] in ("}", ":", "!")],
     )
+
+
+def _is_brace_format(text):
+    """Return True if ``text`` has ``{}``-style fields and ``str.format`` can parse it.
+
+    >>> _is_brace_format("Hi {name}"), _is_brace_format("Hi {name}}"), _is_brace_format("Hi")
+    (True, False, False)
+    """
+    try:
+        parsed = list(string.Formatter().parse(text))
+    except ValueError:
+        return False
+    return any(field is not None for _, field, _, _ in parsed)

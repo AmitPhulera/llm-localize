@@ -26,6 +26,7 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("Hello &amp; World", "Hola et Mundo"),
     ("  Hello  ", "  Hola  "),
     ("Hello {name}", "Hola {name}!"),
+    ("Open { to start", "Ouvrez { pour commencer"),  # not a format string
     ("%1$s sent %2$d files", "%2$d fichiers envoyés par %1$s"),  # numbered ones may move
     ("%@ has %lld items", "%@ a %lld éléments"),
     ("A 20%lift in sales", "Une hausse de 20 % des ventes"),  # not %li
@@ -51,6 +52,8 @@ def test_invalid(source, translation):
     ("%.2f MB", "MB", "placeholders"),
     ("%(count)02d files", "files", "placeholders"),
     ("{} and {}", "{}", "placeholders"),
+    ("Hello {name}", "Hola {name}}", "placeholders"),  # no longer a valid format string
+    ("{count} items", "{count} éléments {", "placeholders"),
     ("Name: %s, count: %d", "Compte : %d, nom : %s", "placeholders"),  # unnamed ones can't move
     ("{} of {:.2f}", "{:.2f} de {}", "placeholders"),
     ("%1$s sent %2$d files", "%1$s a envoyé des fichiers", "placeholders"),
