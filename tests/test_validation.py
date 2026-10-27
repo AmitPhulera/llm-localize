@@ -34,6 +34,9 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("Hello &amp; World", "Hola &amp; Mundo"),
     ("Hello &amp; World", "Hola et Mundo"),
     ("  Hello  ", "  Hola  "),
+    ("Hello\tWorld", "Hola\tMundo"),  # tab is not a control character we reject
+    ("Save — now", "Guardar — ahora"),
+    ("Page\x0cbreak", "Salto\x0cde página"),  # control char already in the source
     ("Hello {name}", "Hola {name}!"),
     ("Visit https://example.com/help.", "यहाँ जाएँ: https://example.com/help।"),  # the danda ends the sentence
     ("Contact support@example.com for help.", "请联系support@example.com获取帮助。"),
@@ -73,6 +76,8 @@ def test_valid(source, translation):
     ("<a>Hello</a>", "<a>Hola"),
     ("<a>Hello</a>", "Hola"),
     ("<a>Hello</a><b>x</b>", "<b>x</b><a>Hola</a>"),  # tag order changed
+    ("Save — now", "Guardar \x14 ahora"),  # "—" mangled to "\u0014"
+    ("U​I translation", "Traduction U\x0bI"),  # "​" mangled to "\u000b"
 ])
 def test_invalid(source, translation):
     assert not is_valid_translation(source, translation)
@@ -126,6 +131,7 @@ def test_invalid(source, translation):
     ("<a>Hello</a>", "<b>Hola</b>", "HTML tags"),
     ("<a>Hello</a>", "Hola", "HTML tags"),
     ("Visit https://example.com", "Visita https://different.com", "URLs"),
+    ("Save — now", "Guardar \x14 ahora", "control characters"),
     ("Hello {name}", "Hola {name}}", "placeholders"),  # no longer a valid format string
     ("{count} items", "{count} éléments {", "placeholders"),
     ('<a href="/x">Go</a>', '<a href="javascript:alert(1)" href="/x">Ir</a>', "HTML attributes"),

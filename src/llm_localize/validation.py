@@ -5,6 +5,11 @@ import unicodedata
 from collections import Counter
 from html.parser import HTMLParser
 
+# C0 control characters other than tab, newline and carriage return, plus DEL.
+# LLMs sometimes turn escapes like "—" into "\u0014", which msgfmt
+# accepts.
+CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+
 # Finds %-style placeholders, with optional name or position, flags, width,
 # precision and length (%s, %(name)s, %.2f, %(count)02d, Android's %1$s
 # and Java's %1$tY, %b, %n, %,d and %<s, iOS's %@ and %lld), and {}-style ones
@@ -45,13 +50,24 @@ FOREIGN_ELEMENTS = frozenset({"svg", "math"})
 LINK_ATTRS = frozenset({"href", "src", "action", "formaction"})
 
 
+def has_control_chars(source, translation):
+    """Return True if ``translation`` has control characters that ``source`` doesn't.
+
+    >>> has_control_chars("Save \\u2014 now", "Guardar \\x14 ahora")
+    True
+    >>> has_control_chars("Page\\x0cbreak", "Salto\\x0cde página")
+    False
+    """
+    return bool(set(CONTROL_CHARS_RE.findall(translation)) - set(CONTROL_CHARS_RE.findall(source)))
+
+
 def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
 
     The reason is one of ``"placeholders"``, ``"HTML tags"``,
-    ``"HTML attributes"``, ``"links"`` or ``"URLs"``. Text attributes like
-    ``title`` may change, but no attribute may be added or removed, and no
-    other attribute may change.
+    ``"HTML attributes"``, ``"links"``, ``"URLs"`` or ``"control characters"``.
+    Text attributes like ``title`` may change, but no attribute may be added
+    or removed, and no other attribute may change.
 
     >>> find_problem("Hello %(name)s", "Hola %(nombre)s")
     'placeholders'
@@ -92,6 +108,9 @@ def find_problem(source, translation):
     # An email address, which Markdown and many apps turn into a mailto: link
     if set(EMAIL_RE.findall(source)) != set(EMAIL_RE.findall(translation)):
         return "URLs"
+
+    if has_control_chars(source, translation):
+        return "control characters"
     return None
 
 
