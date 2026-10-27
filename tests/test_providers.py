@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llm_localize.providers import get_client_class
+from llm_localize.providers import get_client, get_client_class
 from llm_localize.providers.base import (
     LLMClient,
     LLMError,
@@ -11,6 +11,12 @@ from llm_localize.providers.base import (
 )
 
 from .fakes import FakeClient
+
+
+@pytest.fixture(autouse=True)
+def no_provider_env(monkeypatch):
+    for name in ["FAKE_API_KEY"]:
+        monkeypatch.delenv(name, raising=False)
 
 
 class TestRegistry:
@@ -25,6 +31,33 @@ class TestRegistry:
     def test_unknown(self, provider):
         with pytest.raises(LLMError):
             get_client_class(provider)
+
+    @pytest.mark.parametrize("provider", ["tests.fakes.FakeClient"])
+    def test_generic_api_key_env_var(self, monkeypatch, provider):
+        monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
+
+        assert get_client(provider).api_key == "generic"
+
+    def test_client_gets_api_key_when_created(self, monkeypatch):
+        monkeypatch.setenv("FAKE_API_KEY", "secret")
+        seen = []
+
+        class AuthClient(FakeClient):
+            def __init__(self, api_key=None, **kwargs):
+                seen.append(api_key)
+                super().__init__(api_key, **kwargs)
+
+        with patch("llm_localize.providers.get_client_class", return_value=AuthClient):
+            get_client("auth")
+
+        assert seen == ["secret"]
+
+    @pytest.mark.parametrize("provider, env_var", [
+        ("tests.fakes.FakeClient", "FAKE_API_KEY"),
+    ])
+    def test_api_key_required_for_default_host(self, provider, env_var):
+        with pytest.raises(LLMError, match=f"LLM_LOCALIZE_API_KEY or {env_var}"):
+            get_client(provider)
 
 
 class TestRetry:

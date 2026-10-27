@@ -69,6 +69,10 @@ class LLMClient(abc.ABC):
         if not self.model:
             raise LLMError(f"{type(self).__name__} has no default model; pass one explicitly")
 
+    @property
+    def requires_api_key(self):
+        return True
+
     def complete(self, system_prompt, user_message):
         return retry_with_exponential_backoff(
             lambda: self.call_llm(system_prompt, user_message),
