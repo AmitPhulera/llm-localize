@@ -26,7 +26,7 @@ def get_client(provider='openai', api_key=None, **kwargs):
 
     The key comes from ``LLM_LOCALIZE_API_KEY``, then the provider's own
     variable, its ``api_key_env_var``. Keyword arguments go to the client,
-    e.g. ``model``.
+    e.g. ``model`` or ``api_base``.
     """
     client_class = get_client_class(provider)
     env_vars = [API_KEY_ENV_VAR]

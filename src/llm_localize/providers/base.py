@@ -1,6 +1,7 @@
 """Base classes for LLM provider clients."""
 import abc
 import logging
+import os
 import random
 import time
 
@@ -82,3 +83,28 @@ class LLMClient(abc.ABC):
     @abc.abstractmethod
     def call_llm(self, system_prompt, user_message):
         """Return the model's raw text response, which should contain a JSON object."""
+
+
+class HttpClient(LLMClient):
+    """An ``LLMClient`` that talks to an HTTP JSON API using only the standard library.
+
+    The API base URL is, in order: the ``api_base`` argument, the
+    ``api_base_env_var`` environment variable, then ``default_api_base``.
+    """
+
+    default_api_base = None
+    api_base_env_var = None
+
+    def __init__(self, *args, api_base=None, timeout=600, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.api_base = self.resolve_api_base(api_base)
+        self.timeout = timeout
+
+    @classmethod
+    def resolve_api_base(cls, api_base=None):
+        """Return the API base URL a client built with ``api_base`` would use."""
+        env_api_base = os.environ.get(cls.api_base_env_var) if cls.api_base_env_var else None
+        resolved = api_base or env_api_base or cls.default_api_base
+        if not resolved:
+            raise LLMError(f"{cls.__name__} has no default_api_base; pass api_base")
+        return resolved.rstrip("/")

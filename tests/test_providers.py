@@ -4,7 +4,7 @@ import pytest
 
 from llm_localize.providers import get_client, get_client_class
 from llm_localize.providers.base import (
-    LLMClient,
+    HttpClient,
     LLMError,
     TransientError,
     retry_with_exponential_backoff,
@@ -109,8 +109,24 @@ class TestRetry:
         assert calls == [1]
 
 
+class NoDefaultHost(HttpClient):
+    default_model = "m"
+    api_key_env_var = "FAKE_API_KEY"
+
+    def call_llm(self, system_prompt, user_message):
+        return "{}"
+
+
+def test_client_without_default_host_needs_api_base():
+    with (patch("llm_localize.providers.get_client_class", return_value=NoDefaultHost),
+          pytest.raises(LLMError, match="no default_api_base")):
+        get_client("custom")
+
+
 def test_client_without_default_model():
-    class NoDefault(LLMClient):
+    class NoDefault(HttpClient):
+        default_api_base = "https://example.com"
+
         def call_llm(self, system_prompt, user_message):
             return "{}"
 
