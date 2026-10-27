@@ -19,17 +19,30 @@ PLACEHOLDER_RE = re.compile(
     r'|%<[-+0#,]*\d*(?:\.\d+)?(?:[tT][HIklMSLNpzZsQBbhAaCYyjmdeRTrDFc]|[bBhHSCcdoxXeEfgGaAs])(?![A-Za-z>/])'
     r'|{(?:[^{}]|{[^{}]*})*}')
 
+# Attributes holding prose, whose values a translation may change. A
+# translation must keep every other attribute, and its value, as it is.
+# "value" is prose only on buttons made with <input>; elsewhere, like on
+# <option> or a hidden input, it's data a form sends.
+TEXT_ATTRS = frozenset({"title", "alt", "placeholder", "aria-label", "aria-description"})
+BUTTON_TYPES = frozenset({"button", "submit", "reset"})
+
 # A numbered tag, like <1>, </1> or <2/>
 INDEXED_TAG_RE = re.compile(r"</?\d+\s*/?>")
 
 # Elements whose content browsers parse as SVG or MathML, where <style> isn't raw text
 FOREIGN_ELEMENTS = frozenset({"svg", "math"})
 
+# Attributes whose values are links
+LINK_ATTRS = frozenset({"href", "src", "action", "formaction"})
+
 
 def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
 
-    The reason is ``"placeholders"`` or ``"HTML tags"``.
+    The reason is one of ``"placeholders"``, ``"HTML tags"``,
+    ``"HTML attributes"`` or ``"links"``. Text attributes like ``title`` may
+    change, but no attribute may be added or removed, and no other attribute
+    may change.
 
     >>> find_problem("Hello %(name)s", "Hola %(nombre)s")
     'placeholders'
@@ -58,6 +71,9 @@ def find_problem(source, translation):
     # order, as word order may need
     if Counter(INDEXED_TAG_RE.findall(source)) != Counter(INDEXED_TAG_RE.findall(translation)):
         return "HTML tags"
+    attribute_problem = _attribute_problem(source_tags, translation_tags)
+    if attribute_problem:
+        return attribute_problem
     return None
 
 
@@ -174,3 +190,45 @@ def _tags(text):
     parser.closing = True
     parser.close()
     return parser.tags
+
+
+def is_text_attribute(tag, name, input_type=""):
+    """True if attribute ``name`` of ``tag`` holds text a translation may change, like ``alt`` or a button's value.
+
+    >>> is_text_attribute("img", "alt"), is_text_attribute("input", "value", "submit")
+    (True, True)
+    >>> is_text_attribute("a", "href"), is_text_attribute("option", "value")
+    (False, False)
+    """
+    return name in TEXT_ATTRS or (tag == "input" and name == "value" and input_type in BUTTON_TYPES)
+
+
+def _attribute_problem(source_tags, translation_tags):
+    """Return why the translated tags' attributes are unsafe, or None.
+
+    >>> _attribute_problem(_tags('<a href="/x" title="Go">'), _tags('<a title="Ir" href="/x">')) is None
+    True
+    >>> _attribute_problem(_tags('<img src="x">'), _tags('<img src="x" onerror="alert(1)">'))
+    'HTML attributes'
+    >>> _attribute_problem(_tags('<a href="/x">'), _tags('<a href="/y">'))
+    'links'
+    >>> _attribute_problem(_tags('<a href="/x">'), _tags('<a href="javascript:x" href="/x">'))
+    'HTML attributes'
+    >>> _attribute_problem(_tags('<b onclick="safe()" onclick="evil()">'), _tags('<b onclick="evil()">'))
+    'HTML attributes'
+    >>> _attribute_problem(_tags('<input type="submit" value="Go">'), _tags('<input type="submit" value="Aller">'))
+    >>> _attribute_problem(_tags('<option value="yes">'), _tags('<option value="oui">'))
+    'HTML attributes'
+    """
+    for (_, tag, source_attrs), (_, _, translation_attrs) in zip(source_tags, translation_tags, strict=True):
+        # Browsers use the first of repeated attributes, so that's the one compared
+        source_values, translation_values = dict(reversed(source_attrs)), dict(reversed(translation_attrs))
+        if len(translation_values) != len(translation_attrs) and translation_attrs != source_attrs:
+            return "HTML attributes"
+        if sorted(source_values) != sorted(translation_values):
+            return "HTML attributes"
+        input_type = (source_values.get("type") or "").lower()
+        for name, value in source_values.items():
+            if translation_values[name] != value and not is_text_attribute(tag, name, input_type):
+                return "links" if name in LINK_ATTRS else "HTML attributes"
+    return None

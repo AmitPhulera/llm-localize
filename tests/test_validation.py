@@ -14,6 +14,9 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("Hello {name}", "Hola {name}"),
     ("<a>Hello</a>", "<a>Hola</a>"),
     ('<a href="test">Hello</a>', '<a href="test">Hola</a>'),
+    ('<a href="test" title="Go">Hello</a>', '<a href="test" title="Ir">Hola</a>'),  # text attributes may change
+    ('<a href="test" title="Go">Hello</a>', "<a title='Ir' href=test>Hola</a>"),  # reordered, requoted
+    ('<input placeholder="Name" disabled>', '<input placeholder="Nombre" disabled>'),
     ("%(name)s has %(count)d", "%(count)d chez %(name)s"),  # named placeholders may move
     ("{0} and {1}", "{1} y {0}"),  # so may indexed ones
     ("%(count)02d files", "%(count)02d fichiers"),
@@ -39,6 +42,7 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("<style>p {}</style>Hi", "<style>p {}</style>Salut"),
     ("<textarea>Type here</textarea>", "<textarea>Escriba aquí</textarea>"),  # text, unlike a script
     ("<title>Home</title>", "<title>Inicio</title>"),
+    ('<input type="submit" value="Save">', '<input type="submit" value="Enregistrer">'),
 ])
 def test_valid(source, translation):
     assert is_valid_translation(source, translation)
@@ -63,10 +67,13 @@ def test_invalid(source, translation):
     ("%.2f MB", "MB", "placeholders"),
     ("%(count)02d files", "files", "placeholders"),
     ("{} and {}", "{}", "placeholders"),
+    ('<a href="/settings/">Settings</a>', '<a href="javascript:alert(1)">Ajustes</a>', "links"),
+    ("<img src='a.png'>", "<img src='b.png'>", "links"),
     ("<a>Hello</a>", "<b>Hola</b>", "HTML tags"),
     ("<a>Hello</a>", "Hola", "HTML tags"),
     ("Hello {name}", "Hola {name}}", "placeholders"),  # no longer a valid format string
     ("{count} items", "{count} éléments {", "placeholders"),
+    ('<a href="/x">Go</a>', '<a href="javascript:alert(1)" href="/x">Ir</a>', "HTML attributes"),
     ("Hello", "Hola <img/src=x onerror=alert(1)>", "HTML tags"),
     ("Hello", "Hola <svg/onload=alert(1)>", "HTML tags"),
     ("<b>Hi</b>", "<b>Hola</b><img\nsrc=x onerror=alert(1)>", "HTML tags"),
@@ -75,6 +82,12 @@ def test_invalid(source, translation):
     ("%1$s sent %2$d files", "%1$s a envoyé des fichiers", "placeholders"),
     ("%@ has %lld items", "%lld éléments pour %@", "placeholders"),
     ("%@ has %lld items", "%@ a %d éléments", "placeholders"),
+    ('<img src="x">', '<img src="x" onerror="alert(1)">', "HTML attributes"),
+    ('<a href="/x">Go</a>', '<a href="/x" onclick="steal()">Ir</a>', "HTML attributes"),
+    ('<b class="big">Hi</b>', '<b style="background:url(javascript:x)">Hola</b>', "HTML attributes"),
+    ('<b class="big">Hi</b>', '<b class="evil">Hola</b>', "HTML attributes"),
+    ('<b class="big">Hi</b>', '<b>Hola</b>', "HTML attributes"),
+    ('<a title="Go">Hi</a>', '<a title="Ir" onclick="x">Hola</a>', "HTML attributes"),
     # Java's date conversions and others, as Android strings use them
     ("Year: %1$tY", "Année : 2026", "placeholders"),
     ("Line%nbreak", "Ligne saut", "placeholders"),
@@ -94,6 +107,13 @@ def test_invalid(source, translation):
     ("Hi <script></script>", "Salut <script>alert(document.cookie)</script>", "HTML tags"),
     ("Hi <script></script>", "Salut <script/>alert(document.cookie)</script>", "HTML tags"),  # not self-closing
     ("<style>@import 'site.css';</style>Hi", "<style>@import 'evil.css';</style>Salut", "HTML tags"),
+    # Browsers use the first of repeated attributes
+    ('<button onclick="safe()" onclick="evil()">Go</button>', '<button onclick="evil()">Aller</button>',
+     "HTML attributes"),
+    # value is data a form sends, except on an <input> button
+    ('<option value="yes">Yes</option>', '<option value="oui">Oui</option>', "HTML attributes"),
+    ('<input type="hidden" name="next" value="/account">Save', '<input type="hidden" name="next" '
+     'value="//evil.example/phish">Enregistrer', "HTML attributes"),
     ("Hello", "Hola", None),
 ])
 def test_find_problem(source, translation, reason):
