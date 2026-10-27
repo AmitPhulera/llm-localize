@@ -31,9 +31,28 @@ def find_problem(source, translation):
     translation_placeholders = PLACEHOLDER_RE.findall(translation)
     if set(source_placeholders) != set(translation_placeholders):
         return "placeholders"
+    # Named placeholders may be used any number of times, in any order, but
+    # each positional one consumes the next argument, so they must match in order
+    if _positional(source_placeholders) != _positional(translation_placeholders):
+        return "placeholders"
     return None
 
 
 def is_valid_translation(source, translation):
     """Return True if ``translation`` is likely a safe translation of ``source``."""
     return find_problem(source, translation) is None
+
+
+def _positional(placeholders):
+    """List the placeholders that take the next argument, in order: unnamed %-style ones, then ``{}``-style ones.
+
+    The two styles are listed apart, since a string is formatted with one or the other.
+    Numbered ones like ``%1$s`` name their argument, so they aren't listed.
+
+    >>> _positional(["%s", "%(name)s", "%%", "{}", "{:.2f}", "{0}", "{name}", "%d", "%1$s", "%@"])
+    (['%s', '%d', '%@'], ['{}', '{:.2f}'])
+    """
+    return (
+        [p for p in placeholders if p.startswith("%") and not p.startswith("%(") and p != "%%" and "$" not in p],
+        [p for p in placeholders if p.startswith("{") and p[1:2] in ("}", ":", "!")],
+    )

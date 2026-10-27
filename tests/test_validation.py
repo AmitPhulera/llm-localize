@@ -18,6 +18,7 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("%.2f MB", "%.2f Mo"),
     ("100% sure", "100 % sûr"),  # a lone % isn't a placeholder
     ("Hi %(name)s, bye %(name)s", "Hola %(name)s"),  # named placeholders may repeat or not
+    ("{} and {}", "{} y {}"),
     ("{0} and {0}", "{0}"),  # indexed placeholders may repeat or not
     ("Hello\nWorld", "Hola\nMundo"),
     ("Hello\nWorld", "Hola\n Mundo"),
@@ -46,9 +47,14 @@ def test_invalid(source, translation):
 
 @pytest.mark.parametrize("source, translation, reason", [
     ("Hello %(name)s", "Hola %(nombre)s", "placeholders"),
+    ("%s of %s", "%s", "placeholders"),
     ("%.2f MB", "MB", "placeholders"),
     ("%(count)02d files", "files", "placeholders"),
+    ("{} and {}", "{}", "placeholders"),
+    ("Name: %s, count: %d", "Compte : %d, nom : %s", "placeholders"),  # unnamed ones can't move
+    ("{} of {:.2f}", "{:.2f} de {}", "placeholders"),
     ("%1$s sent %2$d files", "%1$s a envoyé des fichiers", "placeholders"),
+    ("%@ has %lld items", "%lld éléments pour %@", "placeholders"),
     ("%@ has %lld items", "%@ a %d éléments", "placeholders"),
     # Java's date conversions and others, as Android strings use them
     ("Year: %1$tY", "Année : 2026", "placeholders"),
