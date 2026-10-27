@@ -1,6 +1,7 @@
-"""Checks that catch LLM translations likely to break placeholders or markup."""
+"""Checks that catch LLM translations likely to break placeholders, markup or links."""
 import re
 import string
+import unicodedata
 from collections import Counter
 from html.parser import HTMLParser
 
@@ -18,6 +19,14 @@ PLACEHOLDER_RE = re.compile(
     # Java's %<s, the argument before it again; not "50%<b>", a number before a tag
     r'|%<[-+0#,]*\d*(?:\.\d+)?(?:[tT][HIklMSLNpzZsQBbhAaCYyjmdeRTrDFc]|[bBhHSCcdoxXeEfgGaAs])(?![A-Za-z>/])'
     r'|{(?:[^{}]|{[^{}]*})*}')
+
+# A URL starts after anything but a letter or digit, so after Chinese text too, and ends at Chinese,
+# Japanese or Korean text or full-width punctuation like 。 and ，, which follow it with no space
+URL_RE = re.compile(r'(?<![A-Za-z0-9])(?:(?:https?|ftp)://|mailto:|tel:|www\.)'
+                    r'[^\s<>"\'\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef]+', re.IGNORECASE)
+
+# ASCII only, so Chinese or Thai written right before an address isn't taken for part of it
+EMAIL_RE = re.compile(r"(?<![A-Za-z0-9._+-])[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 
 # Attributes holding prose, whose values a translation may change. A
 # translation must keep every other attribute, and its value, as it is.
@@ -40,9 +49,9 @@ def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
 
     The reason is one of ``"placeholders"``, ``"HTML tags"``,
-    ``"HTML attributes"`` or ``"links"``. Text attributes like ``title`` may
-    change, but no attribute may be added or removed, and no other attribute
-    may change.
+    ``"HTML attributes"``, ``"links"`` or ``"URLs"``. Text attributes like
+    ``title`` may change, but no attribute may be added or removed, and no
+    other attribute may change.
 
     >>> find_problem("Hello %(name)s", "Hola %(nombre)s")
     'placeholders'
@@ -74,6 +83,15 @@ def find_problem(source, translation):
     attribute_problem = _attribute_problem(source_tags, translation_tags)
     if attribute_problem:
         return attribute_problem
+
+    # URLs, ignoring the punctuation of a sentence they end, like a period or
+    # a comma. Checked both ways, so a URL the model added is caught as well
+    # as one it changed or dropped.
+    if {_url(url) for url in URL_RE.findall(source)} != {_url(url) for url in URL_RE.findall(translation)}:
+        return "URLs"
+    # An email address, which Markdown and many apps turn into a mailto: link
+    if set(EMAIL_RE.findall(source)) != set(EMAIL_RE.findall(translation)):
+        return "URLs"
     return None
 
 
@@ -190,6 +208,25 @@ def _tags(text):
     parser.closing = True
     parser.close()
     return parser.tags
+
+
+def _url(text):
+    """Return a URL without the punctuation after it, and a closing bracket it doesn't open.
+
+    >>> _url("https://example.com)."), _url("https://en.wikipedia.org/wiki/Python_(language))")
+    ('https://example.com', 'https://en.wikipedia.org/wiki/Python_(language)')
+    """
+    counts, end = Counter(text), len(text)
+    while end:
+        char = text[end - 1]
+        opening = {")": "(", "]": "[", "}": "{"}.get(char)
+        # Hindi's ।, Urdu's ۔ and the Arabic comma end a sentence or clause as . and , do
+        script_punctuation = ord(char) > 127 and unicodedata.category(char).startswith("P")
+        if char not in ".,;:!?\\" and not script_punctuation and not (opening and counts[opening] < counts[char]):
+            break
+        counts[char] -= 1
+        end -= 1
+    return text[:end]
 
 
 def is_text_attribute(tag, name, input_type=""):
