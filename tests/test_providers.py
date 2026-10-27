@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm_localize.providers.base import (
+    LLMClient,
     LLMError,
     TransientError,
     retry_with_exponential_backoff,
@@ -56,3 +57,12 @@ class TestRetry:
         with pytest.raises(LLMError):
             retry_with_exponential_backoff(func)
         assert calls == [1]
+
+
+def test_client_without_default_model():
+    class NoDefault(LLMClient):
+        def call_llm(self, system_prompt, user_message):
+            return "{}"
+
+    with pytest.raises(LLMError, match="no default model"):
+        NoDefault(api_key="k")

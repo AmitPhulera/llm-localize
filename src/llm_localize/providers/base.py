@@ -1,4 +1,5 @@
 """Base classes for LLM provider clients."""
+import abc
 import logging
 import random
 import time
@@ -48,3 +49,32 @@ def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, **b
             delay = backoff_delay(attempt, **backoff)
             logger.info("%s; retrying in %.0fs", e, delay)
             sleep(delay)
+
+
+class LLMClient(abc.ABC):
+    """Sends a system prompt and a user message to an LLM and returns its JSON text reply.
+
+    Subclasses implement ``call_llm`` and raise ``TransientError`` for
+    failures worth retrying, so ``complete`` can back off and retry.
+    """
+
+    default_model = None
+    api_key_env_var = None
+
+    def __init__(self, api_key=None, model=None, model_params=None, max_retries=5):
+        self.api_key = api_key
+        self.model = model or self.default_model
+        self.model_params = model_params or {}
+        self.max_retries = max_retries
+        if not self.model:
+            raise LLMError(f"{type(self).__name__} has no default model; pass one explicitly")
+
+    def complete(self, system_prompt, user_message):
+        return retry_with_exponential_backoff(
+            lambda: self.call_llm(system_prompt, user_message),
+            max_retries=self.max_retries,
+        )
+
+    @abc.abstractmethod
+    def call_llm(self, system_prompt, user_message):
+        """Return the model's raw text response, which should contain a JSON object."""
