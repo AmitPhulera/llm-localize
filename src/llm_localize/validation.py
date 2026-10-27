@@ -22,6 +22,9 @@ PLACEHOLDER_RE = re.compile(
 # A numbered tag, like <1>, </1> or <2/>
 INDEXED_TAG_RE = re.compile(r"</?\d+\s*/?>")
 
+# Elements whose content browsers parse as SVG or MathML, where <style> isn't raw text
+FOREIGN_ELEMENTS = frozenset({"svg", "math"})
+
 
 def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
@@ -95,14 +98,35 @@ class _TagParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.tags = []
+        self.foreign = 0  # how many <svg> and <math> elements are open
+        self.foreign_code = 0  # how many <script> and <style> elements are open in them
 
     def handle_starttag(self, tag, attrs):
         self.tags.append(("", tag, attrs))
+        self.foreign += tag in FOREIGN_ELEMENTS
+        self.foreign_code += self.foreign > 0 and tag in ("script", "style")
 
-    handle_startendtag = handle_starttag
+    def handle_startendtag(self, tag, attrs):
+        self.tags.append(("", tag, attrs))
+        # In HTML, unlike SVG, <script/> opens a script all the same: what follows is its code
+        if tag in ("script", "style") and not self.foreign:
+            super().set_cdata_mode(tag)
+
+    def handle_data(self, data):
+        # Script and style content is code, compared as it is, not text a translation may change. An
+        # SVG <script> runs too, though its content is parsed as markup. <title> and <textarea> hold text.
+        if self.cdata_elem in ("script", "style") or self.foreign_code:
+            self.tags.append(("#", data, []))
 
     def handle_endtag(self, tag):
         self.tags.append(("/", tag, []))
+        self.foreign -= tag in FOREIGN_ELEMENTS and self.foreign > 0
+        self.foreign_code -= tag in ("script", "style") and self.foreign_code > 0
+
+    def set_cdata_mode(self, *args, **kwargs):
+        # In SVG and MathML, <style> and <script> hold markup a browser reads, not raw text
+        if not self.foreign:
+            super().set_cdata_mode(*args, **kwargs)
 
     def handle_decl(self, decl):
         self.tags.append(("!", decl, []))

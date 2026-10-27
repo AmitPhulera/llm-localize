@@ -36,6 +36,9 @@ from llm_localize.validation import find_problem, is_valid_translation
     ("A 20%lift in sales", "Une hausse de 20 % des ventes"),  # not %li
     ("Up to 50%Sale", "Jusqu'à 50 % Soldes"),  # not Java's %S
     ("%ld/%lu", "%ld/%lu"),
+    ("<style>p {}</style>Hi", "<style>p {}</style>Salut"),
+    ("<textarea>Type here</textarea>", "<textarea>Escriba aquí</textarea>"),  # text, unlike a script
+    ("<title>Home</title>", "<title>Inicio</title>"),
 ])
 def test_valid(source, translation):
     assert is_valid_translation(source, translation)
@@ -76,6 +79,13 @@ def test_invalid(source, translation):
     ("Year: %1$tY", "Année : 2026", "placeholders"),
     ("Line%nbreak", "Ligne saut", "placeholders"),
     ("Active: %b", "Actif : oui", "placeholders"),
+    # Markup in SVG's <style>, which browsers parse, unlike HTML's
+    ("<svg><style>/* x */</style></svg>", "<svg><style><img src=x onerror=alert(1)></style></svg>", "HTML tags"),
+    ("<svg><script>safe()</script></svg>", "<svg><script>alert(document.cookie)</script></svg>", "HTML tags"),
+    # Script and style content is code
+    ("Hi <script></script>", "Salut <script>alert(document.cookie)</script>", "HTML tags"),
+    ("Hi <script></script>", "Salut <script/>alert(document.cookie)</script>", "HTML tags"),  # not self-closing
+    ("<style>@import 'site.css';</style>Hi", "<style>@import 'evil.css';</style>Salut", "HTML tags"),
     ("Hello", "Hola", None),
 ])
 def test_find_problem(source, translation, reason):
