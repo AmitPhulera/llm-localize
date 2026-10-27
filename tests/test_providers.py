@@ -2,12 +2,29 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llm_localize.providers import get_client_class
 from llm_localize.providers.base import (
     LLMClient,
     LLMError,
     TransientError,
     retry_with_exponential_backoff,
 )
+
+from .fakes import FakeClient
+
+
+class TestRegistry:
+
+    @pytest.mark.parametrize("provider, client_class", [
+        ("tests.fakes.FakeClient", FakeClient),
+    ])
+    def test_lookup(self, provider, client_class):
+        assert get_client_class(provider) is client_class
+
+    @pytest.mark.parametrize("provider", ["nope", "tests.fakes.Missing"])
+    def test_unknown(self, provider):
+        with pytest.raises(LLMError):
+            get_client_class(provider)
 
 
 class TestRetry:
