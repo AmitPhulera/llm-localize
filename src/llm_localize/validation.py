@@ -1,6 +1,8 @@
-"""Checks that catch LLM translations likely to break placeholders."""
+"""Checks that catch LLM translations likely to break placeholders or markup."""
 import re
 import string
+from collections import Counter
+from html.parser import HTMLParser
 
 # Finds %-style placeholders, with optional name or position, flags, width,
 # precision and length (%s, %(name)s, %.2f, %(count)02d, Android's %1$s
@@ -17,11 +19,14 @@ PLACEHOLDER_RE = re.compile(
     r'|%<[-+0#,]*\d*(?:\.\d+)?(?:[tT][HIklMSLNpzZsQBbhAaCYyjmdeRTrDFc]|[bBhHSCcdoxXeEfgGaAs])(?![A-Za-z>/])'
     r'|{(?:[^{}]|{[^{}]*})*}')
 
+# A numbered tag, like <1>, </1> or <2/>
+INDEXED_TAG_RE = re.compile(r"</?\d+\s*/?>")
+
 
 def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
 
-    The reason is ``"placeholders"``.
+    The reason is ``"placeholders"`` or ``"HTML tags"``.
 
     >>> find_problem("Hello %(name)s", "Hola %(nombre)s")
     'placeholders'
@@ -39,6 +44,17 @@ def find_problem(source, translation):
     # A brace format string must stay one, e.g. "{name}" mustn't become "{name}}"
     if _is_brace_format(source) and not _is_brace_format(translation):
         return "placeholders"
+
+    # Same tag names, opening and closing, in the same order. Tags are found
+    # the way browsers find them, so "<img/src=x onerror=...>" counts.
+    source_tags = _tags(source)
+    translation_tags = _tags(translation)
+    if [tag[:2] for tag in source_tags] != [tag[:2] for tag in translation_tags]:
+        return "HTML tags"
+    # react-i18next's numbered tags, like <1>…</1>, which browsers don't take for tags: each kept, in any
+    # order, as word order may need
+    if Counter(INDEXED_TAG_RE.findall(source)) != Counter(INDEXED_TAG_RE.findall(translation)):
+        return "HTML tags"
     return None
 
 
@@ -73,3 +89,37 @@ def _is_brace_format(text):
     except ValueError:
         return False
     return any(field is not None for _, field, _, _ in parsed)
+
+
+class _TagParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append(("", tag, attrs))
+
+    handle_startendtag = handle_starttag
+
+    def handle_endtag(self, tag):
+        self.tags.append(("/", tag, []))
+
+    def handle_decl(self, decl):
+        self.tags.append(("!", decl, []))
+
+
+def _tags(text):
+    """Return ``(kind, name, attributes)`` for each tag in ``text``, in order.
+
+    ``kind`` is ``"/"`` for closing tags, ``"!"`` for declarations and
+    empty otherwise. ``attributes`` lists ``(name, value)`` pairs.
+
+    >>> _tags("<a href=/x title='Go' hidden>Hi</a><br/>")
+    [('', 'a', [('href', '/x'), ('title', 'Go'), ('hidden', None)]), ('/', 'a', []), ('', 'br', [])]
+    >>> _tags("Hi <img/src=x onerror=alert(1)>")
+    [('', 'img', [('src', 'x'), ('onerror', 'alert(1)')])]
+    """
+    parser = _TagParser()
+    parser.feed(text)
+    parser.close()
+    return parser.tags
