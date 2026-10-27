@@ -65,9 +65,9 @@ def find_problem(source, translation):
     """Return why ``translation`` is unsafe for ``source``, or None if it looks fine.
 
     The reason is one of ``"placeholders"``, ``"HTML tags"``,
-    ``"HTML attributes"``, ``"links"``, ``"URLs"`` or ``"control characters"``.
-    Text attributes like ``title`` may change, but no attribute may be added
-    or removed, and no other attribute may change.
+    ``"HTML attributes"``, ``"links"``, ``"URLs"``, ``"control characters"``
+    or ``"encoding"``. Text attributes like ``title`` may change, but no
+    attribute may be added or removed, and no other attribute may change.
 
     >>> find_problem("Hello %(name)s", "Hola %(nombre)s")
     'placeholders'
@@ -111,6 +111,11 @@ def find_problem(source, translation):
 
     if has_control_chars(source, translation):
         return "control characters"
+
+    try:
+        translation.encode('utf-8')
+    except UnicodeEncodeError:
+        return "encoding"
     return None
 
 

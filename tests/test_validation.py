@@ -132,6 +132,7 @@ def test_invalid(source, translation):
     ("<a>Hello</a>", "Hola", "HTML tags"),
     ("Visit https://example.com", "Visita https://different.com", "URLs"),
     ("Save — now", "Guardar \x14 ahora", "control characters"),
+    ("Hello", "Hola \ud800", "encoding"),  # lone surrogate
     ("Hello {name}", "Hola {name}}", "placeholders"),  # no longer a valid format string
     ("{count} items", "{count} éléments {", "placeholders"),
     ('<a href="/x">Go</a>', '<a href="javascript:alert(1)" href="/x">Ir</a>', "HTML attributes"),
