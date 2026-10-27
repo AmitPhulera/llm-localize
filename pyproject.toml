@@ -1,0 +1,62 @@
+[build-system]
+# 1.27 is the first to write license-files and a license expression
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-localize"
+dynamic = ["version"]
+description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Amit Phulera" }]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["i18n", "l10n", "gettext", "po", "translation", "llm", "openai", "claude", "gemini"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Internationalization",
+    "Topic :: Software Development :: Localization",
+]
+
+[project.urls]
+Homepage = "https://github.com/amitphulera/llm-localize"
+Issues = "https://github.com/amitphulera/llm-localize/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.hatch.version]
+path = "src/llm_localize/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+# Local tool state, even when it isn't in .gitignore
+exclude = [".claude"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_localize"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--doctest-modules --import-mode=importlib"
+filterwarnings = ["error::DeprecationWarning:llm_localize.*"]
+
+[tool.ruff]
+line-length = 115
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
