@@ -100,6 +100,7 @@ class _TagParser(HTMLParser):
         self.tags = []
         self.foreign = 0  # how many <svg> and <math> elements are open
         self.foreign_code = 0  # how many <script> and <style> elements are open in them
+        self.closing = False  # whether close() is handing over what was left unfinished
 
     def handle_starttag(self, tag, attrs):
         self.tags.append(("", tag, attrs))
@@ -131,19 +132,45 @@ class _TagParser(HTMLParser):
     def handle_decl(self, decl):
         self.tags.append(("!", decl, []))
 
+    # A comment, processing instruction or CDATA section counts too: "<!--" could hide the rest of a page
+    def handle_comment(self, data):
+        self.tags.append(("!--", "", []))
+
+    def handle_pi(self, data):
+        self.tags.append(("?", "", []))
+
+    def unknown_decl(self, data):
+        if data.startswith("CDATA[") and not self.foreign_code:
+            # Text, as Android and XLIFF read it, so only the markup in it is compared. One left unfinished,
+            # which close() hands over and a browser may read otherwise, is compared as it is, not read again.
+            self.tags.append(("!", "CDATA", []))
+            self.tags.extend([("#", data, [])] if self.closing else _tags(data[len("CDATA["):]))
+        else:
+            # With its content: a CDATA section in an SVG <script> is code
+            self.tags.append(("!", data, []))
+
 
 def _tags(text):
     """Return ``(kind, name, attributes)`` for each tag in ``text``, in order.
 
-    ``kind`` is ``"/"`` for closing tags, ``"!"`` for declarations and
-    empty otherwise. ``attributes`` lists ``(name, value)`` pairs.
+    ``kind`` is ``"/"`` for closing tags, ``"!"`` for declarations,
+    ``"!--"`` for comments, ``"?"`` for processing instructions, ``"<"``
+    for markup left unfinished at the end, and empty otherwise.
+    ``attributes`` lists ``(name, value)`` pairs.
 
     >>> _tags("<a href=/x title='Go' hidden>Hi</a><br/>")
     [('', 'a', [('href', '/x'), ('title', 'Go'), ('hidden', None)]), ('/', 'a', []), ('', 'br', [])]
     >>> _tags("Hi <img/src=x onerror=alert(1)>")
     [('', 'img', [('src', 'x'), ('onerror', 'alert(1)')])]
+    >>> _tags("Hi <img src=x onerror=alert(1)//"), _tags("Save <!--"), _tags("a < b")
+    ([('<', '', [])], [('<', '', []), ('!--', '', [])], [])
     """
     parser = _TagParser()
     parser.feed(text)
+    # The parser waits for the rest of a tag or comment it hasn't seen the end of; a browser
+    # given the same text, followed by more of the page, could take that for markup
+    if "<" in parser.rawdata:
+        parser.tags.append(("<", "", []))
+    parser.closing = True
     parser.close()
     return parser.tags

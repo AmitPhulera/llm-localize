@@ -79,9 +79,17 @@ def test_invalid(source, translation):
     ("Year: %1$tY", "Année : 2026", "placeholders"),
     ("Line%nbreak", "Ligne saut", "placeholders"),
     ("Active: %b", "Actif : oui", "placeholders"),
+    # Markup a browser would read on, left unfinished or hidden in a comment or CDATA
+    ("Hello", "Bonjour <img src=x onerror=alert(document.cookie)//", "HTML tags"),
+    ("<b>Hello</b>", "<b>Bonjour</b> <a href=//evil.example onclick=alert(1)//", "HTML tags"),
+    ("Save", "Sauvegarder <!--", "HTML tags"),
+    ("Save", "Sauvegarder <!-- hidden -->", "HTML tags"),
+    ("Save", "Sauvegarder <![CDATA[x]]>", "HTML tags"),
+    ("Save", "Sauvegarder <?php echo 1 ?>", "HTML tags"),
     # Markup in SVG's <style>, which browsers parse, unlike HTML's
     ("<svg><style>/* x */</style></svg>", "<svg><style><img src=x onerror=alert(1)></style></svg>", "HTML tags"),
     ("<svg><script>safe()</script></svg>", "<svg><script>alert(document.cookie)</script></svg>", "HTML tags"),
+    ("<svg><script><![CDATA[go()]]></script></svg>", "<svg><script><![CDATA[bad()]]></script></svg>", "HTML tags"),
     # Script and style content is code
     ("Hi <script></script>", "Salut <script>alert(document.cookie)</script>", "HTML tags"),
     ("Hi <script></script>", "Salut <script/>alert(document.cookie)</script>", "HTML tags"),  # not self-closing
@@ -95,6 +103,15 @@ def test_find_problem(source, translation, reason):
 def test_unclosed_named_placeholders_take_linear_time():
     started = time.perf_counter()
     find_problem("%(" * 100000, "%(" * 100000)
+    assert time.perf_counter() - started < 1
+
+
+def test_unfinished_cdata_sections_take_linear_time():
+    started = time.perf_counter()
+    assert find_problem("<![CDATA[" * 100000, "x") == "HTML tags"
+    # Left unfinished, it's compared as it is: a browser would read what follows a > in it
+    assert find_problem("Start with <![CDATA[ and close it", "Commencez par <![CDATA[> <img src=x onerror=f()>") \
+        is not None
     assert time.perf_counter() - started < 1
 
 
