@@ -411,6 +411,21 @@ class TestAnthropic:
         assert http.header("anthropic-beta") is None
         assert http.header("x-api-key") is None
 
+    def test_a_refused_fallback_beta_is_left_off(self, fake_http):
+        refusal = http_error(400, b'{"error": {"message": "Unexpected value(s) '
+                                  b'`server-side-fallback-2026-07-01` for the `anthropic-beta` header."}}')
+        http = fake_http(refusal, anthropic_reply({"type": "text", "text": "{}"}),
+                         anthropic_reply({"type": "text", "text": "{}"}))
+        client = AnthropicClient(api_key="k")
+
+        assert client.complete("system", "user") == "{}"
+        client.complete("system", "user")
+
+        # Retried without it, and later requests don't send it
+        assert len(http.requests) == 3
+        assert http.header("anthropic-beta") is None
+        assert "fallbacks" not in http.payload
+
     def test_model_params(self, fake_http):
         http = fake_http(anthropic_reply({"type": "text", "text": "{}"}))
 
