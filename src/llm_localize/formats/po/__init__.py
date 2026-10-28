@@ -32,6 +32,10 @@ class PoFile(TranslationFile):
     ``msgfmt --check`` rejects are blanked so the next run retries them.
     """
 
+    name = "po"
+    # Not .pot: templates hold the source strings and must stay untranslated
+    extensions = (".po",)
+
     def __init__(self, path, language=None):
         super().__init__(path)
         self._language = language
