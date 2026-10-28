@@ -1,11 +1,13 @@
+import json
+
 import polib
 import pytest
 
 from llm_localize.engine import translate_file
 from llm_localize.formats.po import PoFile, find_po_files
-from llm_localize.formats.po.cleanup import run_msgfmt
+from llm_localize.formats.po.cleanup import extract_errored_line_numbers, run_msgfmt
 
-from .fakes import FakeClient
+from .fakes import FakeClient, ScriptedClient
 from .test_plurals import ENGLISH_PLURAL_FORMS, SPANISH_PLURAL_FORMS, UKRAINIAN_PLURAL_FORMS
 
 
@@ -267,6 +269,43 @@ def test_plurals_are_skipped_without_a_plural_forms_header(write_po, caplog):
     assert "1 plural messages skipped: the file has no Plural-Forms header" in caplog.text
 
 
+def test_translate_file_end_to_end(write_po):
+    po_file = PoFile(write_po(po_header(SPANISH_PLURAL_FORMS) + """
+msgid "Hello"
+msgstr ""
+
+#, python-format
+msgid "%(count)s case"
+msgid_plural "%(count)s cases"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+"""))
+    client = FakeClient()
+
+    result = translate_file(po_file, client, "es")
+
+    assert json.loads(client.calls[0][1]) == {
+        "0": "Hello",
+        "1": {
+            "singular": "%(count)s case",
+            "plural": "%(count)s cases",
+            "forms": {
+                "0": "used when n is 1",
+                "1": "used when n is 1000000, 2000000",
+                "2": "used when n is 0, 2, 3, 4, 5, 6, 7, 8, ...",
+            },
+        },
+    }
+    assert result.translated == 2
+    saved = polib.pofile(po_file.path)
+    assert saved.find("Hello").msgstr == "T: Hello"
+    assert saved.find("%(count)s case").msgstr_plural == {
+        0: "T: %(count)s case", 1: "T: %(count)s cases", 2: "T: %(count)s cases",
+    }
+    assert not extract_errored_line_numbers(run_msgfmt(po_file.path).stderr)
+
+
 def test_find_po_files(tmp_path, write_po):
     write_po("", "locale/es/LC_MESSAGES/django.po")
     write_po("", "locale/pt_BR/LC_MESSAGES/djangojs.po")
@@ -280,3 +319,15 @@ def test_find_po_files(tmp_path, write_po):
         ("locale/pt_BR/LC_MESSAGES/djangojs.po", "pt-br"),
         ("locale/nl_NL-x-informal/LC_MESSAGES/django.po", "nl_NL-x-informal"),
     ]
+
+
+def test_quotes_are_written_plainly(write_po):
+    path = write_po(po_header(ENGLISH_PLURAL_FORMS, language="fr") + '\nmsgid "Click \\"Save\\""\nmsgstr ""\n')
+    po_file = PoFile.open(path)
+
+    escaped = po_file.find_problem('Click "Save"', 'Cliquez sur \\"Enregistrer\\"')
+    translate_file(po_file, ScriptedClient([{"0": 'Cliquez sur « Enregistrer » et "OK"'}]), "fr", cleanup=False)
+
+    assert "without escaping them" in po_file.instructions
+    assert escaped == "escaped quotes"
+    assert polib.pofile(str(path)).find('Click "Save"').msgstr == 'Cliquez sur « Enregistrer » et "OK"'

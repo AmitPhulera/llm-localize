@@ -35,6 +35,11 @@ class PoFile(TranslationFile):
     name = "po"
     # Not .pot: templates hold the source strings and must stay untranslated
     extensions = (".po",)
+    # Messages are sent as their text, and polib escapes quotes and backslashes when it saves
+    instructions = (
+        "Messages come from a gettext PO file. Write quotes and backslashes plainly, as in the source, "
+        "without escaping them: they are escaped when the file is saved."
+    )
 
     def __init__(self, path, language=None):
         super().__init__(path)
@@ -115,6 +120,12 @@ class PoFile(TranslationFile):
                 context=context,
             )
         return TranslationUnit(key=key, source=entry.msgid, context=context)
+
+    def find_problem(self, source, translation):
+        # Escaped quotes the source lacks would be saved, and shown, with their backslashes
+        if translation.count('\\"') > source.count('\\"'):
+            return "escaped quotes"
+        return super().find_problem(source, translation)
 
     def apply(self, key, translation):
         entry = self._entries[key]
