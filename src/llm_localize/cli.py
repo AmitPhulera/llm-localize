@@ -1,6 +1,7 @@
 """``llm-localize`` command line tool, usable without Django."""
 from llm_localize.formats import FORMATS
-from llm_localize.providers import PROVIDERS
+from llm_localize.providers import PROVIDERS, get_client
+from llm_localize.runner import translate_files
 
 
 def add_translation_arguments(parser, defaults):
@@ -34,3 +35,23 @@ DEFAULTS = {
     'MODEL': None,
     'EXTRA_INSTRUCTIONS': '',
 }
+
+
+def run(options, jobs, api_key=None, model_params=None):
+    """Build the client from parsed options and translate the jobs."""
+    client = None
+    if not options.cleanup_only:
+        client = get_client(
+            options.provider,
+            api_key=options.api_key or api_key,
+            model=options.model,
+            model_params=model_params,
+        )
+    return translate_files(
+        jobs, client,
+        source_language=options.source_lang,
+        extra_instructions=options.instructions,
+        format=options.format,
+        cleanup=not options.no_cleanup,
+        cleanup_only=options.cleanup_only,
+    )
