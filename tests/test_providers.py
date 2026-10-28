@@ -1,5 +1,7 @@
+import http.server
 import io
 import json
+import threading
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -330,3 +332,34 @@ def test_client_without_default_model():
 
     with pytest.raises(LLMError, match="no default model"):
         NoDefault(api_key="k")
+
+
+def test_redirects_are_not_followed():
+    """A redirect fails the request, so the API key never reaches another host."""
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append((self.path, self.headers.get("Authorization")))
+            self.send_response(302)
+            self.send_header("Location", "/elsewhere")
+            self.end_headers()
+
+        do_GET = do_POST
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = OpenAIClient(api_key="secret", api_base=f"http://127.0.0.1:{server.server_port}/v1",
+                              max_retries=0)
+        with pytest.raises(LLMError, match="HTTP 302"):
+            client.complete("system", "user")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert seen == [("/v1/chat/completions", "Bearer secret")]

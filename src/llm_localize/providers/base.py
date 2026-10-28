@@ -23,8 +23,19 @@ MAX_RETRY_DELAY = 60
 MAX_RETRY_AFTER = 300
 
 
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Fail on redirects instead of following them: urllib would send the API key along."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirects)
+
+
 def urlopen(request, timeout):
-    return urllib.request.urlopen(request, timeout=timeout)
+    """Like ``urllib.request.urlopen``, but a redirect raises ``HTTPError``."""
+    return _opener.open(request, timeout=timeout)
 
 
 class LLMError(Exception):
