@@ -8,6 +8,7 @@ from llm_localize.formats.po.cleanup import (
     clear_translations_at_lines,
     entry_has_control_chars,
     extract_errored_line_numbers,
+    remove_errored_translations,
     run_msgfmt,
 )
 
@@ -79,6 +80,60 @@ def test_clear_translations_at_lines(po_path):
 
     assert count == 2
     assert [entry.msgstr for entry in polib.pofile(path)] == ["a", "", ""]
+
+
+def test_remove_errored_translations_clears_plural_forms(po_path):
+    path = po_path(
+        'msgid ""\n'
+        'msgstr ""\n'
+        '"Plural-Forms: nplurals=2; plural=(n != 1);\\n"\n\n'
+        '#, python-brace-format\n'
+        'msgid "{count} domain membership"\n'
+        'msgid_plural "{count} domain memberships"\n'
+        'msgstr[0] "Actualizar Membresia de Ubicacion"\n'
+        'msgstr[1] "Actualizar Membresia de Ubicacion"\n'
+    )
+    assert extract_errored_line_numbers(run_msgfmt(path).stderr), "file should be uncompilable before cleanup"
+
+    assert remove_errored_translations(path) == 1
+
+    entry = polib.pofile(path).find("{count} domain membership")
+    assert entry.msgstr_plural == {0: "", 1: ""}
+    assert not extract_errored_line_numbers(run_msgfmt(path).stderr)
+
+
+def test_remove_errored_translations_clears_control_chars(po_path):
+    path = po_path(
+        'msgid ""\n'
+        'msgstr ""\n'
+        '"Content-Type: text/plain; charset=UTF-8\\n"\n'
+        '"Plural-Forms: nplurals=2; plural=(n > 1);\\n"\n\n'
+        'msgid "Save — now"\n'
+        'msgstr "Enregistrer \x14 maintenant"\n\n'
+        'msgid "Cancel — later"\n'
+        'msgstr "Annuler — plus tard"\n\n'
+        'msgid "{count} page — done"\n'
+        'msgid_plural "{count} pages — done"\n'
+        'msgstr[0] "{count} page \x14 termin\u00e9e"\n'
+        'msgstr[1] "{count} pages — termin\u00e9es"\n'
+    )
+    assert not extract_errored_line_numbers(run_msgfmt(path).stderr), "msgfmt alone misses control characters"
+
+    assert remove_errored_translations(path) == 2
+
+    updated = polib.pofile(path)
+    assert updated.find("Save — now").msgstr == ""
+    assert updated.find("Cancel — later").msgstr == "Annuler — plus tard"
+    assert updated.find("{count} page — done").msgstr_plural == {0: "", 1: ""}
+
+
+def test_remove_errored_translations_without_msgfmt(po_path):
+    path = po_path('msgid "Save — now"\nmsgstr "Guardar \x14 ahora"\n')
+
+    with patch("shutil.which", return_value=None), patch("subprocess.run") as run:
+        assert remove_errored_translations(path) == 1
+
+    run.assert_not_called()
 
 
 @pytest.mark.parametrize("entry, expected", [

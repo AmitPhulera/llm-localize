@@ -1,4 +1,8 @@
-"""Spot and blank PO translations that would break ``compilemessages``."""
+"""Blank translations that would break ``compilemessages`` so the next run retranslates them.
+
+Uses gettext's ``msgfmt --check`` when it is installed, and always clears
+translations with control characters that ``msgfmt`` accepts.
+"""
 import bisect
 import logging
 import os
@@ -23,6 +27,40 @@ def entry_has_control_chars(entry):
         source = entry.msgid + entry.msgid_plural
         return any(has_control_chars(source, msgstr) for msgstr in entry.msgstr_plural.values())
     return has_control_chars(entry.msgid, entry.msgstr)
+
+
+def remove_errored_translations(file_path):
+    """Blank translations with control characters or ``msgfmt`` errors and return how many were cleared."""
+    count = remove_control_char_translations(file_path)
+    if not shutil.which('msgfmt'):
+        logger.warning("msgfmt not found; skipping the msgfmt check of %s. Install gettext to enable it.",
+                       file_path)
+        return count
+    result = run_msgfmt(file_path)
+    line_num_error_map = extract_errored_line_numbers(result.stderr, file_path)
+    if line_num_error_map:
+        count += clear_translations_at_lines(file_path, line_num_error_map)
+    if not line_num_error_map:
+        logger.info("No msgfmt errors in %s", file_path)
+    return count
+
+
+def remove_control_char_translations(file_path):
+    """Clear msgstrs with control characters that aren't in the msgid.
+
+    The hope is that the LLM returns a clean translation in the next run.
+    """
+    po = polib.pofile(file_path)
+    count = 0
+    for entry in po:
+        if entry_has_control_chars(entry):
+            logger.info("Removing translation with control characters for msgid: %s", entry.msgid)
+            _clear(entry)
+            count += 1
+    if count:
+        save_po(po)
+        logger.info("Removed %d translations with control characters from %s", count, file_path)
+    return count
 
 
 def save_po(po):
