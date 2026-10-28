@@ -3,7 +3,7 @@ import json
 import threading
 
 from llm_localize.formats.base import TranslationFile
-from llm_localize.providers.base import LLMClient
+from llm_localize.providers.base import FatalError, LLMClient
 
 
 class FakeClient(LLMClient):
@@ -65,6 +65,15 @@ class ScriptedClient(LLMClient):
         if isinstance(reply, Exception):
             raise reply
         return json.dumps(reply) if isinstance(reply, dict) else reply
+
+
+class FatalOnSecondCallClient(FakeClient):
+    """Translates the first batch, then fails as if the API key were revoked."""
+
+    def call_llm(self, system_prompt, user_message):
+        if self.calls:
+            raise FatalError("HTTP 401: invalid key", status=401)
+        return super().call_llm(system_prompt, user_message)
 
 
 class DictFile(TranslationFile):

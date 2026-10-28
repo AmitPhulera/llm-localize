@@ -2,6 +2,139 @@
 
 Fill in missing translations in your i18n files with an LLM, without breaking them.
 
+LLMs translate well but are careless with the parts of a message that aren't prose. `llm-localize` sends only untranslated messages, then checks each translation before it is written:
+
+- **Placeholders** (`%s`, `%(name)s`, `{name}`) must match the source exactly. Named and numbered ones may move; unnamed ones (`%s`, `{}`) must stay in order.
+- **HTML tags** must keep the same names, order and attributes. Only text attributes (`title`, `alt`, `placeholder`, `aria-label`, `aria-description`, and `value` on an `<input>` button) may change value, and the content of `<script>` and `<style>` must stay as it is. Numbered tags, like react-i18next's `<1>…</1>`, must all be kept, in any order.
+- **URLs** (`http`, `https`, `ftp`, `mailto:`, `tel:`, `www.`) and email addresses must be unchanged, and none may be added.
+- **Control characters** that the model invented (e.g. `—` corrupted into `\x14`) are rejected.
+- **Plurals** are translated once per plural form of the target language. The model is told which numbers each form covers ("used when n is 2, 3, 4, 22, …"), worked out from the file's `Plural-Forms` header.
+- **Format checks.** PO files are run through `msgfmt --check` afterwards, and any entry it rejects is blanked. Errors no translation caused, like a message defined twice, stop with an error instead. A PO file without a real charset, or in another one, is saved as UTF-8, so any translation fits.
+
+A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
+
+It runs as a command line tool or from Python. The engine is format-agnostic. gettext PO files ship today, and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+
+## Install
+
+```bash
+pip install llm-localize
+```
+
+The only dependency is polib. LLM APIs are called over plain HTTP with the standard library, so no provider SDK is needed. Install gettext if you want the `msgfmt` check (`brew install gettext`, `apt install gettext`).
+
+## Command line
+
+```bash
+export LLM_LOCALIZE_API_KEY=...
+llm-localize locale/fr/LC_MESSAGES/messages.po
+llm-localize strings.po --lang pt-br --model gpt-4o
+```
+
+The target language comes from `--lang`, the PO `Language` header, or the `<locale>/LC_MESSAGES/` directory, in that order. A file whose `Language` header names another language is refused, since its `Plural-Forms` are that language's; a file without one gets `--lang` as its `Language`. This works with any project that uses gettext PO files, e.g. Flask-Babel's `translations/<locale>/LC_MESSAGES/messages.po`. Run `llm-localize --help` for every option.
+
+## LLM providers
+
+Three API styles are built in, plus a preset for Grok. Each works with the vendor's own API and with any server that copies that API. To use another server, set its base URL with the env var below.
+
+| `PROVIDER`  | API               | Default model       | API key env var     | Base URL env var     | Default base URL                            |
+| ----------- | ----------------- | ------------------- | ------------------- | -------------------- | ------------------------------------------- |
+| `openai`    | Chat Completions  | `gpt-6-luna`        | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`    | `https://api.openai.com/v1`                 |
+| `anthropic` | Messages          | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com`                 |
+| `gemini`    | `generateContent` | `gemini-3.8-flash`  | `GEMINI_API_KEY`    | `GEMINI_BASE_URL`    | `https://generativelanguage.googleapis.com` |
+| `grok`      | Chat Completions  | `grok-4.7`          | `XAI_API_KEY`       | `XAI_BASE_URL`       | `https://api.x.ai/v1`                       |
+
+As each vendor's tooling does, an `openai` or `grok` base URL includes the `/v1` and the others don't.
+
+The API key is read, in order, from `--api-key`, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different base URL, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server.
+
+The API key is required for the vendor's own API, and optional anywhere else, so local servers work without one.
+
+Notes by provider:
+
+- **`openai`** asks for a `json_schema` response. For a server that doesn't support it, set `MODEL_PARAMS = {"response_format": {"type": "json_object"}}`, or `{"response_format": None}` to send none. Requests use `temperature: 0.2`.
+- **`anthropic`** sends API version `2026-10-21`, which rejects sampling parameters, so it sends no `temperature`. On Anthropic's own API it also turns on server-side refusal fallbacks (`fallbacks: "default"`), so a request a safety classifier declines is retried on another model. They're a beta feature: if the API stops accepting it, requests go on without it, with a warning. A request that is still declined fails that batch, and the batch is retried on the next run.
+- **`gemini`** asks for `application/json` and leaves temperature at the model's default, which Google recommends for Gemini 3 models.
+- **`grok`** sends the same requests as `openai`, which xAI's API accepts.
+
+`MODEL_PARAMS` are merged into the request body, with dict values merged one level deep. Use them for anything provider-specific, e.g. `{"output_config": {"effort": "low"}}` for Claude, or `{"generationConfig": {"temperature": 0.2}}` for Gemini.
+
+Rate limits (429), overload (500/502/503/504/529), timeouts and connection failures are retried up to 5 times, waiting as long as the server's `Retry-After` asks (up to 5 minutes), or otherwise 1–2, 2–4, 4–8, 8–16 and 16–32 seconds. A reply that reaches the model's output token limit fails its batch with a message to use a smaller batch size. Authentication, billing, permission and not-found errors (401/402/403/404), such as a wrong API key or model name, stop the run at once, since every request would fail the same way.
+
+## Python API
+
+The command line flow is available from Python:
+
+```python
+from llm_localize.engine import translate_file
+from llm_localize.formats import open_file
+from llm_localize.providers import get_client
+
+result = translate_file(open_file("messages.po"), get_client("openai"), "fr")
+print(result.translated, result.failed_batches)
+```
+
+## Output and errors
+
+Each file gets a summary that adds up, listing only what happened:
+
+```
+locale/fr/LC_MESSAGES/django.po (fr): translated 112 of 130
+  rejected 6: placeholders 4, HTML tags 2
+  1 of 3 batches failed:
+    HTTP 400 from https://api.openai.com/v1/chat/completions: context length exceeded
+  cleared 2 broken translations
+```
+
+- **Rejected** translations failed a check, or were missing from the reply. They stay untranslated and are retried on the next run.
+- **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count.
+- **Cleared** translations were already saved but break the file, e.g. `msgfmt --check` errors. They're blanked so the next run retranslates them. If `msgfmt` still rejects the file for another reason, such as a duplicate message (fix it with `msguniq`), the run stops with its errors.
+
+Warnings and errors go to stderr, and the summary to stdout.
+
+The command exits with an error if any batch failed or the run was stopped, but not for rejections, which are expected now and then. Every finished batch is saved as it completes, so rerunning only sends what's still missing.
+
+## How it works
+
+1. A `TranslationFile` lists its untranslated messages as `TranslationUnit` objects (source text, optional plural text and forms, optional context).
+2. The engine batches the units and sends each batch to the LLM as a flat JSON object. Batches run in parallel threads.
+3. The engine parses each reply and validates every translation. It then writes the valid ones back and saves the file, one batch at a time under a lock, so finished work survives an interrupted run.
+4. The format's `cleanup()` blanks anything that is still broken. For PO files, that is control characters and `msgfmt --check` errors.
+
+## Adding a format
+
+Subclass `TranslationFile`:
+
+```python
+from llm_localize.formats.base import TranslationFile
+from llm_localize.units import TranslationUnit
+
+class JsonFile(TranslationFile):
+    name = "json"
+    extensions = (".json",)
+    instructions = "Messages use ICU MessageFormat."   # added to the prompt
+
+    def untranslated_units(self):
+        return [TranslationUnit(key=k, source=v["source"])
+                for k, v in self.data.items() if not v.get("translation")]
+
+    def apply(self, key, translation):
+        self.data[key]["translation"] = translation
+
+    def save(self):
+        ...
+```
+
+Use it with `--format myproject.formats.JsonFile`. Override `find_problem(source, translation)` to change the checks: it returns a short reason, which is counted in the summary, or `None` if the translation is fine, and `cleanup()` to add a format-specific check after translating.
+
+## Adding a provider
+
+Most LLM servers copy one of the three built-in APIs, so try pointing a built-in provider at them first. For anything else, subclass `llm_localize.providers.base.HttpClient` and implement `call_llm(system_prompt, user_message)`, which returns the model's text reply. Use `self.post_json(url, payload, headers)` for the request. It raises `TransientError` for responses worth retrying, `FatalError` for ones that stop the run, and `LLMError` (with the API's message) for anything else. For a non-HTTP backend, subclass `LLMClient` instead and raise those errors yourself. Select your class with `--provider myproject.llm.MyClient`.
+
+## Privacy and cost
+
+Your source strings and their context comments are sent to the LLM provider. Only untranslated, fuzzy or broken messages are sent, so a run after the first one costs little.
+
 ## Development
 
 ```bash

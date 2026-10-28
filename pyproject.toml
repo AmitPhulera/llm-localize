@@ -30,6 +30,9 @@ classifiers = [
     "Topic :: Software Development :: Localization",
 ]
 
+[project.scripts]
+llm-localize = "llm_localize.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/amitphulera/llm-localize"
 Issues = "https://github.com/amitphulera/llm-localize/issues"

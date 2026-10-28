@@ -1,7 +1,17 @@
 """``llm-localize`` command line tool, usable without Django."""
+import argparse
+import sys
+
 from llm_localize.formats import FORMATS
 from llm_localize.providers import PROVIDERS, get_client
-from llm_localize.runner import translate_files
+from llm_localize.providers.base import FatalError, LLMError
+from llm_localize.runner import summarize, translate_files
+
+
+def error_message(error):
+    if isinstance(error, FatalError):
+        return f"{error}\nStopped. Batches that finished before this were saved."
+    return str(error)
 
 
 def add_translation_arguments(parser, defaults):
@@ -55,3 +65,27 @@ def run(options, jobs, api_key=None, model_params=None):
         cleanup=not options.no_cleanup,
         cleanup_only=options.cleanup_only,
     )
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog='llm-localize',
+        description="Translate untranslated messages in translation files with an LLM.",
+    )
+    parser.add_argument('paths', nargs='+', help="Translation files to translate")
+    parser.add_argument('--lang', help="Target language (default: the language each file declares)")
+    add_translation_arguments(parser, DEFAULTS)
+    options = parser.parse_args(argv)
+    try:
+        results = run(options, [(path, options.lang) for path in options.paths])
+    except (LLMError, ValueError, OSError) as e:
+        for result in getattr(e, "results", []):
+            print(summarize(result))
+        parser.exit(2, f"llm-localize: error: {error_message(e)}\n")
+    for result in results:
+        print(summarize(result))
+    return 1 if any(result.failed_batches for result in results) else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
