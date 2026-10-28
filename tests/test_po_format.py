@@ -120,6 +120,20 @@ class TestLanguage:
 
 class TestApply:
 
+    def test_removes_fuzzy_flag(self, write_po):
+        po_file = PoFile(write_po(po_header(ENGLISH_PLURAL_FORMS) + """
+#, fuzzy, python-format
+msgid "Fuzzy %s"
+msgstr "Old %s"
+"""))
+        key = po_file.untranslated_units()[0].key
+
+        po_file.apply(key, "New %s")
+        po_file.save()
+
+        entry = polib.pofile(po_file.path).find("Fuzzy %s")
+        assert (entry.msgstr, entry.fuzzy, entry.flags) == ("New %s", False, ["python-format"])
+
     def test_plural_replaces_every_form(self, write_po):
         po_file = PoFile(write_po(SPANISH_PLURAL_PO))
         key = po_file.untranslated_units()[1].key

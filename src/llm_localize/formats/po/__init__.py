@@ -103,6 +103,9 @@ class PoFile(TranslationFile):
             entry.msgstr_plural = dict(translation)
         else:
             entry.msgstr = translation
+        if entry.fuzzy:
+            # no longer fuzzy, translated by AI
+            entry.flags.remove("fuzzy")
 
     def save(self):
         save_po(self.po)
