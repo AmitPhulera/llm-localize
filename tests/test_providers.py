@@ -476,10 +476,42 @@ class TestGemini:
 
         assert http.payload["generationConfig"] == {"responseMimeType": "application/json", "temperature": 0.2}
 
+    def test_a_wrong_api_key_stops_the_run(self, fake_http):
+        # What the API answers to a wrong key, abridged
+        body = {"error": {
+            "code": 400, "message": "API key not valid. Please pass a valid API key.",
+            "status": "INVALID_ARGUMENT",
+            "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_INVALID"}]}}
+        fake_http(http_error(400, json.dumps(body).encode()))
+
+        with pytest.raises(FatalError, match="API key not valid") as error:
+            GeminiClient(api_key="wrong").complete("system", "user")
+        assert error.value.status == 400
+
+    def test_other_bad_requests_fail_only_the_batch(self, fake_http):
+        fake_http(http_error(400, b'{"error": {"status": "INVALID_ARGUMENT", "message": "bad schema"}}'))
+
+        with pytest.raises(LLMError) as error:
+            GeminiClient(api_key="k").complete("system", "user")
+        assert not isinstance(error.value, FatalError)
+
     def test_blocked_prompt(self, fake_http):
         fake_http({"promptFeedback": {"blockReason": "SAFETY"}})
 
         with pytest.raises(LLMError, match="SAFETY"):
+            GeminiClient(api_key="k").complete("system", "user")
+
+    @pytest.mark.parametrize("parts", [(), ({"text": '{"0": "Ho'},)])
+    def test_output_limit(self, fake_http, parts):
+        fake_http(gemini_reply(*parts, finish_reason="MAX_TOKENS"))
+
+        with pytest.raises(LLMError, match="output token limit"):
+            GeminiClient(api_key="k").complete("system", "user")
+
+    def test_empty_candidate(self, fake_http):
+        fake_http(gemini_reply(finish_reason="RECITATION"))
+
+        with pytest.raises(LLMError, match="RECITATION"):
             GeminiClient(api_key="k").complete("system", "user")
 
 
