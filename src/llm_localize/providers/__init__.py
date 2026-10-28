@@ -15,6 +15,7 @@ PROVIDERS = {
     'openai': 'llm_localize.providers.openai.OpenAIClient',
     'anthropic': 'llm_localize.providers.anthropic.AnthropicClient',
     'gemini': 'llm_localize.providers.gemini.GeminiClient',
+    'grok': 'llm_localize.providers.grok.GrokClient',
 }
 
 
