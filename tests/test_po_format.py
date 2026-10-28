@@ -182,3 +182,23 @@ class TestSave:
         po_file.save()
 
         assert path.stat().st_mode & 0o777 == 0o640
+
+
+PLURAL_ENTRIES = """
+msgid "Hello"
+msgstr ""
+
+msgid "%(count)s file"
+msgid_plural "%(count)s files"
+msgstr[0] ""
+msgstr[1] ""
+"""
+
+
+def test_plurals_are_skipped_without_a_plural_forms_header(write_po, caplog):
+    path = write_po('msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n' + PLURAL_ENTRIES)
+
+    units = PoFile(path).untranslated_units()
+
+    assert [unit.source for unit in units] == ["Hello"]
+    assert "1 plural messages skipped: the file has no Plural-Forms header" in caplog.text

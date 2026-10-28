@@ -1,4 +1,6 @@
 """gettext PO files."""
+import logging
+import re
 from functools import cached_property
 from pathlib import Path
 
@@ -10,6 +12,11 @@ from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, 
 from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
+
+# A Plural-Forms header with a real rule, not missing or the template's "nplurals=INTEGER"
+PLURAL_RULE_RE = re.compile(r"nplurals\s*=\s*\d+\s*;\s*plural\s*=")
+
+logger = logging.getLogger(__name__)
 
 
 class PoFile(TranslationFile):
@@ -56,12 +63,19 @@ class PoFile(TranslationFile):
         return {str(index): entry for index, entry in enumerate(self.po)}
 
     def untranslated_units(self):
-        return [
-            self._unit(key, entry)
-            for key, entry in self._entries.items()
+        entries = [
+            (key, entry) for key, entry in self._entries.items()
             if not entry.obsolete
             and (entry.fuzzy or not self._is_translated(entry) or entry_has_control_chars(entry))
         ]
+        if not PLURAL_RULE_RE.search(self._plural_forms_header):
+            # Without a plural rule msgfmt rejects plural translations
+            plurals = [key for key, entry in entries if entry.msgid_plural]
+            if plurals:
+                logger.warning("%s: %d plural messages skipped: the file has no Plural-Forms header; add it",
+                               self.path, len(plurals))
+            entries = [(key, entry) for key, entry in entries if not entry.msgid_plural]
+        return [self._unit(key, entry) for key, entry in entries]
 
     def _is_translated(self, entry):
         if entry.msgid_plural:
