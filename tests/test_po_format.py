@@ -1,7 +1,7 @@
 import polib
 import pytest
 
-from llm_localize.formats.po import PoFile
+from llm_localize.formats.po import PoFile, find_po_files
 from llm_localize.formats.po.cleanup import run_msgfmt
 
 from .test_plurals import ENGLISH_PLURAL_FORMS, SPANISH_PLURAL_FORMS, UKRAINIAN_PLURAL_FORMS
@@ -242,3 +242,18 @@ def test_plurals_are_skipped_without_a_plural_forms_header(write_po, caplog):
 
     assert [unit.source for unit in units] == ["Hello"]
     assert "1 plural messages skipped: the file has no Plural-Forms header" in caplog.text
+
+
+def test_find_po_files(tmp_path, write_po):
+    write_po("", "locale/es/LC_MESSAGES/django.po")
+    write_po("", "locale/pt_BR/LC_MESSAGES/djangojs.po")
+    write_po("", "locale/fr/LC_MESSAGES/other.po")
+    write_po("", "locale/nl_NL-x-informal/LC_MESSAGES/django.po")
+
+    found = list(find_po_files([tmp_path / "locale"], ["es", "pt-br", "fr", "de", "nl_NL-x-informal"]))
+
+    assert [(path.relative_to(tmp_path).as_posix(), lang) for path, lang in found] == [
+        ("locale/es/LC_MESSAGES/django.po", "es"),
+        ("locale/pt_BR/LC_MESSAGES/djangojs.po", "pt-br"),
+        ("locale/nl_NL-x-informal/LC_MESSAGES/django.po", "nl_NL-x-informal"),
+    ]

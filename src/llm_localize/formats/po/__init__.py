@@ -10,6 +10,7 @@ import polib
 from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, remove_errored_translations, save_po
 from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
+from llm_localize.languages import to_locale
 from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
@@ -150,3 +151,13 @@ def _describe_counts(counts):
         return "not used for whole numbers (e.g. fractions); use the general plural"
     examples = ", ".join(str(n) for n in counts[:8])
     return f"used when n is {examples}{', ...' if len(counts) > 8 else ''}"
+
+
+def find_po_files(locale_dirs, languages, domains=("django", "djangojs")):
+    """Yield ``(path, language)`` for each existing ``<dir>/<locale>/LC_MESSAGES/<domain>.po``."""
+    for locale_dir in locale_dirs:
+        for language in languages:
+            for domain in domains:
+                path = Path(locale_dir) / to_locale(language) / LC_MESSAGES / f"{domain}.po"
+                if path.exists():
+                    yield path, language

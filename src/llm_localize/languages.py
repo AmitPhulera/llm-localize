@@ -133,3 +133,24 @@ def language_name(lang_code):
     """
     code = lang_code.lower().replace("_", "-")
     return LANGUAGE_NAMES.get(code) or LANGUAGE_NAMES.get(code.split("-")[0]) or lang_code
+
+
+def to_locale(language):
+    """Turn a language code into a locale directory name, like Django's ``to_locale``.
+
+    Locale names pass through unchanged.
+
+    >>> to_locale("pt-br"), to_locale("zh-hans"), to_locale("fra"), to_locale("pt_BR")
+    ('pt_BR', 'zh_Hans', 'fra', 'pt_BR')
+    >>> to_locale("nl_NL-x-informal")
+    'nl_NL-x-informal'
+    """
+    if "_" in language:
+        return language
+    code = language
+    language, _, country = language.lower().partition("-")
+    if not country:
+        return code[:3].lower() + code[3:]
+    country, _, rest = country.partition("-")
+    country = country.title() if len(country) > 2 else country.upper()
+    return f"{language}_{country}" + (f"-{rest}" if rest else "")
