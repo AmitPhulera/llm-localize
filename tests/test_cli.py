@@ -1,4 +1,5 @@
 import io
+import json
 import urllib.error
 from collections import Counter
 from unittest.mock import patch
@@ -67,6 +68,23 @@ def test_fatal_error(po_path, capsys):
     assert exit_info.value.code == 2
     err = capsys.readouterr().err
     assert "HTTP 401" in err and "invalid key" in err and "Stopped" in err
+
+
+def test_compatible_server_without_api_key(po_path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    requests = []
+
+    def urlopen(request, timeout):
+        requests.append(request)
+        reply = {"choices": [{"message": {"content": json.dumps({"0": "Hola"})}}]}
+        return io.BytesIO(json.dumps(reply).encode())
+
+    with patch("llm_localize.providers.base.urlopen", urlopen):
+        exit_code = main([str(po_path), "--api-base", "http://localhost:11434/v1", "--model", "llama"])
+
+    assert exit_code == 0
+    assert requests[0].full_url == "http://localhost:11434/v1/chat/completions"
+    assert polib.pofile(str(po_path)).find("Hello").msgstr == "Hola"
 
 
 def test_cleanup_only_needs_no_api_key(po_path, monkeypatch):

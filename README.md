@@ -35,7 +35,7 @@ The target language comes from `--lang`, the PO `Language` header, or the `<loca
 
 ## LLM providers
 
-Three API styles are built in, plus a preset for Grok. Each works with the vendor's own API and with any server that copies that API. To use another server, set its base URL with the env var below.
+Three API styles are built in, plus a preset for Grok. Each works with the vendor's own API and with any server that copies that API. To use another server, set its base URL with `--api-base` or the env var below.
 
 | `PROVIDER`  | API               | Default model       | API key env var     | Base URL env var     | Default base URL                            |
 | ----------- | ----------------- | ------------------- | ------------------- | -------------------- | ------------------------------------------- |
@@ -46,9 +46,20 @@ Three API styles are built in, plus a preset for Grok. Each works with the vendo
 
 As each vendor's tooling does, an `openai` or `grok` base URL includes the `/v1` and the others don't.
 
-The API key is read, in order, from `--api-key`, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different base URL, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server.
+The API key is read, in order, from `--api-key`, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different `--api-base`, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server.
 
-The API key is required for the vendor's own API, and optional anywhere else, so local servers work without one.
+The API key is required for the vendor's own API, and optional anywhere else, so local servers work without one:
+
+```bash
+# Ollama, vLLM, LM Studio, or any OpenAI-compatible server
+llm-localize messages.po --api-base http://localhost:11434/v1 --model qwen3
+
+# A hosted OpenAI-compatible gateway
+llm-localize messages.po --api-base https://openrouter.ai/api/v1 --model <model-id> --api-key ...
+
+# Claude, through a company proxy
+llm-localize messages.po --provider anthropic --api-base https://llm-proxy.example.com
+```
 
 Notes by provider:
 
@@ -129,7 +140,7 @@ Use it with `--format myproject.formats.JsonFile`. Override `find_problem(source
 
 ## Adding a provider
 
-Most LLM servers copy one of the three built-in APIs, so try pointing a built-in provider at them first. For anything else, subclass `llm_localize.providers.base.HttpClient` and implement `call_llm(system_prompt, user_message)`, which returns the model's text reply. Use `self.post_json(url, payload, headers)` for the request. It raises `TransientError` for responses worth retrying, `FatalError` for ones that stop the run, and `LLMError` (with the API's message) for anything else. For a non-HTTP backend, subclass `LLMClient` instead and raise those errors yourself. Select your class with `--provider myproject.llm.MyClient`.
+Most LLM servers copy one of the three built-in APIs, so try `--api-base` first. For anything else, subclass `llm_localize.providers.base.HttpClient` and implement `call_llm(system_prompt, user_message)`, which returns the model's text reply. Use `self.post_json(url, payload, headers)` for the request. It raises `TransientError` for responses worth retrying, `FatalError` for ones that stop the run, and `LLMError` (with the API's message) for anything else. For a non-HTTP backend, subclass `LLMClient` instead and raise those errors yourself. Select your class with `--provider myproject.llm.MyClient`.
 
 ## Privacy and cost
 

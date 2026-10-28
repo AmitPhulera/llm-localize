@@ -56,7 +56,11 @@ def add_translation_arguments(parser, defaults):
                         help="Model to use (default: the provider's default)")
     parser.add_argument('--api-key', default=None,
                         help="API key (default: the LLM_LOCALIZE_API_KEY environment variable, then the "
-                             "provider's own, e.g. OPENAI_API_KEY)")
+                             "provider's own, e.g. OPENAI_API_KEY). Optional when --api-base points at "
+                             "another host.")
+    parser.add_argument('--api-base', default=defaults['API_BASE'],
+                        help="Base URL of the API, for compatible or self-hosted servers "
+                             "(default: the provider's own API, or its *_BASE_URL environment variable)")
     parser.add_argument('--batch-size', type=positive_int, default=defaults['BATCH_SIZE'],
                         help="Messages per LLM request (default: %(default)s)")
     parser.add_argument('--workers', type=positive_int, default=defaults['WORKERS'],
@@ -75,6 +79,7 @@ DEFAULTS = {
     'FORMAT': None,
     'PROVIDER': 'openai',
     'MODEL': None,
+    'API_BASE': None,
     'BATCH_SIZE': 50,
     'WORKERS': 10,
     'EXTRA_INSTRUCTIONS': '',
@@ -85,11 +90,14 @@ def run(options, jobs, api_key=None, model_params=None):
     """Build the client from parsed options and translate the jobs."""
     client = None
     if not options.cleanup_only:
+        # Only HTTP clients take api_base, so custom clients needn't accept it
+        extra = {"api_base": options.api_base} if options.api_base else {}
         client = get_client(
             options.provider,
             api_key=options.api_key or api_key,
             model=options.model,
             model_params=model_params,
+            **extra,
         )
     return translate_files(
         jobs, client,
