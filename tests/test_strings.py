@@ -29,6 +29,19 @@ def test_repeated_and_blank_strings():
     assert json.loads(client.calls[0][1]) == {"0": "Hello"}
 
 
+@pytest.mark.parametrize("texts, message", [
+    (["Hello", None], "got NoneType at index 1"),
+    ([b"Hello"], "got bytes at index 0"),
+    ("Hello", "not a single string"),
+])
+def test_rejects_non_strings(texts, message):
+    client = FakeClient()
+
+    with pytest.raises(TypeError, match=message):
+        translator_with(client).translate(texts, "fr")
+    assert client.calls == []
+
+
 def test_nothing_to_translate_makes_no_calls():
     client = FakeClient()
 

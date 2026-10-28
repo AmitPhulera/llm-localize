@@ -27,7 +27,12 @@ class StringList(TranslationFile):
 
     def __init__(self, texts, context=""):
         super().__init__("<strings>")
+        if isinstance(texts, (str, bytes)):
+            raise TypeError("Pass a list of strings, not a single string")
         self.texts = list(texts)
+        for index, text in enumerate(self.texts):
+            if not isinstance(text, str):
+                raise TypeError(f"Can only translate strings, got {type(text).__name__} at index {index}")
         self.context = context
         self.translations = {}
 
