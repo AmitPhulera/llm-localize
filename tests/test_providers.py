@@ -286,6 +286,12 @@ class TestOpenAI:
 
         assert "response_format" not in http.payload
 
+    def test_output_limit(self, fake_http):
+        fake_http({"choices": [{"message": {"content": '{"0": "Ho'}, "finish_reason": "length"}]})
+
+        with pytest.raises(LLMError, match="output token limit"):
+            OpenAIClient(api_key="k").complete("system", "user")
+
     def test_no_auth_header_without_key(self, fake_http):
         http = fake_http(openai_reply("{}"))
 

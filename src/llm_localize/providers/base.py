@@ -86,6 +86,11 @@ def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, **b
             sleep(delay)
 
 
+def output_limit_error(model):
+    """Return the error for a reply the model stopped writing at its output token limit."""
+    return LLMError(f"{model} reached its output token limit before finishing the reply; use a smaller batch size")
+
+
 def retry_after(headers):
     """Return the wait in seconds that ``Retry-After`` (or ``retry-after-ms``) asks for, or None.
 

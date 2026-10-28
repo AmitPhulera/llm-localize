@@ -4,7 +4,7 @@ Works with OpenAI and the many servers that copy its API, such as
 OpenRouter, Groq, Together, Mistral, vLLM, LM Studio and Ollama: point
 ``api_base`` at the server's ``/v1`` URL.
 """
-from llm_localize.providers.base import HttpClient, LLMError, merge_params
+from llm_localize.providers.base import HttpClient, LLMError, merge_params, output_limit_error
 
 # These reject a non-default temperature unless reasoning is off.
 # Reasoning gave no measurable translation quality gain for the extra
@@ -61,4 +61,6 @@ class OpenAIClient(HttpClient):
         if not response.get("choices"):
             raise LLMError(f"Reply without choices from {self.api_base}: {str(response)[:200]}")
         choice = response["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise output_limit_error(self.model)
         return choice["message"]["content"]
