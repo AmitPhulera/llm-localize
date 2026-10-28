@@ -4,8 +4,12 @@ Units go to the model in batches as a flat JSON object keyed by position
 in the batch.
 """
 import json
+import re
 
 from llm_localize.languages import language_name
+
+# A line's first {, after spaces or a code fence's ```json, where a reply's object may start
+LINE_OPENING_BRACE_RE = re.compile(r"^[ \t]*(?:```\w*[ \t]*)?\{", re.MULTILINE)
 
 INPUT_DESCRIPTION = (
     "Input: a JSON object mapping a key to the message to translate, e.g. "
@@ -56,6 +60,47 @@ def format_batch(batch):
     # ensure_ascii=False sends text as-is: models echoing "—" escapes
     # tend to corrupt them into control characters like "\u0014"
     return json.dumps(payload, ensure_ascii=False)
+
+
+def extract_json_object(response):
+    r"""Return the JSON object in a model's reply, or None.
+
+    Models without a strict JSON mode sometimes wrap the object in a code
+    fence or a sentence, so this falls back to the outermost braces, and
+    then to an object starting a line.
+
+    >>> extract_json_object('{"0": "Hola"}')
+    {'0': 'Hola'}
+    >>> extract_json_object('Sure!\n```json\n{"0": "Hola"}\n```')
+    {'0': 'Hola'}
+    >>> extract_json_object('Here is {name} in Spanish:\n{"0": "Hola {name}"}')
+    {'0': 'Hola {name}'}
+    >>> extract_json_object('["Hola"]') is None
+    True
+    """
+    if not isinstance(response, str):
+        return None
+    decoder = json.JSONDecoder()
+
+    def candidates():
+        # Spaces around it, as json.loads allows them
+        yield response.strip(), 0
+        start, end = response.find("{"), response.rfind("}")
+        if 0 <= start < end:
+            yield response[start:end + 1], 0
+        # A brace in the words around it, like "I kept {name}", spoils that span: an object starting a line will do
+        for line in LINE_OPENING_BRACE_RE.finditer(response):
+            yield response, line.end() - 1
+
+    for text, index in candidates():
+        try:
+            output, end = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            continue
+        # The whole text, unless it's the fallback that reads an object and leaves what follows
+        if isinstance(output, dict) and (index or not text[end:].strip()):
+            return output
+    return None
 
 
 def make_batches(units, batch_size):
