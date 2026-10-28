@@ -12,7 +12,9 @@ license = "MIT AND BSD-3-Clause"
 license-files = ["LICENSE", "licenses/*"]
 authors = [{ name = "Amit Phulera" }]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "polib>=1.2",
+]
 keywords = ["i18n", "l10n", "gettext", "po", "translation", "llm", "openai", "claude", "gemini"]
 classifiers = [
     "Development Status :: 3 - Alpha",
