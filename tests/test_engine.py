@@ -10,8 +10,16 @@ from llm_localize.engine import (
     make_batches,
     parse_response,
 )
-from llm_localize.units import TranslationUnit
+from llm_localize.units import PluralForm, TranslationUnit
 from llm_localize.validation import find_problem
+
+SPANISH_FORMS = (
+    PluralForm(0, "used when n is 1", singular=True),
+    PluralForm(1, "used when n is 1000000, 2000000"),
+    PluralForm(2, "used when n is 0, 2, 3, ..."),
+)
+CASES = TranslationUnit(
+    key="cases", source="%(count)s case", plural_source="%(count)s cases", plural_forms=SPANISH_FORMS)
 
 
 def test_build_system_prompt():
@@ -22,6 +30,12 @@ def test_build_system_prompt():
     assert "Additional instructions: Be formal." in prompt
 
 
+def test_plural_reply_keys_are_the_form_keys_sent():
+    prompt = build_system_prompt("fr", "en")
+
+    assert '"forms": {"one":' in prompt and '"<key>:one"' in prompt and '"<key>:0"' not in prompt
+
+
 def test_build_system_prompt_unknown_language():
     assert "to some_lang_code" in build_system_prompt("some_lang_code")
 
@@ -30,11 +44,21 @@ def test_format_batch():
     batch = {
         "0": TranslationUnit(key="a", source="Hello"),
         "1": TranslationUnit(key="b", source="May", context="month"),
+        "2": CASES,
     }
 
     assert json.loads(format_batch(batch)) == {
         "0": "Hello",
         "1": {"text": "May", "context": "month"},
+        "2": {
+            "singular": "%(count)s case",
+            "plural": "%(count)s cases",
+            "forms": {
+                "0": "used when n is 1",
+                "1": "used when n is 1000000, 2000000",
+                "2": "used when n is 0, 2, 3, ...",
+            },
+        },
     }
 
 
