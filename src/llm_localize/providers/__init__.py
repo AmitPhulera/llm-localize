@@ -14,6 +14,7 @@ API_KEY_ENV_VAR = 'LLM_LOCALIZE_API_KEY'
 PROVIDERS = {
     'openai': 'llm_localize.providers.openai.OpenAIClient',
     'anthropic': 'llm_localize.providers.anthropic.AnthropicClient',
+    'gemini': 'llm_localize.providers.gemini.GeminiClient',
 }
 
 

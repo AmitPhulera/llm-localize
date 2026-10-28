@@ -16,6 +16,7 @@ from llm_localize.providers.base import (
     TransientError,
     retry_with_exponential_backoff,
 )
+from llm_localize.providers.gemini import GeminiClient
 from llm_localize.providers.openai import OpenAIClient
 
 from .fakes import FakeClient
@@ -68,7 +69,8 @@ def fake_http():
 
 @pytest.fixture(autouse=True)
 def no_provider_env(monkeypatch):
-    for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "FAKE_API_KEY"]:
+    for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "GEMINI_API_KEY",
+                 "GEMINI_BASE_URL", "FAKE_API_KEY"]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -77,6 +79,7 @@ class TestRegistry:
     @pytest.mark.parametrize("provider, client_class", [
         ("openai", OpenAIClient),
         ("anthropic", AnthropicClient),
+        ("gemini", GeminiClient),
         ("tests.fakes.FakeClient", FakeClient),
     ])
     def test_lookup(self, provider, client_class):
@@ -92,7 +95,7 @@ class TestRegistry:
 
         assert get_client("anthropic").api_key == "from-env"
 
-    @pytest.mark.parametrize("provider", ["openai", "anthropic", "tests.fakes.FakeClient"])
+    @pytest.mark.parametrize("provider", ["openai", "anthropic", "gemini", "tests.fakes.FakeClient"])
     def test_generic_api_key_env_var(self, monkeypatch, provider):
         monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
 
@@ -137,7 +140,7 @@ class TestRegistry:
         assert get_client("anthropic", api_key="explicit").api_key == "explicit"
 
     @pytest.mark.parametrize("provider, env_var", [
-        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
+        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("gemini", "GEMINI_API_KEY"),
     ])
     def test_api_key_required_for_default_host(self, provider, env_var):
         with pytest.raises(LLMError, match=f"LLM_LOCALIZE_API_KEY or {env_var}"):
@@ -149,7 +152,7 @@ class TestRegistry:
         assert (client.api_key, client.api_base) == (None, "http://localhost:11434/v1")
 
     @pytest.mark.parametrize("provider, env_var", [
-        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
+        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("gemini", "GEMINI_API_KEY"),
     ])
     def test_vendor_key_is_not_sent_to_other_hosts(self, monkeypatch, provider, env_var):
         monkeypatch.setenv(env_var, "vendor-key")
@@ -444,6 +447,40 @@ class TestAnthropic:
 
         with pytest.raises(LLMError, match="cyber"):
             AnthropicClient(api_key="k").complete("system", "user")
+
+
+def gemini_reply(*parts, finish_reason="STOP"):
+    return {"candidates": [{"content": {"role": "model", "parts": list(parts)}, "finishReason": finish_reason}]}
+
+
+class TestGemini:
+
+    def test_request(self, fake_http):
+        http = fake_http(gemini_reply({"text": "thinking...", "thought": True}, {"text": '{"0": "Hola"}'}))
+
+        assert GeminiClient(api_key="k").complete("system", "user") == '{"0": "Hola"}'
+
+        assert http.requests[0].full_url == (
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
+        assert http.header("x-goog-api-key") == "k"
+        assert http.payload == {
+            "systemInstruction": {"parts": [{"text": "system"}]},
+            "contents": [{"role": "user", "parts": [{"text": "user"}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+
+    def test_model_params_merge_into_generation_config(self, fake_http):
+        http = fake_http(gemini_reply({"text": "{}"}))
+
+        GeminiClient(api_key="k", model_params={"generationConfig": {"temperature": 0.2}}).complete("s", "u")
+
+        assert http.payload["generationConfig"] == {"responseMimeType": "application/json", "temperature": 0.2}
+
+    def test_blocked_prompt(self, fake_http):
+        fake_http({"promptFeedback": {"blockReason": "SAFETY"}})
+
+        with pytest.raises(LLMError, match="SAFETY"):
+            GeminiClient(api_key="k").complete("system", "user")
 
 
 class NoDefaultHost(HttpClient):
