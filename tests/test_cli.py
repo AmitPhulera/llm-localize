@@ -1,11 +1,14 @@
 import io
 import urllib.error
+from collections import Counter
 from unittest.mock import patch
 
 import polib
 import pytest
 
 from llm_localize.cli import main
+from llm_localize.engine import FileResult
+from llm_localize.runner import summarize
 
 PO = '''msgid ""
 msgstr ""
@@ -29,7 +32,29 @@ def test_translates(po_path, capsys):
 
     assert exit_code == 0
     assert polib.pofile(str(po_path)).find("Hello").msgstr == "T: Hello"
-    assert capsys.readouterr().out == f"{po_path} (es): translated 1 of 1\n"
+    out, err = capsys.readouterr()
+    assert out == f"{po_path} (es): translated 1 of 1\n"
+    assert "1/1 batches done" in err
+
+
+def test_the_summary_lists_the_commonest_errors():
+    errors = Counter({f"HTTP 400: bad request {n}": 1 for n in range(7)})
+    errors["HTTP 503: busy"] = 3
+    result = FileResult(path="fr.po", language="fr", untranslated=10, translated=0, batches=10, failed_batches=10,
+                        errors=errors)
+
+    lines = summarize(result).splitlines()
+
+    assert lines[2] == "    HTTP 503: busy (3 batches)"
+    assert lines[-1] == "    and 3 other errors (3 batches)"
+    assert len(lines) == 8
+
+
+def test_quiet_only_prints_summary(po_path, capsys):
+    main([str(po_path), "--provider", "tests.fakes.FakeClient", "--api-key", "k", "-q"])
+
+    out, err = capsys.readouterr()
+    assert (out, err) == (f"{po_path} (es): translated 1 of 1\n", "")
 
 
 def test_fatal_error(po_path, capsys):
@@ -49,6 +74,21 @@ def test_cleanup_only_needs_no_api_key(po_path, monkeypatch):
 
     assert main([str(po_path), "--cleanup-only"]) == 0
     assert polib.pofile(str(po_path)).find("Hello").msgstr == ""
+
+
+def test_failed_batches_exit_nonzero(po_path, capsys):
+    assert main([str(po_path), "--provider", "tests.fakes.FailingClient", "--api-key", "k"]) == 1
+
+    out, err = capsys.readouterr()
+    assert "1 of 1 batches failed:\n    RuntimeError: boom" in out
+    assert "batch 1 failed: RuntimeError: boom" in err
+    assert "Traceback" not in err
+
+
+def test_verbose_shows_tracebacks(po_path, capsys):
+    main([str(po_path), "--provider", "tests.fakes.FailingClient", "--api-key", "k", "-v"])
+
+    assert "Traceback" in capsys.readouterr().err
 
 
 def test_missing_api_key_is_a_clean_error(po_path, monkeypatch, capsys):

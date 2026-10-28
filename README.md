@@ -86,11 +86,11 @@ locale/fr/LC_MESSAGES/django.po (fr): translated 112 of 130
   cleared 2 broken translations
 ```
 
-- **Rejected** translations failed a check, or were missing from the reply. They stay untranslated and are retried on the next run.
-- **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count.
+- **Rejected** translations failed a check, or were missing from the reply. They stay untranslated and are retried on the next run. Use `-v` to see each one, with its source and the rejected text.
+- **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count. Use `-v` for tracebacks.
 - **Cleared** translations were already saved but break the file, e.g. `msgfmt --check` errors. They're blanked so the next run retranslates them. If `msgfmt` still rejects the file for another reason, such as a duplicate message (fix it with `msguniq`), the run stops with its errors.
 
-Warnings and errors go to stderr, and the summary to stdout.
+Progress, warnings and errors go to stderr, and the summary to stdout.
 
 The command exits with an error if any batch failed or the run was stopped, but not for rejections, which are expected now and then. Every finished batch is saved as it completes, so rerunning only sends what's still missing.
 

@@ -1,11 +1,32 @@
 """``llm-localize`` command line tool, usable without Django."""
 import argparse
+import logging
 import sys
 
 from llm_localize.formats import FORMATS
 from llm_localize.providers import PROVIDERS, get_client
 from llm_localize.providers.base import FatalError, LLMError
 from llm_localize.runner import summarize, translate_files
+
+VERBOSITY_LEVELS = {0: logging.WARNING, 1: logging.INFO}
+
+
+def configure_logging(verbosity, progress_stream, error_stream):
+    """Log progress to ``progress_stream`` and warnings and errors to ``error_stream``.
+
+    Verbosity 0 logs only warnings and errors, 1 adds progress, and 2
+    adds each rejected translation and tracebacks for failed batches.
+    """
+    progress = logging.StreamHandler(progress_stream)
+    progress.addFilter(lambda record: record.levelno < logging.WARNING)
+    errors = logging.StreamHandler(error_stream)
+    errors.setLevel(logging.WARNING)
+    logger = logging.getLogger('llm_localize')
+    for handler in (progress, errors):
+        handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.handlers = [progress, errors]
+    logger.setLevel(VERBOSITY_LEVELS.get(verbosity, logging.DEBUG))
+    logger.propagate = False
 
 
 def error_message(error):
@@ -74,8 +95,15 @@ def main(argv=None):
     )
     parser.add_argument('paths', nargs='+', help="Translation files to translate")
     parser.add_argument('--lang', help="Target language (default: the language each file declares)")
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument('-q', '--quiet', action='store_const', const=0, dest='verbosity', default=1,
+                           help="Only show the summary, warnings and errors")
+    verbosity.add_argument('-v', '--verbose', action='store_const', const=2, dest='verbosity',
+                           help="Also show each rejected translation and tracebacks")
     add_translation_arguments(parser, DEFAULTS)
     options = parser.parse_args(argv)
+    # Progress goes to stderr too, keeping stdout for the summary
+    configure_logging(options.verbosity, sys.stderr, sys.stderr)
     try:
         results = run(options, [(path, options.lang) for path in options.paths])
     except (LLMError, ValueError, OSError) as e:
