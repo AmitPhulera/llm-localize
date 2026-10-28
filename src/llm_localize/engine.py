@@ -272,7 +272,9 @@ def translate_file(translation_file, client, language, source_language="en", bat
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {executor.submit(run, batch): i for i, batch in enumerate(batches)}
             try:
+                done = 0
                 for future in as_completed(futures):
+                    done += 1
                     try:
                         translated, rejected = future.result()
                     except FatalError:
@@ -285,6 +287,8 @@ def translate_file(translation_file, client, language, source_language="en", bat
                         continue
                     result.translated += translated
                     result.rejected += rejected
+                    logger.info("%s: %d/%d batches done, %d/%d translated", translation_file.path,
+                                done, len(batches), result.translated, result.untranslated)
             except BaseException:
                 # A fatal error or Ctrl-C: don't send the requests still queued, or retry those sent
                 stop.set()
