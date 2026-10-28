@@ -249,6 +249,14 @@ class TestOpenAI:
         ]
         assert http.payload["temperature"] == 0.2
         assert http.payload["response_format"]["type"] == "json_schema"
+        assert "reasoning_effort" not in http.payload
+
+    def test_reasoning_models_turn_reasoning_off(self, fake_http):
+        http = fake_http(openai_reply("{}"))
+
+        OpenAIClient(api_key="k", model="gpt-6-luna").call_llm("system", "user")
+
+        assert http.payload["reasoning_effort"] == "none"
 
     def test_model_params_override_defaults(self, fake_http):
         http = fake_http(openai_reply("{}"))

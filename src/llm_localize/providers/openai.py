@@ -6,6 +6,11 @@ OpenRouter, Groq, Together, Mistral, vLLM, LM Studio and Ollama: point
 """
 from llm_localize.providers.base import HttpClient, LLMError, merge_params
 
+# These reject a non-default temperature unless reasoning is off.
+# Reasoning gave no measurable translation quality gain for the extra
+# cost and latency.
+REASONING_MODELS = ("gpt-5.6-luna", "gpt-6-luna")
+
 # Constrains output to a flat string map. strict=False because strict mode
 # doesn't accept additionalProperties-only schemas. Servers without
 # json_schema support can be given another format, or none, through
@@ -22,7 +27,10 @@ RESPONSE_FORMAT = {
 
 
 def default_model_params(model):
-    return {"temperature": 0.2}
+    params = {"temperature": 0.2}
+    if model in REASONING_MODELS:
+        params["reasoning_effort"] = "none"
+    return params
 
 
 class OpenAIClient(HttpClient):
