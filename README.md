@@ -72,6 +72,29 @@ Notes by provider:
 
 Rate limits (429), overload (500/502/503/504/529), timeouts and connection failures are retried up to 5 times, waiting as long as the server's `Retry-After` asks (up to 5 minutes), or otherwise 1–2, 2–4, 4–8, 8–16 and 16–32 seconds. A reply that reaches the model's output token limit fails its batch with a message to use a smaller batch size. Authentication, billing, permission and not-found errors (401/402/403/404), such as a wrong API key or model name, stop the run at once, since every request would fail the same way.
 
+## Translating strings in your app
+
+`StringTranslator` translates a list of strings at runtime, such as content your users enter. It uses the same engine as file translation: strings are batched and sent in parallel, and each translation goes through the same checks.
+
+```python
+from llm_localize import StringTranslator
+
+translator = StringTranslator(provider="anthropic", api_key="...")
+
+translator.translate(["Hello", "Hi %(name)s", "Hello"], "fr")
+# ["Bonjour", "Salut %(name)s", "Bonjour"]
+
+translator.translate(product_names, "de", context="product names in a hardware store")
+```
+
+- Results come back in the same order as the input. A string that couldn't be translated comes back as `None`, so you can fall back to the source text, retry later, or show an error.
+- Repeated strings are sent once. Blank strings are returned unchanged, without calling the LLM.
+- `context` describes the strings, to help the model. `instructions` and `source_language` override the translator's own for one call.
+- `translate_with_report()` returns the translations along with why any are missing: `rejected` reasons and `errors` from failed batches, as in the file summary.
+- A `FatalError`, such as a wrong API key, is raised rather than returned as `None`s.
+
+Create one translator and reuse it; it's safe to share between threads. LLM calls take seconds, so call it from a background task (Celery, RQ, a management command) rather than while handling a request. It doesn't cache translations, so store the results if you'll need them again.
+
 ## Python API
 
 The command line flow is available from Python:

@@ -1,8 +1,19 @@
-"""Translate a list of strings at runtime, e.g. user content in a web app."""
+"""Translate a list of strings at runtime, e.g. user content in a web app.
+
+``StringTranslator`` runs the same engine as file translation: strings are
+batched, sent in parallel, and each translation is checked for broken
+placeholders, HTML tags and URLs. Translations that fail come back as
+``None``.
+
+LLM calls take seconds, so call it from a background task rather than
+while handling a request.
+"""
 from collections import Counter
 from dataclasses import dataclass, field
 
+from llm_localize.engine import translate_file
 from llm_localize.formats.base import TranslationFile
+from llm_localize.providers import get_client
 from llm_localize.units import TranslationUnit
 
 
@@ -51,3 +62,55 @@ class StringsResult:
     @property
     def complete(self):
         return None not in self.translations
+
+
+class StringTranslator:
+    """Translates lists of strings with an LLM.
+
+    ::
+
+        translator = StringTranslator(provider="anthropic", api_key="...")
+
+        translator.translate(["Hello", "Hi %(name)s"], "fr")
+        # ["Bonjour", "Salut %(name)s"]
+
+    Safe to share between threads; create one and reuse it.
+
+    :param provider: ``"openai"``, ``"anthropic"``, ``"gemini"``, ``"grok"``,
+        or a dotted path to an ``LLMClient`` subclass
+    :param instructions: extra instructions for every call, e.g. tone or
+        terminology
+    :param client_options: passed to the client, e.g. ``model``,
+        ``api_base`` or ``model_params``
+    """
+
+    def __init__(self, provider="openai", api_key=None, source_language="en", instructions="",
+                 batch_size=50, workers=10, **client_options):
+        self.client = get_client(provider, api_key=api_key, **client_options)
+        self.source_language = source_language
+        self.instructions = instructions
+        self.batch_size = batch_size
+        self.workers = workers
+
+    def translate(self, texts, language, context="", source_language=None, instructions=None):
+        """Return the translations of ``texts`` in order, with ``None`` for any that failed.
+
+        :param context: what the strings are, to help the model, e.g.
+            "product names in a hardware store"
+        :param instructions: replaces the translator's instructions for this call
+        :raises FatalError: for errors every request would hit, like a bad API key
+        """
+        return self.translate_with_report(texts, language, context, source_language, instructions).translations
+
+    def translate_with_report(self, texts, language, context="", source_language=None, instructions=None):
+        """Like ``translate``, but also say why any translations are missing."""
+        strings = StringList(texts, context)
+        result = translate_file(
+            strings, self.client, language,
+            source_language=source_language or self.source_language,
+            batch_size=self.batch_size,
+            workers=self.workers,
+            extra_instructions=self.instructions if instructions is None else instructions,
+            cleanup=False,
+        )
+        return StringsResult(strings.results(), rejected=result.rejected, errors=result.errors)
