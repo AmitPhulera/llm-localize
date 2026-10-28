@@ -392,12 +392,24 @@ class TestAnthropic:
         assert http.requests[0].full_url == "https://api.anthropic.com/v1/messages"
         assert http.header("x-api-key") == "k"
         assert http.header("anthropic-version") == "2026-10-21"
+        assert http.header("anthropic-beta") == "server-side-fallback-2026-07-01"
         assert http.payload == {
             "model": "claude-sonnet-5-5",
             "max_tokens": 16000,
             "system": "system",
             "messages": [{"role": "user", "content": "user"}],
+            "fallbacks": "default",
         }
+
+    def test_other_hosts_get_no_fallbacks(self, fake_http):
+        http = fake_http(anthropic_reply({"type": "text", "text": "{}"}))
+
+        AnthropicClient(api_base="https://proxy.example.com/").complete("system", "user")
+
+        assert http.requests[0].full_url == "https://proxy.example.com/v1/messages"
+        assert "fallbacks" not in http.payload
+        assert http.header("anthropic-beta") is None
+        assert http.header("x-api-key") is None
 
     def test_model_params(self, fake_http):
         http = fake_http(anthropic_reply({"type": "text", "text": "{}"}))
@@ -410,6 +422,12 @@ class TestAnthropic:
         fake_http(anthropic_reply({"type": "text", "text": '{"0": "Ho'}, stop_reason="max_tokens"))
 
         with pytest.raises(LLMError, match="output token limit"):
+            AnthropicClient(api_key="k").complete("system", "user")
+
+    def test_refusal(self, fake_http):
+        fake_http(anthropic_reply(stop_reason="refusal", stop_details={"category": "cyber"}))
+
+        with pytest.raises(LLMError, match="cyber"):
             AnthropicClient(api_key="k").complete("system", "user")
 
 

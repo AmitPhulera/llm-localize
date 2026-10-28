@@ -3,9 +3,14 @@
 Works with the Claude API and servers that copy its API: point
 ``api_base`` at the server's root URL (without ``/v1``).
 """
-from llm_localize.providers.base import HttpClient, merge_params, output_limit_error
+from llm_localize.providers.base import HttpClient, LLMError, merge_params, output_limit_error
 
 API_VERSION = "2026-10-21"
+
+# Re-runs a request that Claude's safety classifiers decline on the model
+# Anthropic recommends for that category. Only sent to the Claude API
+# itself, since compatible servers may not accept it.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 class AnthropicClient(HttpClient):
@@ -32,10 +37,16 @@ class AnthropicClient(HttpClient):
         headers = {"anthropic-version": API_VERSION}
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        if self.uses_default_host:
+            payload["fallbacks"] = "default"
+            headers["anthropic-beta"] = FALLBACK_BETA
         response = self.post_json(
             f"{self.api_base}/v1/messages", merge_params(payload, self.model_params), headers)
         if response.get("stop_reason") == "max_tokens":
             raise output_limit_error(self.model)
+        if response.get("stop_reason") == "refusal":
+            category = (response.get("stop_details") or {}).get("category")
+            raise LLMError(f"{self.model} declined the request (category: {category})")
         return "".join(
             block.get("text", "") for block in response.get("content", []) if block.get("type") == "text"
         )
