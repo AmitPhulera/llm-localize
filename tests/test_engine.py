@@ -9,9 +9,12 @@ from llm_localize.engine import (
     format_batch,
     make_batches,
     parse_response,
+    translate_file,
 )
 from llm_localize.units import PluralForm, TranslationUnit
 from llm_localize.validation import find_problem
+
+from .fakes import DictFile, FakeClient
 
 SPANISH_FORMS = (
     PluralForm(0, "used when n is 1", singular=True),
@@ -163,3 +166,17 @@ class TestParseResponse:
 
         assert parse_response(json.dumps({"0": "Hola"}), batch, lambda s, t: "too short") == (
             {}, Counter({"too short": 1}))
+
+
+class TestTranslateFile:
+
+    def test_translates_untranslated_units(self):
+        dict_file = DictFile(messages={"a": ("Hello", ""), "b": ("Bye", "Adiós"), "c": ("Yes", "")})
+        client = FakeClient()
+
+        result = translate_file(dict_file, client, "es", batch_size=1)
+
+        assert dict_file.messages == {"a": ("Hello", "T: Hello"), "b": ("Bye", "Adiós"), "c": ("Yes", "T: Yes")}
+        assert (result.untranslated, result.translated, result.batches) == (2, 2, 2)
+        assert dict_file.saves == 2
+        assert "File format rules: Dict rules." in client.calls[0][0]

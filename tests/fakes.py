@@ -1,6 +1,7 @@
-"""Test doubles for LLM clients."""
+"""Test doubles for LLM clients and translation files."""
 import json
 
+from llm_localize.formats.base import TranslationFile
 from llm_localize.providers.base import LLMClient
 
 
@@ -32,3 +33,38 @@ class FakeClient(LLMClient):
             else:
                 output[key] = self.prefix + value["text"]
         return json.dumps(output)
+
+
+class DictFile(TranslationFile):
+    """An in-memory format: ``{key: (source, translation)}``."""
+
+    name = "dict"
+    extensions = (".dict",)
+    instructions = "Dict rules."
+
+    def __init__(self, path="memory.dict", messages=None, language="es"):
+        super().__init__(path)
+        self.messages = dict(messages or {})
+        self._language = language
+        self.saves = 0
+        self.cleanups = 0
+
+    @property
+    def language(self):
+        return self._language
+
+    def untranslated_units(self):
+        from llm_localize.units import TranslationUnit
+        return [TranslationUnit(key=key, source=source)
+                for key, (source, translation) in self.messages.items() if not translation]
+
+    def apply(self, key, translation):
+        source, _ = self.messages[key]
+        self.messages[key] = (source, translation)
+
+    def save(self):
+        self.saves += 1
+
+    def cleanup(self):
+        self.cleanups += 1
+        return 0

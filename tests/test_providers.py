@@ -87,7 +87,7 @@ class TestRegistry:
     def test_lookup(self, provider, client_class):
         assert get_client_class(provider) is client_class
 
-    @pytest.mark.parametrize("provider", ["nope", "tests.fakes.Missing"])
+    @pytest.mark.parametrize("provider", ["nope", "tests.fakes.Missing", "tests.fakes.DictFile"])
     def test_unknown(self, provider):
         with pytest.raises(LLMError):
             get_client_class(provider)

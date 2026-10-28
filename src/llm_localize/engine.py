@@ -4,12 +4,13 @@ Units go to the model in batches as a flat JSON object keyed by position
 in the batch. Each translation comes back under the same key; plural
 units come back as one ``"<key>:<form index>"`` key per plural form, so
 the response stays a flat map of strings. Translations that fail
-validation are dropped and counted by reason.
+validation are dropped, counted by reason, and retried on the next run.
 """
 import json
 import logging
 import re
 from collections import Counter
+from dataclasses import dataclass, field
 
 from llm_localize.languages import language_name
 from llm_localize.providers.base import LLMError
@@ -206,3 +207,47 @@ def make_batches(units, batch_size):
 
 class InvalidResponseError(LLMError):
     """The model's reply couldn't be read as a batch of translations."""
+
+
+@dataclass
+class FileResult:
+    """What happened to one file.
+
+    :ivar rejected: ``Counter`` of reasons translations were rejected
+    """
+
+    path: str
+    language: str
+    untranslated: int = 0
+    translated: int = 0
+    batches: int = 0
+    rejected: Counter = field(default_factory=Counter)
+
+
+def translate_file(translation_file, client, language, source_language="en", batch_size=50,
+                   extra_instructions=""):
+    """Translate a file's untranslated units, saving after each batch.
+
+    Saving after each batch keeps finished work if the run is interrupted.
+
+    :param translation_file: a ``TranslationFile``
+    :param client: an ``LLMClient``
+    """
+    result = FileResult(path=translation_file.path, language=language)
+    units = translation_file.untranslated_units()
+    result.untranslated = len(units)
+    batches = make_batches(units, batch_size)
+    result.batches = len(batches)
+    system_prompt = build_system_prompt(
+        language, source_language, translation_file.instructions, extra_instructions)
+    for batch in batches:
+        response = client.complete(system_prompt, format_batch(batch))
+        translations, rejected = parse_response(response, batch, translation_file.find_problem)
+        for key, translation in translations.items():
+            translation_file.apply(batch[key].key, translation)
+        if translations:
+            translation_file.save()
+        result.translated += len(translations)
+        result.rejected += rejected
+
+    return result
