@@ -32,14 +32,22 @@ class PoFile(TranslationFile):
     ``msgfmt --check`` rejects are blanked so the next run retries them.
     """
 
+    def __init__(self, path, language=None):
+        super().__init__(path)
+        self._language = language
+
+    @classmethod
+    def open(cls, path, language=None, source_language=None, source_path=None):
+        return cls(path, language=language)
+
     @cached_property
     def po(self):
         return polib.pofile(self.path)
 
     @property
     def language(self):
-        """Return the ``Language`` header, or the locale of ``<locale>/LC_MESSAGES/x.po``."""
-        language = self.po.metadata.get("Language", "").strip()
+        """Return the language given, the ``Language`` header, or the locale of ``<locale>/LC_MESSAGES/x.po``."""
+        language = self._language or self.po.metadata.get("Language", "").strip()
         if language:
             return language
         parent = Path(self.path).parent
@@ -68,6 +76,11 @@ class PoFile(TranslationFile):
         return {str(index): entry for index, entry in enumerate(self.po)}
 
     def untranslated_units(self):
+        declared = self.po.metadata.get("Language", "").strip()
+        # The Plural-Forms header is the declared language's, so translating to another would mismatch them
+        if self._language and declared and _base(declared) != _base(self._language):
+            raise ValueError(f"{self.path} declares Language: {declared}, not {self._language}; "
+                             "fix its Language and Plural-Forms headers, or don't pass a language")
         entries = [
             (key, entry) for key, entry in self._entries.items()
             if not entry.obsolete
@@ -114,6 +127,8 @@ class PoFile(TranslationFile):
 
     def save(self):
         self._use_utf8()
+        if self._language and not self.po.metadata.get("Language", "").strip():
+            self.po.metadata["Language"] = to_locale(self._language)
         save_po(self.po)
 
     def _use_utf8(self):
@@ -161,3 +176,7 @@ def find_po_files(locale_dirs, languages, domains=("django", "djangojs")):
                 path = Path(locale_dir) / to_locale(language) / LC_MESSAGES / f"{domain}.po"
                 if path.exists():
                     yield path, language
+
+
+def _base(language):
+    return language.lower().replace("_", "-").split("-")[0]

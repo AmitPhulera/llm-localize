@@ -1,9 +1,11 @@
 import polib
 import pytest
 
+from llm_localize.engine import translate_file
 from llm_localize.formats.po import PoFile, find_po_files
 from llm_localize.formats.po.cleanup import run_msgfmt
 
+from .fakes import FakeClient
 from .test_plurals import ENGLISH_PLURAL_FORMS, SPANISH_PLURAL_FORMS, UKRAINIAN_PLURAL_FORMS
 
 
@@ -222,6 +224,27 @@ class TestSave:
         po_file.save()
 
         assert path.stat().st_mode & 0o777 == 0o640
+
+
+class TestExplicitLanguage:
+
+    def test_wins_over_the_header(self, write_po):
+        assert PoFile.open(write_po(po_header(ENGLISH_PLURAL_FORMS, language="pt")), language="pt-br").language \
+            == "pt-br"
+
+    def test_another_language_than_the_header_is_refused(self, write_po):
+        po_file = PoFile.open(write_po(SPANISH_PLURAL_PO.replace('"Plural', '"Language: es\\n"\n"Plural', 1)),
+                              language="fr")
+
+        with pytest.raises(ValueError, match="declares Language: es, not fr"):
+            po_file.untranslated_units()
+
+    def test_fills_in_a_missing_header(self, write_po):
+        path = write_po(SPANISH_PLURAL_PO)
+
+        translate_file(PoFile.open(path, language="es"), FakeClient(), "es")
+
+        assert polib.pofile(str(path)).metadata["Language"] == "es"
 
 
 PLURAL_ENTRIES = """

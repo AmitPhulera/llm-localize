@@ -24,6 +24,16 @@ class TranslationFile(abc.ABC):
     def __init__(self, path):
         self.path = str(path)
 
+    @classmethod
+    def open(cls, path, language=None, source_language=None, source_path=None):
+        """Open ``path`` for translating to ``language``.
+
+        Formats that keep the source text in the file, like PO, need only
+        the path. Formats that keep each language in its own file use the
+        rest to find the source file.
+        """
+        return cls(path)
+
     @property
     def language(self):
         """Return the file's target language if the file says, otherwise None."""
