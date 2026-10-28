@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm_localize.providers import get_client, get_client_class
+from llm_localize.providers.anthropic import AnthropicClient
 from llm_localize.providers.base import (
     FatalError,
     HttpClient,
@@ -67,7 +68,7 @@ def fake_http():
 
 @pytest.fixture(autouse=True)
 def no_provider_env(monkeypatch):
-    for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "FAKE_API_KEY"]:
+    for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "FAKE_API_KEY"]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -75,6 +76,7 @@ class TestRegistry:
 
     @pytest.mark.parametrize("provider, client_class", [
         ("openai", OpenAIClient),
+        ("anthropic", AnthropicClient),
         ("tests.fakes.FakeClient", FakeClient),
     ])
     def test_lookup(self, provider, client_class):
@@ -85,11 +87,22 @@ class TestRegistry:
         with pytest.raises(LLMError):
             get_client_class(provider)
 
-    @pytest.mark.parametrize("provider", ["openai", "tests.fakes.FakeClient"])
+    def test_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
+
+        assert get_client("anthropic").api_key == "from-env"
+
+    @pytest.mark.parametrize("provider", ["openai", "anthropic", "tests.fakes.FakeClient"])
     def test_generic_api_key_env_var(self, monkeypatch, provider):
         monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
 
         assert get_client(provider).api_key == "generic"
+
+    def test_generic_api_key_env_var_comes_first(self, monkeypatch):
+        monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "specific")
+
+        assert get_client("anthropic").api_key == "generic"
 
     def test_client_gets_api_key_when_created(self, monkeypatch):
         monkeypatch.setenv("FAKE_API_KEY", "secret")
@@ -118,8 +131,13 @@ class TestRegistry:
 
         assert get_client("openai", api_base=api_base).api_key == expected
 
+    def test_explicit_api_key_wins(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
+
+        assert get_client("anthropic", api_key="explicit").api_key == "explicit"
+
     @pytest.mark.parametrize("provider, env_var", [
-        ("openai", "OPENAI_API_KEY"),
+        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
     ])
     def test_api_key_required_for_default_host(self, provider, env_var):
         with pytest.raises(LLMError, match=f"LLM_LOCALIZE_API_KEY or {env_var}"):
@@ -131,7 +149,7 @@ class TestRegistry:
         assert (client.api_key, client.api_base) == (None, "http://localhost:11434/v1")
 
     @pytest.mark.parametrize("provider, env_var", [
-        ("openai", "OPENAI_API_KEY"),
+        ("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
     ])
     def test_vendor_key_is_not_sent_to_other_hosts(self, monkeypatch, provider, env_var):
         monkeypatch.setenv(env_var, "vendor-key")
@@ -153,6 +171,11 @@ class TestRegistry:
         monkeypatch.setenv("OPENAI_API_KEY", "vendor-key")
 
         assert get_client("openai", api_base="https://api.openai.com/v1/").api_key == "vendor-key"
+
+    def test_api_base_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example.com")
+
+        assert get_client("anthropic").api_base == "https://proxy.example.com"
 
     def test_defaults_and_overrides(self):
         client = get_client("openai", api_key="k", model_params={"temperature": 0})
@@ -349,6 +372,45 @@ class TestOpenAI:
 
         with pytest.raises(LLMError, match="without choices.*model not loaded"):
             OpenAIClient(api_key="k").complete("system", "user")
+
+
+def anthropic_reply(*blocks, stop_reason="end_turn", **extra):
+    return {"content": list(blocks), "stop_reason": stop_reason, **extra}
+
+
+class TestAnthropic:
+
+    def test_request(self, fake_http):
+        http = fake_http(anthropic_reply(
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": '{"0": '},
+            {"type": "text", "text": '"Hola"}'},
+        ))
+
+        assert AnthropicClient(api_key="k").complete("system", "user") == '{"0": "Hola"}'
+
+        assert http.requests[0].full_url == "https://api.anthropic.com/v1/messages"
+        assert http.header("x-api-key") == "k"
+        assert http.header("anthropic-version") == "2026-10-21"
+        assert http.payload == {
+            "model": "claude-sonnet-5-5",
+            "max_tokens": 16000,
+            "system": "system",
+            "messages": [{"role": "user", "content": "user"}],
+        }
+
+    def test_model_params(self, fake_http):
+        http = fake_http(anthropic_reply({"type": "text", "text": "{}"}))
+
+        AnthropicClient(api_key="k", model_params={"output_config": {"effort": "low"}}).complete("s", "u")
+
+        assert http.payload["output_config"] == {"effort": "low"}
+
+    def test_output_limit(self, fake_http):
+        fake_http(anthropic_reply({"type": "text", "text": '{"0": "Ho'}, stop_reason="max_tokens"))
+
+        with pytest.raises(LLMError, match="output token limit"):
+            AnthropicClient(api_key="k").complete("system", "user")
 
 
 class NoDefaultHost(HttpClient):
