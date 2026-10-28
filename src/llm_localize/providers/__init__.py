@@ -11,7 +11,9 @@ from llm_localize.utils import import_class
 # Read for every provider, before the provider's own variable
 API_KEY_ENV_VAR = 'LLM_LOCALIZE_API_KEY'
 
-PROVIDERS = {}
+PROVIDERS = {
+    'openai': 'llm_localize.providers.openai.OpenAIClient',
+}
 
 
 def get_client_class(provider):

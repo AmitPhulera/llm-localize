@@ -13,6 +13,7 @@ from llm_localize.providers.base import (
     TransientError,
     retry_with_exponential_backoff,
 )
+from llm_localize.providers.openai import OpenAIClient
 
 from .fakes import FakeClient
 
@@ -64,13 +65,14 @@ def fake_http():
 
 @pytest.fixture(autouse=True)
 def no_provider_env(monkeypatch):
-    for name in ["FAKE_API_KEY"]:
+    for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "FAKE_API_KEY"]:
         monkeypatch.delenv(name, raising=False)
 
 
 class TestRegistry:
 
     @pytest.mark.parametrize("provider, client_class", [
+        ("openai", OpenAIClient),
         ("tests.fakes.FakeClient", FakeClient),
     ])
     def test_lookup(self, provider, client_class):
@@ -81,7 +83,7 @@ class TestRegistry:
         with pytest.raises(LLMError):
             get_client_class(provider)
 
-    @pytest.mark.parametrize("provider", ["tests.fakes.FakeClient"])
+    @pytest.mark.parametrize("provider", ["openai", "tests.fakes.FakeClient"])
     def test_generic_api_key_env_var(self, monkeypatch, provider):
         monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
 
@@ -102,11 +104,16 @@ class TestRegistry:
         assert seen == ["secret"]
 
     @pytest.mark.parametrize("provider, env_var", [
-        ("tests.fakes.FakeClient", "FAKE_API_KEY"),
+        ("openai", "OPENAI_API_KEY"),
     ])
     def test_api_key_required_for_default_host(self, provider, env_var):
         with pytest.raises(LLMError, match=f"LLM_LOCALIZE_API_KEY or {env_var}"):
             get_client(provider)
+
+    def test_defaults_and_overrides(self):
+        client = get_client("openai", api_key="k", model_params={"temperature": 0})
+
+        assert (client.model, client.model_params) == ("gpt-6-luna", {"temperature": 0})
 
 
 class TestRetry:
@@ -175,7 +182,7 @@ class TestRetry:
 class TestPostJson:
 
     def client(self):
-        return NoDefaultHost(api_key="k", api_base="https://host")
+        return OpenAIClient(api_key="k")
 
     @pytest.mark.parametrize("code", [429, 500, 503, 529])
     def test_transient_status(self, fake_http, code):
@@ -222,6 +229,53 @@ class TestPostJson:
 
         with pytest.raises(TransientError, match="connection refused"):
             self.client().post_json("https://host/x", {}, {})
+
+
+def openai_reply(content):
+    return {"choices": [{"message": {"content": content}}]}
+
+
+class TestOpenAI:
+
+    def test_request(self, fake_http):
+        http = fake_http(openai_reply('{"0": "Hola"}'))
+
+        assert OpenAIClient(api_key="k", model="gpt-4o").complete("system", "user") == '{"0": "Hola"}'
+
+        assert http.requests[0].full_url == "https://api.openai.com/v1/chat/completions"
+        assert http.header("Authorization") == "Bearer k"
+        assert http.payload["messages"] == [
+            {"role": "system", "content": "system"}, {"role": "user", "content": "user"},
+        ]
+        assert http.payload["temperature"] == 0.2
+
+    def test_model_params_override_defaults(self, fake_http):
+        http = fake_http(openai_reply("{}"))
+
+        OpenAIClient(api_key="k", model_params={"temperature": 0, "seed": 1}).complete("system", "user")
+
+        assert (http.payload["temperature"], http.payload["seed"]) == (0, 1)
+
+    def test_bad_request_is_not_retried(self, fake_http):
+        http = fake_http(http_error(400, b'{"error": "context length exceeded"}'))
+
+        with pytest.raises(LLMError, match="context length exceeded"):
+            OpenAIClient(api_key="k").complete("system", "user")
+        assert len(http.requests) == 1
+
+    def test_no_auth_header_without_key(self, fake_http):
+        http = fake_http(openai_reply("{}"))
+
+        OpenAIClient(api_base="http://localhost:11434/v1", model="llama").complete("system", "user")
+
+        assert http.requests[0].full_url == "http://localhost:11434/v1/chat/completions"
+        assert http.header("Authorization") is None
+
+    def test_reply_without_choices(self, fake_http):
+        fake_http({"error": "model not loaded"})
+
+        with pytest.raises(LLMError, match="without choices.*model not loaded"):
+            OpenAIClient(api_key="k").complete("system", "user")
 
 
 class NoDefaultHost(HttpClient):
