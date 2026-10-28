@@ -35,6 +35,13 @@ def error_message(error):
     return str(error)
 
 
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, not {number}")
+    return number
+
+
 def add_translation_arguments(parser, defaults):
     """Add the options shared by the CLI and the Django command."""
     parser.add_argument('--source-lang', default=defaults['SOURCE_LANGUAGE'],
@@ -50,6 +57,10 @@ def add_translation_arguments(parser, defaults):
     parser.add_argument('--api-key', default=None,
                         help="API key (default: the LLM_LOCALIZE_API_KEY environment variable, then the "
                              "provider's own, e.g. OPENAI_API_KEY)")
+    parser.add_argument('--batch-size', type=positive_int, default=defaults['BATCH_SIZE'],
+                        help="Messages per LLM request (default: %(default)s)")
+    parser.add_argument('--workers', type=positive_int, default=defaults['WORKERS'],
+                        help="LLM requests in flight at once (default: %(default)s)")
     parser.add_argument('--instructions', default=defaults['EXTRA_INSTRUCTIONS'],
                         help="Extra instructions for the translator, e.g. tone or terminology")
     cleanup = parser.add_mutually_exclusive_group()
@@ -64,6 +75,8 @@ DEFAULTS = {
     'FORMAT': None,
     'PROVIDER': 'openai',
     'MODEL': None,
+    'BATCH_SIZE': 50,
+    'WORKERS': 10,
     'EXTRA_INSTRUCTIONS': '',
 }
 
@@ -81,6 +94,8 @@ def run(options, jobs, api_key=None, model_params=None):
     return translate_files(
         jobs, client,
         source_language=options.source_lang,
+        batch_size=options.batch_size,
+        workers=options.workers,
         extra_instructions=options.instructions,
         format=options.format,
         cleanup=not options.no_cleanup,

@@ -124,6 +124,16 @@ def test_fatal_error_still_reports_finished_files(tmp_path, capsys):
     assert "invalid key" in err
 
 
+@pytest.mark.parametrize("option, value", [("--batch-size", "0"), ("--batch-size", "-1"), ("--workers", "0")])
+def test_rejects_non_positive_numbers(po_path, capsys, option, value):
+    with pytest.raises(SystemExit) as exit_info:
+        main([str(po_path), "--provider", "tests.fakes.FakeClient", "--api-key", "k", option, value])
+
+    assert exit_info.value.code == 2
+    assert "must be at least 1" in capsys.readouterr().err
+    assert polib.pofile(str(po_path)).find("Hello").msgstr == ""
+
+
 def test_cleanup_only_and_no_cleanup_conflict(po_path, capsys):
     with pytest.raises(SystemExit) as exit_info:
         main([str(po_path), "--cleanup-only", "--no-cleanup"])
