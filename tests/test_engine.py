@@ -80,9 +80,16 @@ def test_make_batches():
 class TestParseResponse:
 
     def test_valid(self):
-        batch = {"0": TranslationUnit(key="a", source="Hello")}
+        batch = {"0": TranslationUnit(key="a", source="Hello"), "1": CASES}
+        response = json.dumps({
+            "0": "Hola",
+            "1:0": "%(count)s caso", "1:1": "%(count)s de casos", "1:2": "%(count)s casos",
+        })
 
-        assert parse_response(json.dumps({"0": "Hola"}), batch, find_problem) == ({"0": "Hola"}, Counter())
+        assert parse_response(response, batch, find_problem) == ({
+            "0": "Hola",
+            "1": {0: "%(count)s caso", 1: "%(count)s de casos", 2: "%(count)s casos"},
+        }, Counter())
 
     @pytest.mark.parametrize("response", ["not json", json.dumps(["Hola"]), None])
     def test_not_a_json_object(self, response):
@@ -103,6 +110,17 @@ class TestParseResponse:
 
         assert parse_response(json.dumps(output), batch, find_problem) == ({}, Counter({reason: 1}))
 
+    @pytest.mark.parametrize("output, reason", [
+        pytest.param({"0:0": "%(count)s caso", "0:2": "%(count)s casos"}, "missing", id="missing-form"),
+        pytest.param({"0:0": "%(count)s caso", "0:1": "", "0:2": "%(count)s casos"}, "missing", id="empty-form"),
+        pytest.param({"0:0": "%(count)s caso", "0:1": " ", "0:2": "%(count)s casos"}, "missing", id="blank-form"),
+        pytest.param({"0:0": "%(count)s caso", "0:1": "%(cuenta)s de casos", "0:2": "%(count)s casos"},
+                     "placeholders", id="bad-placeholder"),
+        pytest.param({"0": "%(count)s casos"}, "missing", id="plain-key"),
+    ])
+    def test_rejected_plural(self, output, reason):
+        assert parse_response(json.dumps(output), {"0": CASES}, find_problem) == ({}, Counter({reason: 1}))
+
     def test_counts_each_reason(self):
         batch = {str(i): TranslationUnit(key=str(i), source=f"Hello {{name}} {i}") for i in range(4)}
         output = {"0": "Hola {name} 0", "1": "Hola 1", "2": "Hola {nombre} 2"}
@@ -111,6 +129,29 @@ class TestParseResponse:
 
         assert translations == {"0": "Hola {name} 0"}
         assert rejected == Counter({"placeholders": 2, "missing": 1})
+
+    @pytest.mark.parametrize("keys", [("0:one", "0:other"), ("0:0", "0:1")])
+    def test_category_forms_by_key_or_by_position(self, keys):
+        unit = TranslationUnit(
+            key="a", source="{{count}} item", plural_source="{{count}} items",
+            plural_forms=(PluralForm("one", "used when n is 1", singular=True), PluralForm("other", "other")),
+        )
+        response = json.dumps({keys[0]: "{{count}} article", keys[1]: "{{count}} articles"})
+
+        assert parse_response(response, {"0": unit}, find_problem)[0] == {
+            "0": {"one": "{{count}} article", "other": "{{count}} articles"},
+        }
+
+    def test_singular_form_checked_against_singular_source(self):
+        unit = TranslationUnit(
+            key="a", source="One case", plural_source="%(count)s cases",
+            plural_forms=(PluralForm(0, "used when n is 1", singular=True), PluralForm(1, "other")),
+        )
+        response = json.dumps({"0:0": "Un caso", "0:1": "%(count)s casos"})
+
+        assert parse_response(response, {"0": unit}, find_problem)[0] == {
+            "0": {0: "Un caso", 1: "%(count)s casos"},
+        }
 
     def test_json_wrapped_in_a_code_fence(self):
         batch = {"0": TranslationUnit(key="a", source="Hello")}

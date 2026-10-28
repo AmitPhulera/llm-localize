@@ -93,8 +93,8 @@ def parse_response(response, batch, find_problem):
     """Return the batch's valid translations and the reasons the rest were rejected.
 
     Translations are ``{key: translation}``, where a translation is a
-    string. Rejections are a ``Counter`` of reasons, e.g.
-    ``{"placeholders": 2, "missing": 1}``.
+    string, or for a plural unit, ``{form index: string}``. Rejections are
+    a ``Counter`` of reasons, e.g. ``{"placeholders": 2, "missing": 1}``.
 
     :param find_problem: ``find_problem(source, translation)``, returning a
         reason or None
@@ -106,11 +106,14 @@ def parse_response(response, batch, find_problem):
     translations = {}
     rejected = Counter()
     for key, unit in batch.items():
-        translation = output.get(key)
-        if _is_missing(translation, unit.source):
-            problem = "missing"
+        if unit.is_plural:
+            translation, problem = _parse_plural(key, unit, output, find_problem)
         else:
-            problem = find_problem(unit.source, translation)
+            translation = output.get(key)
+            if _is_missing(translation, unit.source):
+                problem = "missing"
+            else:
+                problem = find_problem(unit.source, translation)
         if problem:
             rejected[problem] += 1
             shown = repr(translation)[:200] if translation else "(no translation)"
@@ -159,6 +162,25 @@ def extract_json_object(response):
         if isinstance(output, dict) and (index or not text[end:].strip()):
             return output
     return None
+
+
+def _parse_plural(key, unit, output, find_problem):
+    """Return ``({form index: translation}, None)``, or ``(partial forms, reason)`` if any form is bad.
+
+    A form is looked up by its key, like ``0:one``, or else by its position, ``0:0``, as a model may
+    number the forms it was given by category.
+    """
+    forms = {}
+    for position, form in enumerate(unit.plural_forms):
+        translation = output.get(f"{key}:{form.index}", output.get(f"{key}:{position}"))
+        source = unit.source if form.singular else unit.plural_source
+        if _is_missing(translation, source):
+            return forms, "missing"
+        problem = find_problem(source, translation)
+        if problem:
+            return {**forms, form.index: translation}, problem
+        forms[form.index] = translation
+    return forms, None
 
 
 def _is_missing(translation, source):
