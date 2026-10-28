@@ -1,3 +1,6 @@
+import io
+import json
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +14,51 @@ from llm_localize.providers.base import (
 )
 
 from .fakes import FakeClient
+
+
+def json_response(data):
+    return io.BytesIO(json.dumps(data).encode())
+
+
+def http_error(code, body=b'{"error": "nope"}'):
+    return urllib.error.HTTPError("https://host/x", code, "reason", {}, io.BytesIO(body))
+
+
+class FakeHttp:
+    """Patches ``urlopen`` to return queued responses and records each request."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    def __call__(self, request, timeout):
+        self.requests.append(request)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return json_response(response)
+
+    @property
+    def payload(self):
+        return json.loads(self.requests[-1].data)
+
+    def header(self, name):
+        return self.requests[-1].get_header(name.capitalize())
+
+
+@pytest.fixture
+def fake_http():
+    def install(*responses):
+        fake = FakeHttp(*responses)
+        patcher = patch("llm_localize.providers.base.urlopen", fake)
+        patcher.start()
+        installed.append(patcher)
+        return fake
+
+    installed = []
+    yield install
+    for patcher in installed:
+        patcher.stop()
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +155,34 @@ class TestRetry:
         with pytest.raises(LLMError):
             retry_with_exponential_backoff(func)
         assert calls == [1]
+
+
+class TestPostJson:
+
+    def client(self):
+        return NoDefaultHost(api_key="k", api_base="https://host")
+
+    def test_error_responses_are_closed(self, fake_http):
+        error = http_error(400)
+        fake_http(error)
+
+        with pytest.raises(LLMError):
+            self.client().post_json("https://host/x", {}, {})
+        assert error.fp is None or error.fp.closed
+
+    def test_other_status_includes_api_message(self, fake_http):
+        fake_http(http_error(400, b'{"error": "prompt is too long"}'))
+
+        with pytest.raises(LLMError, match="prompt is too long") as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert not isinstance(error.value, TransientError)
+        assert error.value.status == 400
+
+    def test_connection_failure_is_transient(self, fake_http):
+        fake_http(urllib.error.URLError("connection refused"))
+
+        with pytest.raises(TransientError, match="connection refused"):
+            self.client().post_json("https://host/x", {}, {})
 
 
 class NoDefaultHost(HttpClient):

@@ -1,14 +1,21 @@
 """Base classes for LLM provider clients."""
 import abc
+import json
 import logging
 import os
 import random
 import time
+import urllib.error
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
 # Longest wait between retries, in seconds
 MAX_RETRY_DELAY = 60
+
+
+def urlopen(request, timeout):
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 class LLMError(Exception):
@@ -108,3 +115,35 @@ class HttpClient(LLMClient):
         if not resolved:
             raise LLMError(f"{cls.__name__} has no default_api_base; pass api_base")
         return resolved.rstrip("/")
+
+    def post_json(self, url, payload, headers):
+        """POST ``payload`` as JSON and return the decoded JSON response.
+
+        Raises ``TransientError`` for timeouts and connection failures, and
+        ``LLMError`` for HTTP errors, with the API's error message.
+        """
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", **headers},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as e:
+            raise self.http_error(e) from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            raise TransientError(f"Can't reach {url}: {e}") from e
+
+    @staticmethod
+    def http_error(error):
+        try:
+            detail = error.read().decode("utf-8", "replace")[:500]
+        except Exception:
+            detail = ""
+        finally:
+            # Its body may be a temporary file, kept open until closed
+            error.close()
+        message = f"HTTP {error.code} from {error.url}: {detail or error.reason}"
+        return LLMError(message, status=error.code)
