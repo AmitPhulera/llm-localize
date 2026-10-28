@@ -4,7 +4,12 @@ from unittest.mock import patch
 import polib
 import pytest
 
-from llm_localize.formats.po.cleanup import entry_has_control_chars, extract_errored_line_numbers, run_msgfmt
+from llm_localize.formats.po.cleanup import (
+    clear_translations_at_lines,
+    entry_has_control_chars,
+    extract_errored_line_numbers,
+    run_msgfmt,
+)
 
 
 @pytest.fixture
@@ -64,6 +69,16 @@ def test_run_msgfmt_untranslated(po_path):
         run_msgfmt(po_path)
 
     assert run.call_args.kwargs["env"]["LC_ALL"] == "C"
+
+
+def test_clear_translations_at_lines(po_path):
+    path = po_path('msgid "A"\nmsgstr "a"\n\nmsgid "B"\nmsgstr "b"\n\nmsgid "C"\nmsgstr "c"\n')
+
+    # msgstr lines of B and C, plus a second error inside C
+    count = clear_translations_at_lines(path, {5: "error at B", 8: "error at C", 9: "again C"})
+
+    assert count == 2
+    assert [entry.msgstr for entry in polib.pofile(path)] == ["a", "", ""]
 
 
 @pytest.mark.parametrize("entry, expected", [

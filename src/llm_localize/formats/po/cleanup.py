@@ -1,12 +1,17 @@
 """Spot and blank PO translations that would break ``compilemessages``."""
 import bisect
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 
+import polib
+
 from llm_localize.validation import has_control_chars
+
+logger = logging.getLogger(__name__)
 
 # msgfmt errors look like "<file>.po:<line>: <message>"
 MSGFMT_ERROR_RE = re.compile(r'^.+\.po:(\d+):\s*(.*)$')
@@ -77,6 +82,38 @@ def extract_errored_line_numbers(error_output, file_path=None):
             continue
         line_num_error_map[int(line_num)] = message.strip()
     return line_num_error_map
+
+
+def clear_translations_at_lines(file_path, line_num_error_map):
+    """Blank the entries whose span contains an errored line and return how many were cleared.
+
+    ``polib`` only records the line each entry starts on, so an errored
+    line belongs to the last entry starting on or before it.
+    """
+    po = polib.pofile(file_path)
+    entries = sorted(po, key=lambda entry: entry.linenum)
+    starts = [entry.linenum for entry in entries]
+    cleared = set()
+    for line_num in sorted(line_num_error_map):
+        index = _index_of_entry_at(starts, line_num)
+        if index is None:
+            logger.warning("No entry found for msgfmt error at line %d: %s",
+                           line_num, line_num_error_map[line_num])
+            continue
+        entry = entries[index]
+        if id(entry) in cleared:
+            continue
+        logger.info(
+            "Removing translation with msgfmt error: %s\n  msgid: %s (line %d)\n  msgstr: %s",
+            line_num_error_map[line_num], entry.msgid, entry.linenum,
+            entry.msgstr_plural if entry.msgid_plural else entry.msgstr,
+        )
+        _clear(entry)
+        cleared.add(id(entry))
+    if cleared:
+        save_po(po)
+        logger.info("Removed %d translations with msgfmt errors from %s", len(cleared), file_path)
+    return len(cleared)
 
 
 def _index_of_entry_at(starts, line_num):
