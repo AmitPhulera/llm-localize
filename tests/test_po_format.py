@@ -3,7 +3,7 @@ import pytest
 
 from llm_localize.formats.po import PoFile
 
-from .test_plurals import ENGLISH_PLURAL_FORMS
+from .test_plurals import ENGLISH_PLURAL_FORMS, SPANISH_PLURAL_FORMS, UKRAINIAN_PLURAL_FORMS
 
 
 def po_header(plural_forms, language=""):
@@ -58,6 +58,16 @@ msgstr ""
 """))
 
         assert po_file.untranslated_units()[0].context == "month\nMonth name"
+
+    @pytest.mark.parametrize("header, index, expected", [
+        pytest.param(SPANISH_PLURAL_FORMS, 1, "used when n is 1000000, 2000000", id="few-counts"),
+        pytest.param(UKRAINIAN_PLURAL_FORMS, 1, "used when n is 2, 3, 4, 22, 23, 24, 32, 33, ...",
+                     id="truncated"),
+        pytest.param(UKRAINIAN_PLURAL_FORMS, 3,
+                     "not used for whole numbers (e.g. fractions); use the general plural", id="fractions-only"),
+    ])
+    def test_plural_form_descriptions(self, write_po, header, index, expected):
+        assert PoFile(write_po(po_header(header))).plural_forms[index].description == expected
 
 
 class TestLanguage:

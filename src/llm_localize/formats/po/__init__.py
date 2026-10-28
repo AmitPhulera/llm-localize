@@ -6,7 +6,8 @@ import polib
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, save_po
-from llm_localize.units import TranslationUnit
+from llm_localize.formats.po.plurals import counts_by_plural_index_from_header
+from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
 
@@ -34,6 +35,18 @@ class PoFile(TranslationFile):
         return None
 
     @cached_property
+    def _plural_forms_header(self):
+        return self.po.metadata.get("Plural-Forms", "")
+
+    @cached_property
+    def plural_forms(self):
+        counts_by_plural_index = counts_by_plural_index_from_header(self._plural_forms_header)
+        return tuple(
+            PluralForm(index=index, description=_describe_counts(counts), singular=counts == [1])
+            for index, counts in counts_by_plural_index.items()
+        )
+
+    @cached_property
     def _entries(self):
         return {str(index): entry for index, entry in enumerate(self.po)}
 
@@ -58,3 +71,10 @@ class PoFile(TranslationFile):
 
     def save(self):
         save_po(self.po)
+
+
+def _describe_counts(counts):
+    if not counts:
+        return "not used for whole numbers (e.g. fractions); use the general plural"
+    examples = ", ".join(str(n) for n in counts[:8])
+    return f"used when n is {examples}{', ...' if len(counts) > 8 else ''}"
