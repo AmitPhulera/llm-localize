@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from llm_localize.languages import language_name
-from llm_localize.providers.base import LLMError
+from llm_localize.providers.base import FatalError, LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +216,7 @@ class FileResult:
     """What happened to one file.
 
     :ivar rejected: ``Counter`` of reasons translations were rejected
+    :ivar errors: ``Counter`` of error messages from failed batches
     """
 
     path: str
@@ -223,7 +224,14 @@ class FileResult:
     untranslated: int = 0
     translated: int = 0
     batches: int = 0
+    failed_batches: int = 0
     rejected: Counter = field(default_factory=Counter)
+    errors: Counter = field(default_factory=Counter)
+
+
+def describe_error(error):
+    message = str(error) if isinstance(error, LLMError) else f"{type(error).__name__}: {error}"
+    return message[:300]
 
 
 def translate_file(translation_file, client, language, source_language="en", batch_size=50, workers=10,
@@ -231,7 +239,9 @@ def translate_file(translation_file, client, language, source_language="en", bat
     """Translate a file's untranslated units, saving after each batch.
 
     Saving after each batch keeps finished work if the run is interrupted.
-    An error or Ctrl-C cancels the batches not yet started and is raised.
+    A failed batch is counted and skipped; its units stay untranslated for
+    the next run. A ``FatalError``, like a bad API key, cancels the
+    batches not yet started and is raised.
 
     :param translation_file: a ``TranslationFile``
     :param client: an ``LLMClient``
@@ -263,7 +273,16 @@ def translate_file(translation_file, client, language, source_language="en", bat
             futures = {executor.submit(run, batch): i for i, batch in enumerate(batches)}
             try:
                 for future in as_completed(futures):
-                    translated, rejected = future.result()
+                    try:
+                        translated, rejected = future.result()
+                    except FatalError:
+                        raise
+                    except Exception as e:
+                        result.failed_batches += 1
+                        result.errors[describe_error(e)] += 1
+                        logger.warning("%s: batch %d failed: %s", translation_file.path, futures[future] + 1,
+                                       describe_error(e), exc_info=logger.isEnabledFor(logging.DEBUG))
+                        continue
                     result.translated += translated
                     result.rejected += rejected
             except BaseException:

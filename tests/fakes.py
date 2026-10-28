@@ -36,6 +36,13 @@ class FakeClient(LLMClient):
         return json.dumps(output)
 
 
+class FailingClient(LLMClient):
+    default_model = "fake-model"
+
+    def call_llm(self, system_prompt, user_message):
+        raise RuntimeError("boom")
+
+
 class ScriptedClient(LLMClient):
     """Replies with each item of ``replies`` in turn.
 

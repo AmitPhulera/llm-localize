@@ -13,11 +13,11 @@ from llm_localize.engine import (
     parse_response,
     translate_file,
 )
-from llm_localize.providers.base import FatalError, TransientError
+from llm_localize.providers.base import FatalError, LLMError, TransientError
 from llm_localize.units import PluralForm, TranslationUnit
 from llm_localize.validation import find_problem
 
-from .fakes import DictFile, FakeClient, ScriptedClient
+from .fakes import DictFile, FailingClient, FakeClient, ScriptedClient
 
 SPANISH_FORMS = (
     PluralForm(0, "used when n is 1", singular=True),
@@ -180,9 +180,51 @@ class TestTranslateFile:
         result = translate_file(dict_file, client, "es", batch_size=1, workers=2)
 
         assert dict_file.messages == {"a": ("Hello", "T: Hello"), "b": ("Bye", "Adiós"), "c": ("Yes", "T: Yes")}
-        assert (result.untranslated, result.translated, result.batches) == (2, 2, 2)
+        assert (result.untranslated, result.translated, result.batches, result.failed_batches) == (2, 2, 2, 0)
         assert dict_file.saves == 2
         assert "File format rules: Dict rules." in client.calls[0][0]
+
+    def test_a_fatal_error_doesnt_wait_for_other_batches_retries(self):
+        class Client(FakeClient):
+            def call_llm(self, system_prompt, user_message):
+                if '"b"' in user_message.lower():
+                    time.sleep(0.1)
+                    raise FatalError("HTTP 401: invalid key", status=401)
+                raise TransientError("HTTP 429", status=429, retry_after=5)
+
+        dict_file = DictFile(messages={"a": ("A", ""), "b": ("B", "")})
+
+        started = time.perf_counter()
+        with pytest.raises(FatalError):
+            translate_file(dict_file, Client(max_retries=3), "es", batch_size=1, workers=2)
+        assert time.perf_counter() - started < 2
+
+    def test_failed_batches_are_counted_not_raised(self):
+        dict_file = DictFile(messages={"a": ("Hello", "")})
+
+        result = translate_file(dict_file, FailingClient("key"), "es")
+
+        assert (result.translated, result.failed_batches) == (0, 1)
+        assert dict_file.messages["a"] == ("Hello", "")
+        assert dict_file.saves == 0
+
+    def test_counts_rejections_and_distinct_errors(self):
+        dict_file = DictFile(messages={str(i): (f"Hi {{name}} {i}", "") for i in range(4)})
+        client = ScriptedClient([
+            {"0": "Hola {name} 0"},
+            {"0": "Hola 1"},
+            LLMError("HTTP 400: too long", status=400),
+            "Sorry, I can't help with that.",
+        ])
+
+        result = translate_file(dict_file, client, "es", batch_size=1, workers=1)
+
+        assert (result.translated, result.failed_batches) == (1, 2)
+        assert result.rejected == Counter({"placeholders": 1})
+        assert set(result.errors) == {
+            "HTTP 400: too long",
+            "reply is not a JSON object: \"Sorry, I can't help with that.\"",
+        }
 
     def test_fatal_error_stops_the_run(self):
         dict_file = DictFile(messages={str(i): (f"m{i}", "") for i in range(20)})
@@ -206,21 +248,6 @@ class TestTranslateFile:
             translate_file(dict_file, client, "es", batch_size=1, workers=2)
 
         assert len(client.calls) < 20
-
-    def test_a_fatal_error_doesnt_wait_for_other_batches_retries(self):
-        class Client(FakeClient):
-            def call_llm(self, system_prompt, user_message):
-                if '"b"' in user_message.lower():
-                    time.sleep(0.1)
-                    raise FatalError("HTTP 401: invalid key", status=401)
-                raise TransientError("HTTP 429", status=429, retry_after=5)
-
-        dict_file = DictFile(messages={"a": ("A", ""), "b": ("B", "")})
-
-        started = time.perf_counter()
-        with pytest.raises(FatalError):
-            translate_file(dict_file, Client(max_retries=3), "es", batch_size=1, workers=2)
-        assert time.perf_counter() - started < 2
 
     def test_apply_and_save_never_overlap(self):
         active = []
