@@ -1,12 +1,18 @@
 """Translate a file's untranslated units with an LLM, whatever the file format.
 
 Units go to the model in batches as a flat JSON object keyed by position
-in the batch.
+in the batch. Each translation comes back under the same key.
+Translations that fail validation are dropped and counted by reason.
 """
 import json
+import logging
 import re
+from collections import Counter
 
 from llm_localize.languages import language_name
+from llm_localize.providers.base import LLMError
+
+logger = logging.getLogger(__name__)
 
 # A line's first {, after spaces or a code fence's ```json, where a reply's object may start
 LINE_OPENING_BRACE_RE = re.compile(r"^[ \t]*(?:```\w*[ \t]*)?\{", re.MULTILINE)
@@ -62,6 +68,37 @@ def format_batch(batch):
     return json.dumps(payload, ensure_ascii=False)
 
 
+def parse_response(response, batch, find_problem):
+    """Return the batch's valid translations and the reasons the rest were rejected.
+
+    Translations are ``{key: translation}``, where a translation is a
+    string. Rejections are a ``Counter`` of reasons, e.g.
+    ``{"placeholders": 2, "missing": 1}``.
+
+    :param find_problem: ``find_problem(source, translation)``, returning a
+        reason or None
+    :raises InvalidResponseError: if the reply has no JSON object
+    """
+    output = extract_json_object(response)
+    if output is None:
+        raise InvalidResponseError(f"reply is not a JSON object: {str(response)[:100]!r}")
+    translations = {}
+    rejected = Counter()
+    for key, unit in batch.items():
+        translation = output.get(key)
+        if _is_missing(translation, unit.source):
+            problem = "missing"
+        else:
+            problem = find_problem(unit.source, translation)
+        if problem:
+            rejected[problem] += 1
+            shown = repr(translation)[:200] if translation else "(no translation)"
+            logger.debug("Rejected (%s): %r -> %s", problem, unit.source[:200], shown)
+        else:
+            translations[key] = translation
+    return translations, rejected
+
+
 def extract_json_object(response):
     r"""Return the JSON object in a model's reply, or None.
 
@@ -103,6 +140,17 @@ def extract_json_object(response):
     return None
 
 
+def _is_missing(translation, source):
+    """Return True unless ``translation`` is a string with text, when ``source`` has text.
+
+    >>> _is_missing(None, "Hi"), _is_missing(" ", "Hi"), _is_missing("Hola", "Hi"), _is_missing(" ", " ")
+    (True, True, False, False)
+    """
+    if not isinstance(translation, str) or not translation:
+        return True
+    return bool(source.strip()) and not translation.strip()
+
+
 def make_batches(units, batch_size):
     """Split units into batches keyed by position within the batch."""
     if batch_size < 1:
@@ -111,3 +159,7 @@ def make_batches(units, batch_size):
         {str(i): unit for i, unit in enumerate(units[start:start + batch_size])}
         for start in range(0, len(units), batch_size)
     ]
+
+
+class InvalidResponseError(LLMError):
+    """The model's reply couldn't be read as a batch of translations."""
