@@ -103,6 +103,21 @@ def retry_after(headers):
     return None
 
 
+def merge_params(defaults, overrides):
+    """Merge request parameters, merging dict values one level deep.
+
+    >>> merge_params({"a": 1, "config": {"x": 1, "y": 2}}, {"config": {"y": 3}, "b": 2})
+    {'a': 1, 'config': {'x': 1, 'y': 3}, 'b': 2}
+    """
+    merged = dict(defaults)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
 class LLMClient(abc.ABC):
     """Sends a system prompt and a user message to an LLM and returns its JSON text reply.
 
