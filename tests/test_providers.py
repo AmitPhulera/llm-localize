@@ -145,6 +145,20 @@ class TestRetry:
         assert max(delays) <= 60
         assert sum(delays[:5]) < 65
 
+    @pytest.mark.parametrize("retry_after, expected", [(7, 7), (1000, 300)])
+    def test_honours_retry_after_up_to_a_limit(self, retry_after, expected):
+        sleep = MagicMock()
+        outcomes = [TransientError("rate limited", retry_after=retry_after), "ok"]
+
+        def func():
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        retry_with_exponential_backoff(func, sleep=sleep)
+        sleep.assert_called_once_with(expected)
+
     def test_other_errors_propagate(self):
         calls = []
 
@@ -161,6 +175,22 @@ class TestPostJson:
 
     def client(self):
         return NoDefaultHost(api_key="k", api_base="https://host")
+
+    @pytest.mark.parametrize("code", [429, 500, 503, 529])
+    def test_transient_status(self, fake_http, code):
+        fake_http(http_error(code))
+
+        with pytest.raises(TransientError) as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert error.value.status == code
+
+    def test_retry_after_header(self, fake_http):
+        headers = {"Retry-After": "12"}
+        fake_http(urllib.error.HTTPError("https://host/x", 429, "Too Many", headers, io.BytesIO(b"")))
+
+        with pytest.raises(TransientError) as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert error.value.retry_after == 12
 
     def test_error_responses_are_closed(self, fake_http):
         error = http_error(400)

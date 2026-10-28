@@ -10,8 +10,13 @@ import urllib.request
 
 logger = logging.getLogger(__name__)
 
-# Longest wait between retries, in seconds
+# Rate limited, or the service is briefly unavailable or overloaded
+TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504, 529)
+
+# Longest wait between retries, in seconds, unless the server asks for
+# longer with Retry-After, which is honoured up to MAX_RETRY_AFTER
 MAX_RETRY_DELAY = 60
+MAX_RETRY_AFTER = 300
 
 
 def urlopen(request, timeout):
@@ -25,7 +30,14 @@ class LLMError(Exception):
 
 
 class TransientError(LLMError):
-    """Raised by providers for failures worth retrying, like rate limits and overload."""
+    """Raised by providers for failures worth retrying, like rate limits and overload.
+
+    :param retry_after: seconds the server asked the caller to wait, if it said
+    """
+
+    def __init__(self, message, status=None, retry_after=None):
+        super().__init__(message, status=status)
+        self.retry_after = retry_after
 
 
 def backoff_delay(attempt, initial_delay=2, exponential_base=2, max_delay=MAX_RETRY_DELAY, jitter=True):
@@ -46,7 +58,8 @@ def backoff_delay(attempt, initial_delay=2, exponential_base=2, max_delay=MAX_RE
 def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, **backoff):
     """Call ``func()``, retrying with exponential backoff on ``TransientError``.
 
-    Waits ``backoff_delay(attempt, **backoff)`` between attempts.
+    Waits as long as the error's ``retry_after`` says, when it says,
+    otherwise ``backoff_delay(attempt, **backoff)``.
     """
     for attempt in range(max_retries + 1):
         try:
@@ -54,9 +67,29 @@ def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, **b
         except TransientError as e:
             if attempt == max_retries:
                 raise
-            delay = backoff_delay(attempt, **backoff)
+            if e.retry_after is not None:
+                delay = min(e.retry_after, MAX_RETRY_AFTER)
+            else:
+                delay = backoff_delay(attempt, **backoff)
             logger.info("%s; retrying in %.0fs", e, delay)
             sleep(delay)
+
+
+def retry_after(headers):
+    """Return the wait in seconds that ``Retry-After`` (or ``retry-after-ms``) asks for, or None.
+
+    The HTTP-date form of ``Retry-After`` isn't supported and is ignored.
+
+    >>> retry_after({"Retry-After": "7"}), retry_after({"retry-after-ms": "1500"}), retry_after({})
+    (7.0, 1.5, None)
+    """
+    headers = {key.lower(): value for key, value in (headers or {}).items()}
+    for name, scale in (("retry-after-ms", 1000), ("retry-after", 1)):
+        try:
+            return max(0.0, float(headers[name]) / scale)
+        except (KeyError, ValueError, TypeError):
+            continue
+    return None
 
 
 class LLMClient(abc.ABC):
@@ -119,8 +152,9 @@ class HttpClient(LLMClient):
     def post_json(self, url, payload, headers):
         """POST ``payload`` as JSON and return the decoded JSON response.
 
-        Raises ``TransientError`` for timeouts and connection failures, and
-        ``LLMError`` for HTTP errors, with the API's error message.
+        Raises ``TransientError`` for rate limits, overload, timeouts and
+        connection failures, and ``LLMError`` for other HTTP errors. Each
+        includes the API's error message.
         """
         request = urllib.request.Request(
             url,
@@ -146,4 +180,6 @@ class HttpClient(LLMClient):
             # Its body may be a temporary file, kept open until closed
             error.close()
         message = f"HTTP {error.code} from {error.url}: {detail or error.reason}"
+        if error.code in TRANSIENT_STATUS_CODES:
+            return TransientError(message, status=error.code, retry_after=retry_after(error.headers))
         return LLMError(message, status=error.code)
