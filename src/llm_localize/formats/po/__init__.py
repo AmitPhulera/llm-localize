@@ -8,7 +8,7 @@ from pathlib import Path
 import polib
 
 from llm_localize.formats.base import TranslationFile
-from llm_localize.formats.po.cleanup import entry_has_control_chars, save_po
+from llm_localize.formats.po.cleanup import entry_has_control_chars, remove_errored_translations, save_po
 from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
 from llm_localize.units import PluralForm, TranslationUnit
 
@@ -27,7 +27,8 @@ class PoFile(TranslationFile):
 
     Untranslated, fuzzy and corrupted (control character) entries are
     translated. Obsolete (``#~``) entries are skipped. Plural forms come
-    from the ``Plural-Forms`` header.
+    from the ``Plural-Forms`` header. After translating, entries that
+    ``msgfmt --check`` rejects are blanked so the next run retries them.
     """
 
     @cached_property
@@ -133,6 +134,15 @@ class PoFile(TranslationFile):
         self.po.encoding = "utf-8"
         self.po.metadata["Content-Type"] = "text/plain; charset=UTF-8"
         return True
+
+    def cleanup(self):
+        if self._use_utf8():
+            save_po(self.po)
+        count = remove_errored_translations(self.path)
+        # The file changed on disk, so drop the stale in-memory copy
+        for attr in ("po", "_entries"):
+            self.__dict__.pop(attr, None)
+        return count
 
 
 def _describe_counts(counts):

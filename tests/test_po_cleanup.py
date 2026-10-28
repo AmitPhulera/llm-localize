@@ -4,6 +4,7 @@ from unittest.mock import patch
 import polib
 import pytest
 
+from llm_localize.formats.po import PoFile
 from llm_localize.formats.po.cleanup import (
     clear_translations_at_lines,
     entry_has_control_chars,
@@ -136,6 +137,16 @@ def test_remove_errored_translations_without_msgfmt(po_path):
     run.assert_not_called()
 
 
+def test_po_file_cleanup_reloads(po_path):
+    path = po_path('msgid "Save — now"\nmsgstr "Guardar \x14 ahora"\n')
+    po_file = PoFile(path)
+    assert po_file.po.find("Save — now").msgstr
+
+    po_file.cleanup()
+
+    assert po_file.po.find("Save — now").msgstr == ""
+
+
 @pytest.mark.parametrize("entry, expected", [
     (polib.POEntry(msgid="Save \u2014 now", msgstr="Guardar \x14 ahora"), True),
     (polib.POEntry(msgid="Save \u2014 now", msgstr="Guardar \u2014 ahora"), False),
@@ -183,3 +194,17 @@ def test_errors_without_a_line_raise(po_path):
 
     with patch("subprocess.run", return_value=completed), pytest.raises(ValueError, match="header broken"):
         remove_errored_translations(path)
+
+
+@pytest.mark.parametrize("header", [
+    "",
+    'msgid ""\nmsgstr ""\n"Content-Type: text/plain\\n"\n\n',
+    'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=CHARSET\\n"\n\n',
+])
+def test_cleanup_only_declares_utf8(po_path, header):
+    path = po_path(header + 'msgid "Hi"\nmsgstr "Allô"\n')
+
+    assert PoFile(path).cleanup() == 0
+
+    assert run_msgfmt(path).returncode == 0
+    assert polib.pofile(path).find("Hi").msgstr == "Allô"
