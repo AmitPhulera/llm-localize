@@ -159,7 +159,27 @@ def test_entry_has_control_chars(entry, expected):
     assert entry_has_control_chars(entry) is expected
 
 
+UTF8_HEADER = 'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\n'
+
+
 def test_extract_errored_line_numbers_skips_continuations():
     output = "x.po:8: duplicate message definition...\nx.po:6: ...this is the location of the first definition"
 
     assert extract_errored_line_numbers(output) == {8: "duplicate message definition..."}
+
+
+def test_duplicate_messages_are_reported_not_blanked(po_path):
+    path = po_path(UTF8_HEADER + 'msgid "Hi"\nmsgstr "Hola"\n\nmsgid "Hi"\nmsgstr "Salut"\n')
+
+    with pytest.raises(ValueError, match="more than once.*msguniq"):
+        remove_errored_translations(path)
+
+    assert [entry.msgstr for entry in polib.pofile(path)] == ["Hola", "Salut"]
+
+
+def test_errors_without_a_line_raise(po_path):
+    path = po_path(UTF8_HEADER + 'msgid "Hi"\nmsgstr "Hola"\n')
+    completed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="x.po: header broken")
+
+    with patch("subprocess.run", return_value=completed), pytest.raises(ValueError, match="header broken"):
+        remove_errored_translations(path)

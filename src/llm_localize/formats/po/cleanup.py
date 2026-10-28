@@ -37,9 +37,18 @@ def remove_errored_translations(file_path):
                        file_path)
         return count
     result = run_msgfmt(file_path)
+    if 'duplicate message definition' in result.stderr:
+        # Blanking either entry wouldn't help: the file stays invalid while both exist
+        raise ValueError(
+            f"{file_path} defines the same message more than once; "
+            f"merge the duplicates, e.g. with msguniq, and run again:\n{result.stderr.strip()}")
     line_num_error_map = extract_errored_line_numbers(result.stderr, file_path)
     if line_num_error_map:
         count += clear_translations_at_lines(file_path, line_num_error_map)
+        result = run_msgfmt(file_path)
+    if result.returncode:
+        # Errors no translation caused, like a broken header
+        raise ValueError(f"msgfmt rejects {file_path}:\n{result.stderr.strip()}")
     if not line_num_error_map:
         logger.info("No msgfmt errors in %s", file_path)
     return count
