@@ -248,6 +248,7 @@ class TestOpenAI:
             {"role": "system", "content": "system"}, {"role": "user", "content": "user"},
         ]
         assert http.payload["temperature"] == 0.2
+        assert http.payload["response_format"]["type"] == "json_schema"
 
     def test_model_params_override_defaults(self, fake_http):
         http = fake_http(openai_reply("{}"))
@@ -262,6 +263,20 @@ class TestOpenAI:
         with pytest.raises(LLMError, match="context length exceeded"):
             OpenAIClient(api_key="k").complete("system", "user")
         assert len(http.requests) == 1
+
+    def test_response_format_can_be_replaced(self, fake_http):
+        http = fake_http(openai_reply("{}"))
+
+        OpenAIClient(api_key="k", model_params={"response_format": {"type": "json_object"}}).complete("s", "u")
+
+        assert http.payload["response_format"] == {"type": "json_object"}
+
+    def test_response_format_can_be_dropped(self, fake_http):
+        http = fake_http(openai_reply("{}"))
+
+        OpenAIClient(api_key="k", model_params={"response_format": None}).complete("s", "u")
+
+        assert "response_format" not in http.payload
 
     def test_no_auth_header_without_key(self, fake_http):
         http = fake_http(openai_reply("{}"))
