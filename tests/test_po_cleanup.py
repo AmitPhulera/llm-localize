@@ -4,7 +4,7 @@ from unittest.mock import patch
 import polib
 import pytest
 
-from llm_localize.formats.po.cleanup import entry_has_control_chars, run_msgfmt
+from llm_localize.formats.po.cleanup import entry_has_control_chars, extract_errored_line_numbers, run_msgfmt
 
 
 @pytest.fixture
@@ -14,6 +14,41 @@ def po_path(tmp_path):
         path.write_text(content, encoding="utf-8")
         return str(path)
     return write
+
+
+def test_extract_errored_line_numbers():
+    error_output = (
+        "dummy.po:10: some error message\n"
+        "dummy.po:15: warning: some warning message\n"
+        "dummy.po:20: another error message\n"
+        "dummy.po:25: yet another error message :with a reason\n"
+    )
+
+    assert extract_errored_line_numbers(error_output) == {
+        10: "some error message",
+        20: "another error message",
+        25: "yet another error message :with a reason",
+    }
+
+
+def test_extract_errored_line_numbers_skips_lines_without_line_number():
+    error_output = (
+        "django.po: warning: Charset missing in header.\n"
+        "django.po:42: a format specification for argument 'count' doesn't exist in 'msgstr[1]'\n"
+    )
+
+    assert list(extract_errored_line_numbers(error_output)) == [42]
+
+
+def test_extract_errored_line_numbers_ignores_non_po_lines():
+    error_output = (
+        "thread 'tokio-rt-worker' panicked at /Users/x/.cargo/registry/src/tokio-1.50.0/"
+        "src/runtime/io/driver.rs:196:23:\n"
+        "unexpected error when polling the I/O driver: Os { code: 9 }\n"
+        "locale/fra/LC_MESSAGES/django.po:32940: 'msgid' and 'msgstr' entries do not both end with '\\n'\n"
+    )
+
+    assert list(extract_errored_line_numbers(error_output)) == [32940]
 
 
 def test_run_msgfmt_returns_result(po_path):
@@ -52,3 +87,9 @@ def test_run_msgfmt_untranslated(po_path):
 ])
 def test_entry_has_control_chars(entry, expected):
     assert entry_has_control_chars(entry) is expected
+
+
+def test_extract_errored_line_numbers_skips_continuations():
+    output = "x.po:8: duplicate message definition...\nx.po:6: ...this is the location of the first definition"
+
+    assert extract_errored_line_numbers(output) == {8: "duplicate message definition..."}

@@ -1,10 +1,15 @@
-"""Spot PO translations that would break ``compilemessages``."""
+"""Spot and blank PO translations that would break ``compilemessages``."""
+import bisect
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
 from llm_localize.validation import has_control_chars
+
+# msgfmt errors look like "<file>.po:<line>: <message>"
+MSGFMT_ERROR_RE = re.compile(r'^.+\.po:(\d+):\s*(.*)$')
 
 
 def entry_has_control_chars(entry):
@@ -41,3 +46,52 @@ def run_msgfmt(file_path):
         check=False,
     )
     return result
+
+
+def extract_errored_line_numbers(error_output, file_path=None):
+    """Map line number to error message for each ``msgfmt`` error, skipping warnings.
+
+    With ``file_path``, only errors in that file count, whatever its name ends
+    with, as a PO file read with ``--format po`` may be called anything.
+
+    >>> extract_errored_line_numbers("x.po:3: bad\\nx.po:5: warning: meh\\nx.po: warning: no line")
+    {3: 'bad'}
+    >>> extract_errored_line_numbers("up.txt:3: bad", "up.txt")
+    {3: 'bad'}
+
+    A line starting with "..." continues the error before it, like the
+    "...this is the location of the first definition" after a duplicate.
+    """
+    pattern = re.compile(re.escape(str(file_path)) + r":(\d+):\s*(.*)$") if file_path else MSGFMT_ERROR_RE
+    line_num_error_map = {}
+    for line in error_output.splitlines():
+        # Only trust lines that point at a PO file line. Anything else, like
+        # lines without a line number ("<file>: warning: Charset missing in
+        # header.") or stray output from native libraries in the subprocess
+        # ("…/driver.rs:196:23: …"), must not map to a msgstr.
+        match = pattern.match(line)
+        if not match:
+            continue
+        line_num, message = match.groups()
+        if message.startswith(('warning', '...')):
+            continue
+        line_num_error_map[int(line_num)] = message.strip()
+    return line_num_error_map
+
+
+def _index_of_entry_at(starts, line_num):
+    """Return the index of the last start on or before ``line_num``, or None.
+
+    >>> _index_of_entry_at([10, 20, 30], 20), _index_of_entry_at([10, 20, 30], 25), _index_of_entry_at([10], 5)
+    (1, 1, None)
+    """
+    return bisect.bisect_right(starts, line_num) - 1 if starts and starts[0] <= line_num else None
+
+
+def _clear(entry):
+    if entry.msgid_plural:
+        # Plural entries store their translations in msgstr_plural, not
+        # msgstr, so blank every msgstr[N] to actually clear it.
+        entry.msgstr_plural = {k: "" for k in entry.msgstr_plural}
+    else:
+        entry.msgstr = ""
