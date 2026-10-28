@@ -182,6 +182,7 @@ class TestTranslateFile:
         assert dict_file.messages == {"a": ("Hello", "T: Hello"), "b": ("Bye", "Adiós"), "c": ("Yes", "T: Yes")}
         assert (result.untranslated, result.translated, result.batches, result.failed_batches) == (2, 2, 2, 0)
         assert dict_file.saves == 2
+        assert dict_file.cleanups == 1
         assert "File format rules: Dict rules." in client.calls[0][0]
 
     def test_a_fatal_error_doesnt_wait_for_other_batches_retries(self):
@@ -234,6 +235,7 @@ class TestTranslateFile:
             translate_file(dict_file, client, "es", batch_size=1, workers=2)
 
         assert len(client.calls) < 20
+        assert dict_file.cleanups == 0
 
     def test_interrupt_cancels_queued_batches(self):
         class InterruptedClient(FakeClient):
@@ -248,6 +250,14 @@ class TestTranslateFile:
             translate_file(dict_file, client, "es", batch_size=1, workers=2)
 
         assert len(client.calls) < 20
+
+    def test_nothing_to_translate(self):
+        dict_file = DictFile(messages={"a": ("Hello", "Hola")})
+        client = FakeClient()
+
+        result = translate_file(dict_file, client, "es", cleanup=False)
+
+        assert (result.batches, client.calls, dict_file.cleanups) == (0, [], 0)
 
     def test_apply_and_save_never_overlap(self):
         active = []

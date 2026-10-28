@@ -225,6 +225,7 @@ class FileResult:
     translated: int = 0
     batches: int = 0
     failed_batches: int = 0
+    cleared: int = 0
     rejected: Counter = field(default_factory=Counter)
     errors: Counter = field(default_factory=Counter)
 
@@ -235,7 +236,7 @@ def describe_error(error):
 
 
 def translate_file(translation_file, client, language, source_language="en", batch_size=50, workers=10,
-                   extra_instructions=""):
+                   extra_instructions="", cleanup=True):
     """Translate a file's untranslated units, saving after each batch.
 
     Saving after each batch keeps finished work if the run is interrupted.
@@ -246,6 +247,7 @@ def translate_file(translation_file, client, language, source_language="en", bat
     :param translation_file: a ``TranslationFile``
     :param client: an ``LLMClient``
     :param workers: number of batches sent to the LLM at once
+    :param cleanup: run the format's ``cleanup`` afterwards
     """
     result = FileResult(path=translation_file.path, language=language)
     units = translation_file.untranslated_units()
@@ -295,4 +297,6 @@ def translate_file(translation_file, client, language, source_language="en", bat
                 executor.shutdown(wait=True, cancel_futures=True)
                 raise
 
+    if cleanup:
+        result.cleared = translation_file.cleanup()
     return result
