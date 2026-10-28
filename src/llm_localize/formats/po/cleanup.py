@@ -1,6 +1,7 @@
 """Spot PO translations that would break ``compilemessages``."""
 import os
 import shutil
+import subprocess
 import tempfile
 
 from llm_localize.validation import has_control_chars
@@ -27,3 +28,16 @@ def save_po(po):
     except BaseException:
         os.unlink(temp_path)
         raise
+
+
+def run_msgfmt(file_path):
+    """Run ``msgfmt --check`` and return the ``subprocess.CompletedProcess``."""
+    result = subprocess.run(
+        ['msgfmt', '--check', '-o', os.devnull, str(file_path)],
+        # Untranslated output, so warnings say "warning" and aren't taken for errors
+        env={**os.environ, 'LC_ALL': 'C'},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result

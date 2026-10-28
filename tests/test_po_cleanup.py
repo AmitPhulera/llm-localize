@@ -1,7 +1,10 @@
+import subprocess
+from unittest.mock import patch
+
 import polib
 import pytest
 
-from llm_localize.formats.po.cleanup import entry_has_control_chars
+from llm_localize.formats.po.cleanup import entry_has_control_chars, run_msgfmt
 
 
 @pytest.fixture
@@ -11,6 +14,21 @@ def po_path(tmp_path):
         path.write_text(content, encoding="utf-8")
         return str(path)
     return write
+
+
+def test_run_msgfmt_returns_result(po_path):
+    path = po_path('msgid "Hello"\nmsgstr "Hola"\n')
+    completed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="fake error output")
+
+    with patch("subprocess.run", return_value=completed):
+        assert run_msgfmt(path).stderr == "fake error output"
+
+
+def test_run_msgfmt_untranslated(po_path):
+    with patch("subprocess.run") as run:
+        run_msgfmt(po_path)
+
+    assert run.call_args.kwargs["env"]["LC_ALL"] == "C"
 
 
 @pytest.mark.parametrize("entry, expected", [
