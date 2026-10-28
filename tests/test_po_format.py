@@ -16,6 +16,30 @@ def po_header(plural_forms, language=""):
     )
 
 
+# One empty plural entry, one with too few plural indices for nplurals=3, one translated
+SPANISH_PLURAL_PO = po_header(SPANISH_PLURAL_FORMS) + """
+#, python-format
+msgid "%(count)s case"
+msgid_plural "%(count)s cases"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+#, python-format
+msgid "%(count)s file"
+msgid_plural "%(count)s files"
+msgstr[0] "%(count)s fileulario"
+msgstr[1] "%(count)s fileularios"
+
+#, python-format
+msgid "%(count)s user"
+msgid_plural "%(count)s users"
+msgstr[0] "%(count)s usuario"
+msgstr[1] "%(count)s de usuarios"
+msgstr[2] "%(count)s usuarios"
+"""
+
+
 @pytest.fixture
 def write_po(tmp_path):
     def write(content, relative_path="django.po"):
@@ -48,6 +72,16 @@ msgstr "Guardar \x14 ahora"
 """))
 
         assert [unit.source for unit in po_file.untranslated_units()] == ["Empty", "Fuzzy", "Save \u2014 now"]
+
+    def test_plural_entries_missing_forms(self, write_po):
+        po_file = PoFile(write_po(SPANISH_PLURAL_PO))
+
+        units = po_file.untranslated_units()
+
+        assert [unit.source for unit in units] == ["%(count)s case", "%(count)s file"]
+        assert [(form.index, form.singular) for form in units[0].plural_forms] == [
+            (0, True), (1, False), (2, False),
+        ]
 
     def test_context_includes_msgctxt_and_comments(self, write_po):
         po_file = PoFile(write_po(po_header(ENGLISH_PLURAL_FORMS) + """
@@ -82,6 +116,18 @@ class TestLanguage:
 
     def test_unknown(self, write_po):
         assert PoFile(write_po(po_header(ENGLISH_PLURAL_FORMS))).language is None
+
+
+class TestApply:
+
+    def test_plural_replaces_every_form(self, write_po):
+        po_file = PoFile(write_po(SPANISH_PLURAL_PO))
+        key = po_file.untranslated_units()[1].key
+
+        po_file.apply(key, {0: "a", 1: "b", 2: "c"})
+        po_file.save()
+
+        assert polib.pofile(po_file.path).find("%(count)s file").msgstr_plural == {0: "a", 1: "b", 2: "c"}
 
 
 class TestSave:

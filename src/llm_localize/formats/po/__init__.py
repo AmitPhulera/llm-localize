@@ -6,7 +6,7 @@ import polib
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, save_po
-from llm_localize.formats.po.plurals import counts_by_plural_index_from_header
+from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
 from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
@@ -16,7 +16,8 @@ class PoFile(TranslationFile):
     """A gettext PO file.
 
     Untranslated, fuzzy and corrupted (control character) entries are
-    translated. Obsolete (``#~``) entries are skipped.
+    translated. Obsolete (``#~``) entries are skipped. Plural forms come
+    from the ``Plural-Forms`` header.
     """
 
     @cached_property
@@ -39,6 +40,10 @@ class PoFile(TranslationFile):
         return self.po.metadata.get("Plural-Forms", "")
 
     @cached_property
+    def nplurals(self):
+        return nplurals_from_header(self._plural_forms_header)
+
+    @cached_property
     def plural_forms(self):
         counts_by_plural_index = counts_by_plural_index_from_header(self._plural_forms_header)
         return tuple(
@@ -59,15 +64,31 @@ class PoFile(TranslationFile):
         ]
 
     def _is_translated(self, entry):
+        if entry.msgid_plural:
+            return all(entry.msgstr_plural.get(index) for index in range(self.nplurals))
         return entry.msgstr != ""
 
     def _unit(self, key, entry):
         context = "\n".join(filter(None, [entry.msgctxt, entry.comment]))
+        if entry.msgid_plural:
+            return TranslationUnit(
+                key=key,
+                source=entry.msgid,
+                plural_source=entry.msgid_plural,
+                plural_forms=self.plural_forms,
+                context=context,
+            )
         return TranslationUnit(key=key, source=entry.msgid, context=context)
 
     def apply(self, key, translation):
         entry = self._entries[key]
-        entry.msgstr = translation
+        if entry.msgid_plural:
+            # Replace every plural index, including ones already translated:
+            # a partly translated entry usually means the Plural-Forms header
+            # gained an index, which can change what the existing ones mean
+            entry.msgstr_plural = dict(translation)
+        else:
+            entry.msgstr = translation
 
     def save(self):
         save_po(self.po)
