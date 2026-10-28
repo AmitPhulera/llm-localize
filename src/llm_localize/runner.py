@@ -17,6 +17,34 @@ def resolve_language(translation_file, language=None):
     return language
 
 
+def translate_files(jobs, client, source_language="en", batch_size=50, workers=10, extra_instructions="",
+                    format=None, cleanup=True, cleanup_only=False):
+    """Translate each ``(path, language)`` job and return a ``FileResult`` per file.
+
+    ``language`` may be None to use the language the file declares. With
+    ``cleanup_only``, no LLM calls are made: only the format's cleanup
+    runs, and ``client`` may be None.
+
+    ``cleanup_only`` can't be combined with ``cleanup=False``.
+
+    If a file raises, the exception gets a ``results`` attribute with the
+    results of the files finished before it, so callers can still report them.
+    """
+    if cleanup_only and not cleanup:
+        raise ValueError("cleanup_only can't be used with cleanup=False")
+    results = []
+    for path, language in jobs:
+        try:
+            results.append(_translate_one(
+                path, language, client, source_language, batch_size, workers, extra_instructions,
+                format, cleanup, cleanup_only,
+            ))
+        except Exception as e:
+            e.results = results
+            raise
+    return results
+
+
 def _translate_one(path, language, client, source_language, batch_size, workers, extra_instructions,
                    format, cleanup, cleanup_only):
     translation_file = open_file(path, format=format, language=language, source_language=source_language)
