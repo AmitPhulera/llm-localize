@@ -60,6 +60,20 @@ msgstr ""
         assert po_file.untranslated_units()[0].context == "month\nMonth name"
 
 
+class TestLanguage:
+
+    def test_from_header(self, write_po):
+        assert PoFile(write_po(po_header(ENGLISH_PLURAL_FORMS, language="pt_BR"))).language == "pt_BR"
+
+    def test_from_locale_directory(self, write_po):
+        path = write_po(po_header(ENGLISH_PLURAL_FORMS), "locale/fr/LC_MESSAGES/django.po")
+
+        assert PoFile(path).language == "fr"
+
+    def test_unknown(self, write_po):
+        assert PoFile(write_po(po_header(ENGLISH_PLURAL_FORMS))).language is None
+
+
 class TestSave:
     ASCII_PO = (
         'msgid ""\n'

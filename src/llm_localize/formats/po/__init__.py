@@ -1,11 +1,14 @@
 """gettext PO files."""
 from functools import cached_property
+from pathlib import Path
 
 import polib
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, save_po
 from llm_localize.units import TranslationUnit
+
+LC_MESSAGES = "LC_MESSAGES"
 
 
 class PoFile(TranslationFile):
@@ -18,6 +21,17 @@ class PoFile(TranslationFile):
     @cached_property
     def po(self):
         return polib.pofile(self.path)
+
+    @property
+    def language(self):
+        """Return the ``Language`` header, or the locale of ``<locale>/LC_MESSAGES/x.po``."""
+        language = self.po.metadata.get("Language", "").strip()
+        if language:
+            return language
+        parent = Path(self.path).parent
+        if parent.name == LC_MESSAGES:
+            return parent.parent.name
+        return None
 
     @cached_property
     def _entries(self):
