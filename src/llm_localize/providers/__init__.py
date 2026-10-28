@@ -5,7 +5,7 @@ path to an ``LLMClient`` subclass, e.g. ``"myproject.llm.MyClient"``.
 """
 import os
 
-from llm_localize.providers.base import LLMClient, LLMError
+from llm_localize.providers.base import HttpClient, LLMClient, LLMError
 from llm_localize.utils import import_class
 
 # Read for every provider, before the provider's own variable
@@ -27,12 +27,14 @@ def get_client(provider='openai', api_key=None, **kwargs):
     """Build a client, reading the API key from the environment if not given.
 
     The key comes from ``LLM_LOCALIZE_API_KEY``, then the provider's own
-    variable, its ``api_key_env_var``. Keyword arguments go to the client,
-    e.g. ``model`` or ``api_base``.
+    variable, e.g. ``OPENAI_API_KEY``. The provider's own variable is only
+    read for the provider's own API: a key meant for OpenAI shouldn't be
+    sent to some other server's ``api_base``. Keyword arguments go to the
+    client, e.g. ``model`` or ``api_base``.
     """
     client_class = get_client_class(provider)
     env_vars = [API_KEY_ENV_VAR]
-    if client_class.api_key_env_var:
+    if client_class.api_key_env_var and _uses_default_host(client_class, kwargs.get('api_base')):
         env_vars.append(client_class.api_key_env_var)
     api_key = api_key or next(filter(None, map(os.environ.get, env_vars)), None)
     client = client_class(api_key=api_key, **kwargs)
@@ -41,3 +43,11 @@ def get_client(provider='openai', api_key=None, **kwargs):
             f"No API key for provider {provider!r}. Pass one explicitly "
             f"or set the {' or '.join(env_vars)} environment variable.")
     return client
+
+
+def _uses_default_host(client_class, api_base):
+    if not issubclass(client_class, HttpClient):
+        return True
+    if not client_class.default_api_base:
+        return False
+    return client_class.resolve_api_base(api_base) == client_class.default_api_base.rstrip('/')

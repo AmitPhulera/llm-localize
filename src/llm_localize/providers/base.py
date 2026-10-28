@@ -172,6 +172,8 @@ class HttpClient(LLMClient):
 
     The API base URL is, in order: the ``api_base`` argument, the
     ``api_base_env_var`` environment variable, then ``default_api_base``.
+    The API key is optional for any host other than the default, so local
+    and self-hosted servers work without one.
     """
 
     default_api_base = None
@@ -190,6 +192,14 @@ class HttpClient(LLMClient):
         if not resolved:
             raise LLMError(f"{cls.__name__} has no default_api_base; pass api_base")
         return resolved.rstrip("/")
+
+    @property
+    def requires_api_key(self):
+        return self.uses_default_host
+
+    @property
+    def uses_default_host(self):
+        return bool(self.default_api_base) and self.api_base == self.default_api_base.rstrip("/")
 
     def post_json(self, url, payload, headers):
         """POST ``payload`` as JSON and return the decoded JSON response.

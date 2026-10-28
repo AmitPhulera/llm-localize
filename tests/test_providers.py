@@ -105,12 +105,54 @@ class TestRegistry:
 
         assert seen == ["secret"]
 
+    @pytest.mark.parametrize("api_base, env_var, expected", [
+        (None, None, "vendor-key"),
+        ("https://api.openai.com/v1/", None, "vendor-key"),
+        ("http://localhost:11434/v1", None, None),
+        (None, "http://localhost:11434/v1", None),
+    ])
+    def test_vendor_key_only_for_vendor_host(self, monkeypatch, api_base, env_var, expected):
+        monkeypatch.setenv("OPENAI_API_KEY", "vendor-key")
+        if env_var:
+            monkeypatch.setenv("OPENAI_BASE_URL", env_var)
+
+        assert get_client("openai", api_base=api_base).api_key == expected
+
     @pytest.mark.parametrize("provider, env_var", [
         ("openai", "OPENAI_API_KEY"),
     ])
     def test_api_key_required_for_default_host(self, provider, env_var):
         with pytest.raises(LLMError, match=f"LLM_LOCALIZE_API_KEY or {env_var}"):
             get_client(provider)
+
+    def test_api_key_optional_for_other_hosts(self):
+        client = get_client("openai", api_base="http://localhost:11434/v1/")
+
+        assert (client.api_key, client.api_base) == (None, "http://localhost:11434/v1")
+
+    @pytest.mark.parametrize("provider, env_var", [
+        ("openai", "OPENAI_API_KEY"),
+    ])
+    def test_vendor_key_is_not_sent_to_other_hosts(self, monkeypatch, provider, env_var):
+        monkeypatch.setenv(env_var, "vendor-key")
+
+        client = get_client(provider, api_base="https://gateway.example.com")
+
+        assert client.api_key is None
+
+    def test_generic_key_is_used_for_other_hosts(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "vendor-key")
+        monkeypatch.setenv("LLM_LOCALIZE_API_KEY", "generic")
+
+        assert get_client("openai", api_base="https://gateway.example.com").api_key == "generic"
+
+    def test_explicit_key_is_used_for_other_hosts(self):
+        assert get_client("openai", api_key="k", api_base="https://gateway.example.com").api_key == "k"
+
+    def test_vendor_key_is_used_for_the_vendor_host_set_explicitly(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "vendor-key")
+
+        assert get_client("openai", api_base="https://api.openai.com/v1/").api_key == "vendor-key"
 
     def test_defaults_and_overrides(self):
         client = get_client("openai", api_key="k", model_params={"temperature": 0})
@@ -321,6 +363,15 @@ def test_client_without_default_host_needs_api_base():
     with (patch("llm_localize.providers.get_client_class", return_value=NoDefaultHost),
           pytest.raises(LLMError, match="no default_api_base")):
         get_client("custom")
+
+
+def test_client_without_default_host_needs_no_key(monkeypatch):
+    monkeypatch.setenv("FAKE_API_KEY", "vendor-key")
+
+    with patch("llm_localize.providers.get_client_class", return_value=NoDefaultHost):
+        client = get_client("custom", api_base="http://localhost:8000/")
+
+    assert (client.api_base, client.api_key, client.uses_default_host) == ("http://localhost:8000", None, False)
 
 
 def test_client_without_default_model():
