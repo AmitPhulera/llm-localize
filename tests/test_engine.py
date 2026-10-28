@@ -1,8 +1,19 @@
-
 import pytest
 
-from llm_localize.engine import make_batches
+from llm_localize.engine import build_system_prompt, make_batches
 from llm_localize.units import TranslationUnit
+
+
+def test_build_system_prompt():
+    prompt = build_system_prompt("fr", "en", "Format rules.", "Be formal.")
+
+    assert "from English to French" in prompt
+    assert "File format rules: Format rules." in prompt
+    assert "Additional instructions: Be formal." in prompt
+
+
+def test_build_system_prompt_unknown_language():
+    assert "to some_lang_code" in build_system_prompt("some_lang_code")
 
 
 def test_make_batches_needs_a_positive_size():
