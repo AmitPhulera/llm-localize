@@ -12,4 +12,4 @@ uv run ruff check .
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The table of language names from Django is under the BSD 3-Clause license, in [licenses/Django-LICENSE.txt](licenses/Django-LICENSE.txt).

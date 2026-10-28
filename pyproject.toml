@@ -8,8 +8,8 @@ name = "llm-localize"
 dynamic = ["version"]
 description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact."
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "MIT AND BSD-3-Clause"
+license-files = ["LICENSE", "licenses/*"]
 authors = [{ name = "Amit Phulera" }]
 requires-python = ">=3.10"
 dependencies = []
