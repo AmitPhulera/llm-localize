@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 # Rate limited, or the service is briefly unavailable or overloaded
 TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504, 529)
 
+# Bad credentials, billing, permissions, or a wrong URL or model: every
+# request will fail the same way
+FATAL_STATUS_CODES = (401, 402, 403, 404)
+
 # Longest wait between retries, in seconds, unless the server asks for
 # longer with Retry-After, which is honoured up to MAX_RETRY_AFTER
 MAX_RETRY_DELAY = 60
@@ -38,6 +42,13 @@ class TransientError(LLMError):
     def __init__(self, message, status=None, retry_after=None):
         super().__init__(message, status=status)
         self.retry_after = retry_after
+
+
+class FatalError(LLMError):
+    """Raised by providers for failures that every request will hit, like a bad API key.
+
+    Stops the whole run instead of failing each batch in turn.
+    """
 
 
 def backoff_delay(attempt, initial_delay=2, exponential_base=2, max_delay=MAX_RETRY_DELAY, jitter=True):
@@ -153,8 +164,9 @@ class HttpClient(LLMClient):
         """POST ``payload`` as JSON and return the decoded JSON response.
 
         Raises ``TransientError`` for rate limits, overload, timeouts and
-        connection failures, and ``LLMError`` for other HTTP errors. Each
-        includes the API's error message.
+        connection failures, ``FatalError`` for authentication, billing,
+        permission and not-found errors, and ``LLMError`` for other HTTP
+        errors. Each includes the API's error message.
         """
         request = urllib.request.Request(
             url,
@@ -182,4 +194,6 @@ class HttpClient(LLMClient):
         message = f"HTTP {error.code} from {error.url}: {detail or error.reason}"
         if error.code in TRANSIENT_STATUS_CODES:
             return TransientError(message, status=error.code, retry_after=retry_after(error.headers))
+        if error.code in FATAL_STATUS_CODES:
+            return FatalError(message, status=error.code)
         return LLMError(message, status=error.code)

@@ -7,6 +7,7 @@ import pytest
 
 from llm_localize.providers import get_client, get_client_class
 from llm_localize.providers.base import (
+    FatalError,
     HttpClient,
     LLMError,
     TransientError,
@@ -192,6 +193,14 @@ class TestPostJson:
             self.client().post_json("https://host/x", {}, {})
         assert error.value.retry_after == 12
 
+    @pytest.mark.parametrize("code", [401, 402, 403, 404])
+    def test_fatal_status(self, fake_http, code):
+        fake_http(http_error(code, b'{"error": "invalid key"}'))
+
+        with pytest.raises(FatalError, match="invalid key") as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert error.value.status == code
+
     def test_error_responses_are_closed(self, fake_http):
         error = http_error(400)
         fake_http(error)
@@ -205,7 +214,7 @@ class TestPostJson:
 
         with pytest.raises(LLMError, match="prompt is too long") as error:
             self.client().post_json("https://host/x", {}, {})
-        assert not isinstance(error.value, TransientError)
+        assert not isinstance(error.value, (TransientError, FatalError))
         assert error.value.status == 400
 
     def test_connection_failure_is_transient(self, fake_http):
