@@ -9,7 +9,9 @@ validation are dropped, counted by reason, and retried on the next run.
 import json
 import logging
 import re
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from llm_localize.languages import language_name
@@ -224,7 +226,7 @@ class FileResult:
     rejected: Counter = field(default_factory=Counter)
 
 
-def translate_file(translation_file, client, language, source_language="en", batch_size=50,
+def translate_file(translation_file, client, language, source_language="en", batch_size=50, workers=10,
                    extra_instructions=""):
     """Translate a file's untranslated units, saving after each batch.
 
@@ -232,6 +234,7 @@ def translate_file(translation_file, client, language, source_language="en", bat
 
     :param translation_file: a ``TranslationFile``
     :param client: an ``LLMClient``
+    :param workers: number of batches sent to the LLM at once
     """
     result = FileResult(path=translation_file.path, language=language)
     units = translation_file.untranslated_units()
@@ -240,14 +243,24 @@ def translate_file(translation_file, client, language, source_language="en", bat
     result.batches = len(batches)
     system_prompt = build_system_prompt(
         language, source_language, translation_file.instructions, extra_instructions)
-    for batch in batches:
+    lock = threading.Lock()
+
+    def run(batch):
         response = client.complete(system_prompt, format_batch(batch))
         translations, rejected = parse_response(response, batch, translation_file.find_problem)
-        for key, translation in translations.items():
-            translation_file.apply(batch[key].key, translation)
-        if translations:
-            translation_file.save()
-        result.translated += len(translations)
-        result.rejected += rejected
+        with lock:
+            for key, translation in translations.items():
+                translation_file.apply(batch[key].key, translation)
+            if translations:
+                translation_file.save()
+        return len(translations), rejected
+
+    if batches:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+            futures = {executor.submit(run, batch): i for i, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                translated, rejected = future.result()
+                result.translated += translated
+                result.rejected += rejected
 
     return result

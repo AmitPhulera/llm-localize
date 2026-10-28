@@ -1,4 +1,5 @@
 import json
+import threading
 from collections import Counter
 
 import pytest
@@ -174,9 +175,32 @@ class TestTranslateFile:
         dict_file = DictFile(messages={"a": ("Hello", ""), "b": ("Bye", "Adiós"), "c": ("Yes", "")})
         client = FakeClient()
 
-        result = translate_file(dict_file, client, "es", batch_size=1)
+        result = translate_file(dict_file, client, "es", batch_size=1, workers=2)
 
         assert dict_file.messages == {"a": ("Hello", "T: Hello"), "b": ("Bye", "Adiós"), "c": ("Yes", "T: Yes")}
         assert (result.untranslated, result.translated, result.batches) == (2, 2, 2)
         assert dict_file.saves == 2
         assert "File format rules: Dict rules." in client.calls[0][0]
+
+    def test_apply_and_save_never_overlap(self):
+        active = []
+        overlaps = []
+        lock = threading.Lock()
+
+        class SlowFile(DictFile):
+            def apply(self, key, translation):
+                with lock:
+                    active.append(1)
+                    if len(active) > 1:
+                        overlaps.append(key)
+                threading.Event().wait(0.001)
+                super().apply(key, translation)
+                with lock:
+                    active.pop()
+
+        slow_file = SlowFile(messages={str(i): (f"m{i}", "") for i in range(40)})
+
+        result = translate_file(slow_file, FakeClient(), "es", batch_size=1, workers=8)
+
+        assert result.translated == 40
+        assert overlaps == []
