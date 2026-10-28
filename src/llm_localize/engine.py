@@ -231,6 +231,7 @@ def translate_file(translation_file, client, language, source_language="en", bat
     """Translate a file's untranslated units, saving after each batch.
 
     Saving after each batch keeps finished work if the run is interrupted.
+    An error or Ctrl-C cancels the batches not yet started and is raised.
 
     :param translation_file: a ``TranslationFile``
     :param client: an ``LLMClient``
@@ -244,9 +245,11 @@ def translate_file(translation_file, client, language, source_language="en", bat
     system_prompt = build_system_prompt(
         language, source_language, translation_file.instructions, extra_instructions)
     lock = threading.Lock()
+    # Set when the run stops early, so batches waiting to retry give up rather than keep it waiting
+    stop = threading.Event()
 
     def run(batch):
-        response = client.complete(system_prompt, format_batch(batch))
+        response = client.complete(system_prompt, format_batch(batch), stop=stop)
         translations, rejected = parse_response(response, batch, translation_file.find_problem)
         with lock:
             for key, translation in translations.items():
@@ -258,9 +261,15 @@ def translate_file(translation_file, client, language, source_language="en", bat
     if batches:
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {executor.submit(run, batch): i for i, batch in enumerate(batches)}
-            for future in as_completed(futures):
-                translated, rejected = future.result()
-                result.translated += translated
-                result.rejected += rejected
+            try:
+                for future in as_completed(futures):
+                    translated, rejected = future.result()
+                    result.translated += translated
+                    result.rejected += rejected
+            except BaseException:
+                # A fatal error or Ctrl-C: don't send the requests still queued, or retry those sent
+                stop.set()
+                executor.shutdown(wait=True, cancel_futures=True)
+                raise
 
     return result

@@ -77,24 +77,29 @@ def backoff_delay(attempt, initial_delay=2, exponential_base=2, max_delay=MAX_RE
     return delay
 
 
-def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, **backoff):
+def retry_with_exponential_backoff(func, *, max_retries=5, sleep=time.sleep, stop=None, **backoff):
     """Call ``func()``, retrying with exponential backoff on ``TransientError``.
 
     Waits as long as the error's ``retry_after`` says, when it says,
-    otherwise ``backoff_delay(attempt, **backoff)``.
+    otherwise ``backoff_delay(attempt, **backoff)``. ``stop``, a
+    ``threading.Event``, ends the waiting: once it's set, the error is
+    raised instead of retried, as when another batch's error stops the run.
     """
     for attempt in range(max_retries + 1):
         try:
             return func()
         except TransientError as e:
-            if attempt == max_retries:
+            if attempt == max_retries or (stop is not None and stop.is_set()):
                 raise
             if e.retry_after is not None:
                 delay = min(e.retry_after, MAX_RETRY_AFTER)
             else:
                 delay = backoff_delay(attempt, **backoff)
             logger.info("%s; retrying in %.0fs", e, delay)
-            sleep(delay)
+            if stop is None:
+                sleep(delay)
+            elif stop.wait(delay):
+                raise
 
 
 def output_limit_error(model):
@@ -156,10 +161,12 @@ class LLMClient(abc.ABC):
     def requires_api_key(self):
         return True
 
-    def complete(self, system_prompt, user_message):
+    def complete(self, system_prompt, user_message, stop=None):
+        """Return the model's reply, retrying transient errors until ``stop``, a ``threading.Event``, is set."""
         return retry_with_exponential_backoff(
             lambda: self.call_llm(system_prompt, user_message),
             max_retries=self.max_retries,
+            stop=stop,
         )
 
     @abc.abstractmethod

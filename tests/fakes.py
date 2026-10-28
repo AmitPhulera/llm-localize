@@ -1,5 +1,6 @@
 """Test doubles for LLM clients and translation files."""
 import json
+import threading
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.providers.base import LLMClient
@@ -33,6 +34,30 @@ class FakeClient(LLMClient):
             else:
                 output[key] = self.prefix + value["text"]
         return json.dumps(output)
+
+
+class ScriptedClient(LLMClient):
+    """Replies with each item of ``replies`` in turn.
+
+    An exception is raised, a dict is sent back as JSON, and anything else
+    is sent back as is.
+    """
+
+    default_model = "fake-model"
+
+    def __init__(self, replies, **kwargs):
+        super().__init__("key", max_retries=0, **kwargs)
+        self.replies = list(replies)
+        self.calls = []
+        self.lock = threading.Lock()
+
+    def call_llm(self, system_prompt, user_message):
+        with self.lock:
+            self.calls.append(user_message)
+            reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return json.dumps(reply) if isinstance(reply, dict) else reply
 
 
 class DictFile(TranslationFile):
