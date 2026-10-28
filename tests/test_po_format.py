@@ -2,6 +2,7 @@ import polib
 import pytest
 
 from llm_localize.formats.po import PoFile
+from llm_localize.formats.po.cleanup import run_msgfmt
 
 from .test_plurals import ENGLISH_PLURAL_FORMS, SPANISH_PLURAL_FORMS, UKRAINIAN_PLURAL_FORMS
 
@@ -157,6 +158,16 @@ class TestSave:
         'msgstr "Adieu"\n'
     )
 
+    def test_converts_to_utf8_when_needed(self, write_po):
+        po_file = PoFile(write_po(self.ASCII_PO))
+
+        po_file.apply(po_file.untranslated_units()[0].key, "Allô")
+        po_file.save()
+
+        po = polib.pofile(po_file.path)
+        assert po.metadata["Content-Type"] == "text/plain; charset=UTF-8"
+        assert (po.find("Hello").msgstr, po.find("Bye").msgstr) == ("Allô", "Adieu")
+
     def test_failed_save_leaves_the_file_alone(self, write_po, monkeypatch):
         path = write_po(self.ASCII_PO)
         po_file = PoFile(path)
@@ -186,6 +197,21 @@ class TestSave:
 
         assert link.is_symlink()
         assert polib.pofile(target).find("Hello").msgstr == "Hola"
+
+    @pytest.mark.parametrize("header", [
+        "",
+        'msgid ""\nmsgstr ""\n"Content-Type: text/plain\\n"\n\n',
+        'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=CHARSET\\n"\n\n',
+        'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=brk\\n"\n\n',
+    ])
+    def test_declares_utf8_when_charset_missing(self, write_po, header):
+        po_file = PoFile(write_po(header + 'msgid "Hello"\nmsgstr ""\n'))
+
+        po_file.apply(po_file.untranslated_units()[0].key, "Allô")
+        po_file.save()
+
+        assert polib.pofile(po_file.path).metadata["Content-Type"] == "text/plain; charset=UTF-8"
+        assert run_msgfmt(po_file.path).returncode == 0
 
     def test_keeps_file_mode(self, write_po):
         path = write_po(self.ASCII_PO)

@@ -1,4 +1,5 @@
 """gettext PO files."""
+import codecs
 import logging
 import re
 from functools import cached_property
@@ -17,6 +18,8 @@ LC_MESSAGES = "LC_MESSAGES"
 PLURAL_RULE_RE = re.compile(r"nplurals\s*=\s*\d+\s*;\s*plural\s*=")
 
 logger = logging.getLogger(__name__)
+
+CHARSET_RE = re.compile(r'charset\s*=\s*"?([^";\s]+)', re.IGNORECASE)
 
 
 class PoFile(TranslationFile):
@@ -108,7 +111,28 @@ class PoFile(TranslationFile):
             entry.flags.remove("fuzzy")
 
     def save(self):
+        self._use_utf8()
         save_po(self.po)
+
+    def _use_utf8(self):
+        """Declare UTF-8 unless the header already does, and return whether that changed anything.
+
+        Translations may hold characters the file's charset can't, like "ô"
+        in ASCII. UTF-8 holds them all, and the existing text too. A
+        missing charset, the template's "CHARSET" or one no codec knows is
+        set too, since msgfmt rejects non-ASCII text without a real one.
+        """
+        match = CHARSET_RE.search(self.po.metadata.get("Content-Type", ""))
+        try:
+            # The header's own, not polib's encoding: it reads a charset it doesn't know as UTF-8
+            declared = codecs.lookup(match.group(1)).name if match else None
+        except LookupError:
+            declared = None
+        if declared == "utf-8":
+            return False
+        self.po.encoding = "utf-8"
+        self.po.metadata["Content-Type"] = "text/plain; charset=UTF-8"
+        return True
 
 
 def _describe_counts(counts):
