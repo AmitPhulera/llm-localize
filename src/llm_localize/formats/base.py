@@ -128,3 +128,19 @@ def load_json(text, path):
         stack.extend((item, depth + 1) for item in (value.values() if isinstance(value, dict) else value)
                      if isinstance(item, (dict, list)))
     return document
+
+
+def splice(data, replacements):
+    """Return ``data`` (bytes or text) with each ``(start, end, new)`` replacement made, in one pass.
+
+    Making them one at a time would copy the rest of the file for each. An
+    insertion, where start is end, goes before a replacement at the same place.
+
+    >>> splice(b"Hello world", [(6, 11, b"there"), (0, 0, b"> "), (5, 5, b",")])
+    b'> Hello, there'
+    """
+    pieces, previous = [], 0
+    for start, end, new in sorted(replacements, key=lambda replacement: replacement[:2]):
+        pieces += [data[previous:start], new]
+        previous = end
+    return data[:0].join(pieces) + data[previous:]
