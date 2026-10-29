@@ -90,3 +90,36 @@ def test_context_and_instructions_reach_the_prompt():
 
     translator.translate(["Schraube"], "fr", instructions="Be casual.")
     assert "Additional instructions: Be casual." in client.calls[1][0]
+
+
+def test_an_empty_source_language_setting_means_english():
+    translator = StringTranslator.from_config({"PROVIDER": "tests.fakes.FakeClient", "API_KEY": "k",
+                                               "SOURCE_LANGUAGE": None})
+
+    assert translator.source_language == "en"
+    assert translator.translate(["Hello"], "fr") == ["T: Hello"]
+
+
+def test_from_config():
+    config = {
+        "PROVIDER": "tests.fakes.FakeClient",
+        "API_KEY": "from-config",
+        "MODEL": "custom-model",
+        "SOURCE_LANGUAGE": "de",
+        "EXTRA_INSTRUCTIONS": "Be brief.",
+        "BATCH_SIZE": 5,
+    }
+
+    translator = StringTranslator.from_config(config, workers=2)
+
+    assert (translator.client.api_key, translator.client.model) == ("from-config", "custom-model")
+    assert (translator.source_language, translator.instructions) == ("de", "Be brief.")
+    assert (translator.batch_size, translator.workers) == (5, 2)
+    assert translator.translate(["Hello"], "fr") == ["T: Hello"]
+
+
+def test_from_config_uses_defaults_and_api_base():
+    translator = StringTranslator.from_config({"API_BASE": "http://localhost:11434/v1", "MODEL": "llama"})
+
+    assert translator.client.api_base == "http://localhost:11434/v1"
+    assert (translator.source_language, translator.batch_size) == ("en", 50)

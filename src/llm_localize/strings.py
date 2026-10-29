@@ -11,6 +11,7 @@ while handling a request.
 from collections import Counter
 from dataclasses import dataclass, field
 
+from llm_localize.cli import DEFAULTS
 from llm_localize.engine import translate_file
 from llm_localize.formats.base import TranslationFile
 from llm_localize.providers import get_client
@@ -92,10 +93,32 @@ class StringTranslator:
     def __init__(self, provider="openai", api_key=None, source_language="en", instructions="",
                  batch_size=50, workers=10, **client_options):
         self.client = get_client(provider, api_key=api_key, **client_options)
-        self.source_language = source_language
+        # None, as a setting left empty gives, means the default
+        self.source_language = source_language or "en"
         self.instructions = instructions
         self.batch_size = batch_size
         self.workers = workers
+
+    @classmethod
+    def from_config(cls, config, **overrides):
+        """Build a translator from a config dict with the keys of ``LLM_LOCALIZE``, with keyword overrides.
+
+        Missing keys take their defaults.
+        """
+        config = {**DEFAULTS, **config}
+        options = {
+            "provider": config["PROVIDER"],
+            "api_key": config["API_KEY"],
+            "source_language": config["SOURCE_LANGUAGE"],
+            "instructions": config["EXTRA_INSTRUCTIONS"],
+            "batch_size": config["BATCH_SIZE"],
+            "workers": config["WORKERS"],
+            "model": config["MODEL"],
+            "model_params": config["MODEL_PARAMS"],
+        }
+        if config["API_BASE"]:
+            options["api_base"] = config["API_BASE"]
+        return cls(**{**options, **overrides})
 
     def translate(self, texts, language, context="", source_language=None, instructions=None):
         """Return the translations of ``texts`` in order, with ``None`` for any that failed.

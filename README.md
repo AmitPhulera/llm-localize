@@ -124,9 +124,19 @@ translator.translate(product_names, "de", context="product names in a hardware s
 
 - Results come back in the same order as the input. A string that couldn't be translated comes back as `None`, so you can fall back to the source text, retry later, or show an error.
 - Repeated strings are sent once. Blank strings are returned unchanged, without calling the LLM.
-- `context` describes the strings, to help the model. `instructions` and `source_language` override the translator's own for one call.
+- `context` describes the strings, to help the model. `instructions` overrides `EXTRA_INSTRUCTIONS` for one call, and `source_language` overrides `SOURCE_LANGUAGE`.
 - `translate_with_report()` returns the translations along with why any are missing: `rejected` reasons and `errors` from failed batches, as in the file summary.
 - A `FatalError`, such as a wrong API key, is raised rather than returned as `None`s.
+
+In Django, build it from `LLM_LOCALIZE` with `get_translator()`, which takes keyword overrides:
+
+```python
+from llm_localize.contrib.django import get_translator
+
+translator = get_translator(workers=4)
+```
+
+`StringTranslator.from_config(config)` does the same from any dict with the keys of `LLM_LOCALIZE`, e.g. one loaded from your own app's settings.
 
 Create one translator and reuse it; it's safe to share between threads. LLM calls take seconds, so call it from a background task (Celery, RQ, a management command) rather than while handling a request. It doesn't cache translations, so store the results if you'll need them again.
 
