@@ -127,6 +127,16 @@ class TestTranslating:
         # With namespaces checked, so a prefix like xliff: must be declared
         expat.ParserCreate(namespace_separator=" ").Parse(text.encode(), True)
 
+    @pytest.mark.parametrize("target", ["<resources/>", "<resources></resources>", ""])
+    def test_targets_without_strings(self, res, target):
+        path = write(res / "values-fr" / "strings.xml", target)
+
+        translate_file(open_file(path), FakeClient(), "fr")
+
+        text = path.read_text(encoding="utf-8")
+        expat.ParserCreate(namespace_separator=" ").Parse(text.encode(), True)
+        assert text.count("<string ") == 5 and text.count("<plurals ") == 1
+
     @pytest.mark.parametrize("tag", ["string", "plurals"])
     def test_strings_the_target_marks_untranslatable_are_left_alone(self, res, tag):
         kept = (f'<{tag} name="{"app_name" if tag == "string" else "notes"}" translatable="false">'
@@ -138,6 +148,12 @@ class TestTranslating:
         text = path.read_text(encoding="utf-8")
         assert kept in text
         assert text.count('name="app_name"') == 1 and text.count('name="notes"') == 1
+
+    def test_invalid_target(self, res):
+        write(res / "values-fr" / "strings.xml", "<resources><string>")
+
+        with pytest.raises(ValueError, match="not valid XML"):
+            open_file(res / "values-fr" / "strings.xml").untranslated_units()
 
     def test_plural_forms_already_translated_are_kept(self, tmp_path):
         write(tmp_path / "res" / "values" / "strings.xml", '<resources><plurals name="files">'

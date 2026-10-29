@@ -108,7 +108,12 @@ class AndroidFile(MonolingualFile):
         written = b"".join(text for _, _, text in replacements) + b"".join(additions)
         root_tag = _with_namespaces(data[target.root_start:target.root_tag_end].decode(), source.root_start_tag,
                                     written.decode())
-        replacements.append((target.root_end, target.root_end, b"".join(additions)))
+        if root_tag.endswith("/>"):
+            # <resources/>: open it up to hold what's added
+            closing = "\n" + b"".join(additions).decode() + "</resources>" if additions else ""
+            root_tag = open_tag(root_tag) + closing if additions else root_tag
+        else:
+            replacements.append((target.root_end, target.root_end, b"".join(additions)))
         replacements.append((target.root_start, target.root_tag_end, root_tag.encode()))
         write_file(self.path, splice(data, replacements))
 
@@ -245,6 +250,9 @@ def _read(path):
         return _Resources()
     with open(path, "rb") as f:
         data = f.read()
+    # An empty file, as an editor or touch makes, is a target with nothing in it yet
+    if not data.strip():
+        return _Resources()
     resources = _Resources(data)
     parser = expat.ParserCreate("utf-8")
     stack = []
@@ -303,7 +311,10 @@ def _read(path):
     parser.StartElementHandler = start
     parser.EndElementHandler = end
     parser.CommentHandler = comment
-    parser.Parse(data, True)
+    try:
+        parser.Parse(data, True)
+    except expat.ExpatError as e:
+        raise ValueError(f"{path} is not valid XML: {e}") from e
     # Only elements that were read in full count; resources without a name can't be matched
     resources.elements = {key: element for key, element in resources.elements.items() if element.name}
     return resources
