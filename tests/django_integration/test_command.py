@@ -1,6 +1,6 @@
 import logging
 import urllib.error
-from io import BytesIO
+from io import BytesIO, StringIO
 from unittest.mock import patch
 
 import polib
@@ -55,6 +55,36 @@ def test_langs_limits_languages(locale_dir):
     assert (msgstr(locale_dir, "es"), msgstr(locale_dir, "fr")) == ("", "T: Hello")
 
 
+def test_failed_batches_raise(locale_dir, settings):
+    settings.LLM_LOCALIZE = {"PROVIDER": "tests.fakes.FailingClient", "API_KEY": "k"}
+    stdout, stderr = StringIO(), StringIO()
+
+    with pytest.raises(CommandError, match="batches failed"):
+        call_command("llm_localize", verbosity=0, stdout=stdout, stderr=stderr)
+
+    assert stdout.getvalue() == ""
+    assert "1 of 1 batches failed" in stderr.getvalue()
+    assert "RuntimeError: boom" in stderr.getvalue()
+
+
+def test_output_streams(locale_dir):
+    stdout, stderr = StringIO(), StringIO()
+
+    call_command("llm_localize", "--langs", "es", stdout=stdout, stderr=stderr)
+
+    assert "1/1 batches done" in stdout.getvalue()
+    assert "es/LC_MESSAGES/django.po (es): translated 1 of 1" in stdout.getvalue()
+    assert stderr.getvalue() == ""
+
+
+def test_quiet_success_prints_nothing(locale_dir):
+    stdout, stderr = StringIO(), StringIO()
+
+    call_command("llm_localize", verbosity=0, stdout=stdout, stderr=stderr)
+
+    assert (stdout.getvalue(), stderr.getvalue()) == ("", "")
+
+
 def test_fatal_error(locale_dir, settings):
     settings.LLM_LOCALIZE = {"PROVIDER": "openai", "API_KEY": "wrong"}
 
@@ -100,3 +130,13 @@ def test_missing_api_key(locale_dir, settings, monkeypatch):
 
     with pytest.raises(CommandError, match="FAKE_API_KEY"):
         call_command("llm_localize", verbosity=0)
+
+
+def test_fatal_error_still_reports_finished_files(locale_dir, settings):
+    settings.LLM_LOCALIZE = {"PROVIDER": "tests.fakes.FatalOnSecondCallClient", "API_KEY": "k"}
+    stdout = StringIO()
+
+    with pytest.raises(CommandError, match="invalid key"):
+        call_command("llm_localize", stdout=stdout, stderr=StringIO())
+
+    assert "es/LC_MESSAGES/django.po (es): translated 1 of 1" in stdout.getvalue()

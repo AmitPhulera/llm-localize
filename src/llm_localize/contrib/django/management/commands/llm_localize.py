@@ -4,6 +4,7 @@ from llm_localize import cli
 from llm_localize.contrib.django.conf import get_config
 from llm_localize.formats.po import find_po_files
 from llm_localize.providers.base import LLMError
+from llm_localize.runner import summarize
 
 
 class Command(BaseCommand):
@@ -37,10 +38,20 @@ class Command(BaseCommand):
             results = cli.run(_Options(options), jobs, api_key=config['API_KEY'],
                               model_params=config['MODEL_PARAMS'])
         except (LLMError, ValueError, OSError) as e:
+            self._write_summaries(getattr(e, "results", []), options['verbosity'])
             raise CommandError(cli.error_message(e)) from e
+        self._write_summaries(results, options['verbosity'])
         failed = sum(result.failed_batches for result in results)
         if failed:
             raise CommandError(f"{failed} batches failed; rerun to retry them")
+
+    def _write_summaries(self, results, verbosity):
+        for result in results:
+            summary = summarize(result)
+            if result.failed_batches:
+                self.stderr.write(summary)
+            elif verbosity > 0:
+                self.stdout.write(summary)
 
     def _jobs(self, options, config):
         langs = options['langs']

@@ -188,7 +188,7 @@ locale/fr/LC_MESSAGES/django.po (fr): translated 112 of 130
 - **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count. Use `-v`/`-v 2` for tracebacks.
 - **Cleared** translations were already saved but break the file, e.g. `msgfmt --check` errors. They're blanked so the next run retranslates them. If `msgfmt` still rejects the file for another reason, such as a duplicate message (fix it with `msguniq`), the run stops with its errors.
 
-Progress goes to stdout in Django and stderr in the CLI, and warnings and errors always go to stderr. The CLI prints the summary on stdout.
+Progress goes to stdout in Django and stderr in the CLI, and warnings and errors always go to stderr. The CLI prints the summary on stdout. Django prints it on stdout, or on stderr when batches failed, and `-v 0` hides it unless something failed.
 
 The command exits with an error if any batch failed or the run was stopped, but not for rejections, which are expected now and then. Every finished batch is saved as it completes, so rerunning only sends what's still missing.
 
