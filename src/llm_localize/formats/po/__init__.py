@@ -11,7 +11,7 @@ from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, remove_errored_translations, save_po
 from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
 from llm_localize.languages import to_locale
-from llm_localize.plurals import gettext_plural_forms
+from llm_localize.plurals import compatible_languages, gettext_plural_forms
 from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
@@ -92,7 +92,9 @@ class PoFile(TranslationFile):
     def untranslated_units(self):
         declared = self.po.metadata.get("Language", "").strip()
         # The Plural-Forms header is the declared language's, so translating to another would mismatch them
-        if self._language and declared and _base(declared) != _base(self._language):
+        # Another variant of the declared language may be given, like zh-Hans for zh_CN, but not one with other
+        # plural rules or another script, like pt-PT for pt_BR or zh-Hant for zh_Hans
+        if self._language and declared and not compatible_languages(declared, self._language):
             raise ValueError(f"{self.path} declares Language: {declared}, not {self._language}; "
                              "fix its Language and Plural-Forms headers, or don't pass a language")
         entries = [
@@ -211,7 +213,3 @@ def find_po_files(locale_dirs, languages, domains=("django", "djangojs")):
                 path = Path(locale_dir) / to_locale(language) / LC_MESSAGES / f"{domain}.po"
                 if path.exists():
                     yield path, language
-
-
-def _base(language):
-    return language.lower().replace("_", "-").split("-")[0]

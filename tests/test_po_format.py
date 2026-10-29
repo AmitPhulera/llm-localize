@@ -234,6 +234,21 @@ class TestExplicitLanguage:
         assert PoFile.open(write_po(po_header(ENGLISH_PLURAL_FORMS, language="pt")), language="pt-br").language \
             == "pt-br"
 
+    @pytest.mark.parametrize("declared, language, refused", [
+        ("pt_BR", "pt-PT", True), ("zh_Hans", "zh-Hant", True), ("pt", "pt-BR", False), ("pt_BR", "pt", False),
+        ("pt_BR", "pt-br", False), ("zh_CN", "zh-hans", False), ("es_ES", "es-419", False),
+        ("de_DE", "de-at", False),
+    ])
+    def test_variants_of_the_declared_language(self, write_po, declared, language, refused):
+        path = write_po(po_header(ENGLISH_PLURAL_FORMS, language=declared) + 'msgid "a"\nmsgstr ""\n')
+        po_file = PoFile.open(path, language=language)
+
+        if refused:
+            with pytest.raises(ValueError, match=f"declares Language: {declared}, not {language}"):
+                po_file.untranslated_units()
+        else:
+            assert len(po_file.untranslated_units()) == 1
+
     def test_another_language_than_the_header_is_refused(self, write_po):
         po_file = PoFile.open(write_po(SPANISH_PLURAL_PO.replace('"Plural', '"Language: es\\n"\n"Plural', 1)),
                               language="fr")

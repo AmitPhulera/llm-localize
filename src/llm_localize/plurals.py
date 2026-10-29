@@ -97,3 +97,47 @@ def gettext_plural_forms(language):
     ('nplurals=1; plural=0;', None)
     """
     return _lookup(_table("gettext_plurals"), language)
+
+
+# The script a language is written in when its code doesn't name one, where it has more than one:
+# by its region, then for the language
+IMPLIED_SCRIPTS = {"zh-tw": "hant", "zh-hk": "hant", "zh-mo": "hant", "zh": "hans", "sr-me": "latn", "sr": "cyrl"}
+
+
+def _script(code):
+    """Return the script a normalized code names or implies, or "" if it may be any.
+
+    >>> _script("zh-hant"), _script("zh-hk"), _script("zh-cn"), _script("sr-latn"), _script("pt-br")
+    ('hant', 'hant', 'hans', 'latn', '')
+    """
+    tags = code.split("-")
+    scripts = [tag for tag in tags[1:] if len(tag) == 4 and tag.isalpha()]
+    if scripts:
+        return scripts[0]
+    regions = [tag for tag in tags[1:] if len(tag) == 2]
+    return IMPLIED_SCRIPTS.get(f"{tags[0]}-{regions[0]}" if regions else "", IMPLIED_SCRIPTS.get(tags[0], ""))
+
+
+def compatible_languages(declared, given):
+    """True if a file declared as one language can be translated to another.
+
+    They must be the same language with the same plural rules, as the
+    file's plural forms are the declared one's, and not name different
+    scripts. A region or variant may differ.
+
+    >>> [compatible_languages(a, b) for a, b in [("zh_CN", "zh-Hans"), ("es_ES", "es-419"), ("pt", "pt-BR")]]
+    [True, True, True]
+    >>> pairs = [("pt_BR", "pt-PT"), ("zh_Hans", "zh-Hant"), ("sr@latin", "sr-Cyrl"), ("zh_TW", "zh-Hans"),
+    ...          ("sr", "sr-Latn")]
+    >>> [compatible_languages(declared, given) for declared, given in pairs]
+    [False, False, False, False, False]
+    >>> compatible_languages("uz", "uz-Latn")
+    True
+    """
+    declared, given = normalize(declared), normalize(given)
+    if declared.split("-")[0] != given.split("-")[0]:
+        return False
+    scripts = _script(declared), _script(given)
+    if all(scripts) and scripts[0] != scripts[1]:
+        return False
+    return gettext_plural_forms(declared) == gettext_plural_forms(given)
