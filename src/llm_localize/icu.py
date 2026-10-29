@@ -16,6 +16,10 @@ CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*
 # Deeper than any real message, and shallow enough that parsing and checking stay within Python's recursion limit
 MAX_DEPTH = 20
 
+PLURAL_KEYWORDS = ("zero", "one", "two", "few", "many", "other")
+# An exact case's number, like =0, =-1 or =1.5
+EXACT_CASE_RE = re.compile(r"=-?\d+(?:\.\d+)?")
+
 
 class ICUSyntaxError(ValueError):
     pass
@@ -211,14 +215,20 @@ class _Parser:
 def find_problem(source, translation, plural_categories=None, ordinal_categories=None):
     """Return why an ICU ``translation`` doesn't fit ``source``, or None.
 
-    The translation must keep the same arguments and offsets. Each case
-    is then checked like any message, against the source case with the
-    same key, or the source's ``other`` case.
+    The translation must keep the same arguments. Each plural argument
+    must have a case for each of ``plural_categories`` (the target
+    language's), and each selectordinal one for each of
+    ``ordinal_categories``, plus the source's exact cases like ``=0``; each select
+    argument must keep the source's cases. Each case is then checked like
+    any message, against the source case with the same key, or the
+    source's ``other`` case.
 
     >>> source = "{n, plural, one {# file} other {# files}}"
-    >>> find_problem(source, "{n, plural, one {# fichier} many {# fichiers} other {# fichiers}}",
-    ...              ["one", "many", "other"]) is None
+    >>> find_problem(source, "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}",
+    ...              ["one", "few", "many", "other"]) is None
     True
+    >>> find_problem(source, "{n, plural, one {# файл} other {# файлов}}", ["one", "few", "many", "other"])
+    'plural forms'
     >>> find_problem(source, "{count, plural, one {# fichier} other {# fichiers}}", ["one", "many", "other"])
     'ICU arguments'
     """
@@ -256,6 +266,10 @@ def _compare(source_nodes, translation_nodes, categories):
 def _compare_choice(source_choice, translation_choice, categories):
     if source_choice.offset != translation_choice.offset:
         return "ICU arguments"
+    language_categories = categories.get(source_choice.type)
+    problem = _case_keys_problem(source_choice, translation_choice, language_categories)
+    if problem:
+        return problem
     for key, translation_case in translation_choice.cases.items():
         source_case = source_choice.cases.get(key, source_choice.cases["other"])
         problem = _compare(source_case, translation_case, categories)
@@ -271,6 +285,21 @@ def _choices(nodes):
         if isinstance(node, Choice):
             choices.setdefault(node.name, []).append(node)
     return choices
+
+
+def _case_keys_problem(source_choice, translation_choice, language_categories):
+    source_keys, translation_keys = set(source_choice.cases), set(translation_choice.cases)
+    if source_choice.type == "select":
+        return None if source_keys == translation_keys else "ICU select cases"
+    # Exact cases like =0 must stay; the translation may add its own
+    if not {key for key in source_keys if key.startswith("=")} <= translation_keys:
+        return "plural forms"
+    for key in translation_keys:
+        if not (EXACT_CASE_RE.fullmatch(key) if key.startswith("=") else key in PLURAL_KEYWORDS):
+            return "plural forms"
+    if language_categories and set(language_categories) - translation_keys:
+        return "plural forms"
+    return None
 
 
 def _render(nodes):

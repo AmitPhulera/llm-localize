@@ -1,7 +1,7 @@
 import pytest
 
 from llm_localize.icu import NUMBER, Argument, Choice, ICUSyntaxError, find_problem, parse
-from llm_localize.plurals import plural_categories, plural_forms
+from llm_localize.plurals import ordinal_categories, plural_categories, plural_forms
 
 RUSSIAN = ["one", "few", "many", "other"]
 FILES = "{count, plural, one {# file} other {# files}}"
@@ -53,17 +53,30 @@ class TestFindProblem:
 
     @pytest.mark.parametrize("source, translation", [
         (FILES, "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}"),
+        # Extra exact cases and categories the language doesn't use are allowed
+        (FILES, "{count, plural, =0 {нет файлов} zero {x} one {# файл} few {# файла} many {# файлов} other {#}}"),
+        ("{count, plural, =0 {No files} other {# files}}",
+         "{count, plural, =0 {Нет файлов} one {# файл} few {# файла} many {# файлов} other {# файла}}"),
         ("{g, select, male {He} female {She} other {They}} replied",
          "{g, select, male {Он} female {Она} other {Они}} ответили"),
+        ("{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}", "{n, selectordinal, other {#-й}}"),
+        # Exact cases may be negative or decimal
+        ("{n, plural, =-1 {minus one} =1.5 {one and a half} other {# files}}",
+         "{n, plural, =-1 {минус один} =1.5 {полтора} one {#} few {#} many {#} other {# файла}}"),
         ("Hi <b>{name}</b>", "Привет <b>{name}</b>"),
     ])
     def test_valid(self, source, translation):
         assert find_problem(source, translation, RUSSIAN) is None
 
     @pytest.mark.parametrize("source, translation, reason", [
+        (FILES, "{count, plural, one {# файл} other {# файлов}}", "plural forms"),
+        (FILES, "{count, plural, one {#} few {#} many {#} other {#} single {#}}", "plural forms"),
         (FILES, "{count, select, one {#} few {#} many {#} other {#}}", "ICU arguments"),
         (FILES, "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", "ICU arguments"),
         (FILES, "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}", "ICU syntax"),
+        ("{count, plural, =0 {No files} other {# files}}",
+         "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", "plural forms"),
+        ("{g, select, male {He} other {They}}", "{g, select, female {Она} other {Они}}", "ICU select cases"),
         ("Hi {name}", "Привет {nom}", "ICU arguments"),
         ("{n, plural, one {{name} has # file} other {{name} has # files}}",
          "{n, plural, one {# файл} few {{name} # файла} many {{name} # файлов} other {{name}}}", "ICU arguments"),
@@ -75,9 +88,21 @@ class TestFindProblem:
         ("{g, select, male {Hi {name}} other {Hello {name}}} / {g, select, male {Bye} other {Goodbye}}",
          "{g, select, male {Salut} other {Bonjour}} / {g, select, male {Au revoir} other {Adieu}}",
          "ICU arguments"),
+        ("{g, select, male {He} other {They}} said {g, select, male {his} other {their}}",
+         "{g, select, bogus {Il} other {Ils}} a dit {g, select, male {son} other {leur}}", "ICU select cases"),
     ])
     def test_invalid(self, source, translation, reason):
         assert find_problem(source, translation, RUSSIAN) == reason
+
+    def test_selectordinal_needs_the_target_languages_ordinal_categories(self):
+        source = "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"
+        english, russian = list(ordinal_categories("en")), list(ordinal_categories("ru"))
+
+        dropped = "{n, selectordinal, other {#th}}"
+
+        assert find_problem(source, dropped, ordinal_categories=english) == "plural forms"
+        assert find_problem(source, source.replace("#", "# "), ordinal_categories=english) is None
+        assert find_problem(source, "{n, selectordinal, other {#-й}}", RUSSIAN, russian) is None
 
     def test_source_that_isnt_icu_gets_the_generic_checks(self):
         assert find_problem("Hi {name", "Salut {name") is None

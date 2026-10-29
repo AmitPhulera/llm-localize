@@ -5,6 +5,8 @@ categories it uses for whole numbers and sample numbers for each, from
 the Unicode CLDR (cldr-json 48.2.0, supplemental/plurals.json), under
 the Unicode license in licenses/Unicode-LICENSE.txt. Samples written in
 compact notation (1c6) are left out, and "…" ends a list that goes on.
+``data/ordinals.json`` lists ordinal categories (1st, 2nd) the same way,
+from supplemental/ordinals.json.
 """
 import functools
 import json
@@ -45,6 +47,17 @@ def plural_categories(language):
     True
     """
     return _lookup(_table(), language) or DEFAULT_CATEGORIES
+
+
+def ordinal_categories(language):
+    """Return ``{category: sample whole numbers}`` for a language's ordinals, or None if CLDR doesn't know it.
+
+    >>> list(ordinal_categories("en")), list(ordinal_categories("ru"))
+    (['one', 'two', 'few', 'other'], ['other'])
+    >>> ordinal_categories("xx") is None
+    True
+    """
+    return _lookup(_table("ordinals"), language)
 
 
 def plural_forms(language):
