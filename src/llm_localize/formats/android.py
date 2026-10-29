@@ -17,7 +17,14 @@ from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
-from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, changes_tags, line_indent, open_tag, tag_end
+from llm_localize.formats.xml_utils import (
+    BARE_AMPERSAND_RE,
+    changes_tags,
+    decode_character_references,
+    line_indent,
+    open_tag,
+    tag_end,
+)
 
 NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
 # A CDATA section, whose & needn't be escaped, or a tag
@@ -28,6 +35,8 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+# Android's \\u0025, after any escaped backslashes
+_UNICODE_ESCAPE_RE = re.compile(UNESCAPED + r"\\u([0-9A-Fa-f]{4})")
 # A reference to another resource, like @string/app_name or ?attr/color, which isn't text
 REFERENCE_RE = re.compile(r"\s*[@?](?:[\w.]+:)?[\w.]+/[\w.]+\s*")
 
@@ -78,7 +87,8 @@ class AndroidFile(MonolingualFile):
         return self.read_messages(self.path, references=True)
 
     def find_problem(self, source, translation):
-        problem = super().find_problem(source, translation)
+        # &#37;s and \\u0025s are %s to Android, so they're checked as that
+        problem = super().find_problem(_as_android_reads(source), _as_android_reads(translation))
         if problem:
             return problem
         if changes_tags(source, translation):
@@ -178,6 +188,18 @@ def _values_dir(path, language=None):
                     language, end = f"{qualifier}-{qualifiers[end][1:]}", end + 1
                 return part_index, language, qualifiers[1:index] + qualifiers[end:]
     return None
+
+
+def _as_android_reads(text):
+    r"""Return text with its references and \u escapes as the characters they stand for, as Android reads it.
+
+    >>> _as_android_reads(r"50&#37; \u0025s \\u0025s")
+    '50% %s \\\\u0025s'
+    """
+    # An & stays escaped, as decode_character_references keeps it
+    return _UNICODE_ESCAPE_RE.sub(
+        lambda match: match.group(1) + chr(int(match.group(2), 16)).replace("&", "&amp;"),
+        decode_character_references(text))
 
 
 def _decode(raw):

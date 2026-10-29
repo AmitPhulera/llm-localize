@@ -299,6 +299,15 @@ def test_plural_items_are_quoted_if_any_source_item_is(tmp_path):
     assert '<item quantity="other">" %d notes "</item>' in target.read_text(encoding="utf-8")
 
 
+def test_character_references_are_checked_as_their_characters(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hello</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+
+    assert android.find_problem("Hello", "Bonjour &#37;s") == "placeholders"
+    assert android.find_problem("Hello", "Bonjour &#104;ttps://evil.example") == "URLs"
+    assert android.find_problem("50&#37; off", "50&#37; de remise") is None
+
+
 def test_a_quote_after_an_escaped_backslash_ends_the_string(tmp_path):
     write(tmp_path / "res" / "values" / "strings.xml", r'<resources><string name="p">"C:\\"</string></resources>')
     target = tmp_path / "res" / "values-fr" / "strings.xml"
