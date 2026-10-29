@@ -12,7 +12,7 @@ from collections import Counter
 from functools import cached_property
 
 from llm_localize import icu
-from llm_localize.formats.base import write_file
+from llm_localize.formats.base import load_json, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.plurals import CATEGORIES, ordinal_categories
 
@@ -115,7 +115,13 @@ def _load(path):
         return {}
     with open(path, encoding="utf-8-sig") as f:
         text = f.read()
-    return json.loads(text)
+    # An empty file, as an editor or touch makes, is a target with nothing in it yet
+    if not text.strip():
+        return {}
+    document = load_json(text, path)
+    if not isinstance(document, dict):
+        raise ValueError(f"{path} must hold a JSON object of messages")
+    return document
 
 
 def _strings(document, path=()):

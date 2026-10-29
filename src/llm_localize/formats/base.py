@@ -1,5 +1,6 @@
 """Base class for translatable file formats."""
 import abc
+import json
 import os
 import secrets
 import shutil
@@ -96,3 +97,34 @@ def write_file(path, data):
     except BaseException:
         os.unlink(temporary)
         raise
+
+
+# Deeper than any translation file nests, and shallow enough for the code that walks a document
+MAX_JSON_DEPTH = 100
+
+
+def load_json(text, path):
+    """Return a JSON document, raising ValueError, naming ``path``, if it's invalid or nests too deeply.
+
+    >>> load_json('{"a": [1, {"b": 2}]}', "x.json")
+    {'a': [1, {'b': 2}]}
+    >>> load_json("[" * 101 + "]" * 101, "x.json")
+    Traceback (most recent call last):
+    ValueError: x.json nests objects or arrays more than 100 deep
+    """
+    too_deep = ValueError(f"{path} nests objects or arrays more than {MAX_JSON_DEPTH} deep")
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON: {e}") from e
+    except RecursionError:
+        raise too_deep from None
+    # Only objects and arrays are walked, so a big file's strings and numbers aren't each visited
+    stack = [(document, 1)] if isinstance(document, (dict, list)) else []
+    while stack:
+        value, depth = stack.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise too_deep
+        stack.extend((item, depth + 1) for item in (value.values() if isinstance(value, dict) else value)
+                     if isinstance(item, (dict, list)))
+    return document

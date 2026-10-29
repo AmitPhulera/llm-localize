@@ -204,6 +204,12 @@ class TestTranslating:
 
         assert read(locales.dir / "out.json") == {"hello": "T: Hello"}
 
+    def test_invalid_target(self, locales):
+        (locales.dir / "fr.json").write_text("{nope")
+
+        with pytest.raises(ValueError, match="fr.json is not valid JSON"):
+            translate(locales.dir / "fr.json")
+
 
 class TestArrays:
     def test_the_prompt_says_to_keep_codes_as_they_are(self, locales):
@@ -245,6 +251,15 @@ class TestICU:
 
 
 class TestReviewFixes:
+
+    def test_empty_target_file(self, locales):
+        path = locales.dir / "fr.json"
+        path.write_text("")
+
+        translate(path)
+
+        assert read(path)["home"]["title"] == "T: Welcome"
+        assert path.read_text().startswith('{\n  "home"')
 
     def test_nesting_references_are_kept(self, locales):
         json_file = JsonFile(locales.dir / "fr.json")
