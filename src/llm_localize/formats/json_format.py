@@ -1,6 +1,7 @@
 """JSON translation files, one per language, as used by i18next, FormatJS, next-intl and vue-i18n.
 
-Keys may nest: ``{"home": {"title": "Welcome"}}``.
+Keys may nest: ``{"home": {"title": "Welcome"}}``. Plurals are read in
+i18next's style, a key per CLDR category (``items_one``, ``items_other``).
 """
 import json
 import os
@@ -31,7 +32,7 @@ class JsonFile(MonolingualFile):
                 raise ValueError(f"{path} has too much key text: its strings' keys, each with the keys of the "
                                  f"objects it's in, add up to over {MAX_KEYS_SIZE:,} characters")
             messages[key] = Message(text=value, context=_context(path_in_file))
-        return messages
+        return _group_plurals(messages)
 
     @cached_property
     def source_document(self):
@@ -42,6 +43,7 @@ class JsonFile(MonolingualFile):
         return _load(self.path)
 
     def apply(self, key, translation):
+        translation = self.with_translated_forms(key, translation)
         path = json.loads(key)
         _set(self.document, path, translation)
 
@@ -75,14 +77,18 @@ def _strings(document, path=()):
 
 
 def _set(document, path, value):
-    """Set the value at ``path``, adding objects on the way."""
+    """Set the value at ``path``, adding objects on the way; a dict of plural forms sets a key per category."""
     parent = document
     for index, name in enumerate(path[:-1]):
         if isinstance(name, str) and not isinstance(parent.get(name), list if isinstance(path[index + 1], int)
                                                     else dict):
             parent[name] = {}
         parent = parent[name]
-    parent[path[-1]] = value
+    if isinstance(value, dict):
+        for category, text in value.items():
+            parent[f"{path[-1]}_{category}"] = text
+    else:
+        parent[path[-1]] = value
 
 
 def _key(path):

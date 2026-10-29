@@ -102,10 +102,11 @@ class TestTranslating:
 
         result = translate(path)
 
-        assert result.translated == 5
+        assert result.translated == 4
         assert read(path) == {
             "home": {"title": "T: Welcome", "greeting": "T: Hi {{name}}"},
-            "items_one": "T: {{count}} item",
+            "items_one": "T: {{count}} items",
+            "items_many": "T: {{count}} items",
             "items_other": "T: {{count}} items",
             "show_other": "T: Show other",
         }
@@ -119,8 +120,30 @@ class TestTranslating:
 
         document = read(path)
         assert document["home"] == {"title": "Bienvenue", "greeting": "T: Hi {{name}}"}
-        assert list(document) == ["home", "items_one", "items_other", "show_other", "extra"]
+        assert list(document) == ["home", "items_one", "items_other", "show_other", "extra", "items_many"]
         assert path.read_text().startswith('{\n    "home"')
+
+    def test_plural_forms_already_translated_are_kept(self, locales):
+        target = locales("ru.json", {"items_one": "{{count}} вещь", "items_other": "{{count}} вещи"})
+
+        translate(target, language="ru")
+
+        items = {key: value for key, value in read(target).items() if key.startswith("items_")}
+        assert items == {"items_one": "{{count}} вещь", "items_few": "T: {{count}} items",
+                         "items_many": "T: {{count}} items", "items_other": "{{count}} вещи"}
+
+    def test_plurals_get_the_target_languages_categories(self, locales):
+        client = FakeClient()
+
+        translate(locales.dir / "ru.json", client, language="ru")
+
+        document = read(locales.dir / "ru.json")
+        assert {key for key in document if key.startswith("items_")} == {
+            "items_one", "items_few", "items_many", "items_other"}
+        request = next(json.loads(call[1]) for call in client.calls if "items" in call[1])
+        plural = next(value for value in request.values() if isinstance(value, dict) and "forms" in value)
+        assert list(plural["forms"]) == ["one", "few", "many", "other"]
+        assert plural["context"] == "Key: items"
 
     def test_context_and_instructions(self, locales):
         client = FakeClient()
@@ -135,7 +158,7 @@ class TestTranslating:
 
         assert exit_code == 0
         assert read(locales.dir / "de.json")["home"]["title"] == "T: Welcome"
-        assert capsys.readouterr().out == f"{locales.dir / 'de.json'} (de): translated 5 of 5\n"
+        assert capsys.readouterr().out == f"{locales.dir / 'de.json'} (de): translated 4 of 4\n"
 
     def test_cli_with_source(self, locales):
         source = locales("base/strings.json", {"hello": "Hello"})

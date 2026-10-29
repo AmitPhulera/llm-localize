@@ -8,7 +8,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 - **HTML tags** must keep the same names, order and attributes. Only text attributes (`title`, `alt`, `placeholder`, `aria-label`, `aria-description`, and `value` on an `<input>` button) may change value, and the content of `<script>` and `<style>` must stay as it is. Numbered tags, like react-i18next's `<1>…</1>`, must all be kept, in any order.
 - **URLs** (`http`, `https`, `ftp`, `mailto:`, `tel:`, `www.`) and email addresses must be unchanged, and none may be added.
 - **Control characters** that the model invented (e.g. `—` corrupted into `\x14`) are rejected.
-- **Plurals** are translated once per plural form of the target language. The model is told which numbers each form covers ("used when n is 2, 3, 4, 22, …"), worked out from the file's `Plural-Forms` header.
+- **Plurals** are translated once per plural form of the target language. The model is told which numbers each form covers ("used when n is 2, 3, 4, 22, …"), worked out from a PO file's `Plural-Forms` header, or from the Unicode CLDR plural rules for formats that name forms `one`, `few`, `many`, `other`.
 - **Format checks.** PO files are run through `msgfmt --check` afterwards, and any entry it rejects is blanked. Errors no translation caused, like a message defined twice, stop with an error instead. A PO file without a real charset, or in another one, is saved as UTF-8, so any translation fits.
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
@@ -42,7 +42,7 @@ The format is chosen by file extension, or with `--format`.
 | Format | Extension | Holds | Plurals |
 | --- | --- | --- | --- |
 | `po` | `.po` | source and translation, one file per language | `msgstr[N]`, from the `Plural-Forms` header |
-| `json` | `.json` | one language per file | — |
+| `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`) |
 
 ### One file per language
 
@@ -64,6 +64,8 @@ A message counts as missing when its key is absent or its value is empty. A chan
 Keys may nest, and each message is sent with its key (`home.title`) as context. Only values are translated, never keys. Translations are written in the source's key order, with the target file's own extra keys kept at the end, and with the target's indentation (or the source's, for a new file). Arrays, numbers and other values that aren't text are left alone.
 
 A message that fails to translate, because its batch failed or its translation was rejected, is left out of the target, and the next run tries it again. Until then the app shows whatever it does for a missing key: i18next and vue-i18n fall back to their fallback language, ngx-translate to its fallback language if one is set, and next-intl shows the key unless you merge in the default locale's messages.
+
+- **i18next plurals** are keys with a CLDR category suffix. The target gets one key per category its language uses: `items_one` and `items_other` in English become `items_one`, `items_few`, `items_many` and `items_other` in Russian.
 
 ## LLM providers
 

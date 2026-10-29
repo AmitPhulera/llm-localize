@@ -13,7 +13,7 @@ from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.languages import LANGUAGE_NAMES, to_locale
-from llm_localize.plurals import has_rules
+from llm_localize.plurals import has_rules, plural_forms
 from llm_localize.units import TranslationUnit
 
 
@@ -36,6 +36,7 @@ class MonolingualFile(TranslationFile):
 
     Subclasses read a file into ``{key: Message}`` with ``read_messages``,
     and implement ``apply`` and ``save`` to write the target file.
+    Translations of plural messages are ``{CLDR category: text}``.
     """
 
     def __init__(self, path, language=None, source_language="en", source_path=None):
@@ -124,6 +125,10 @@ class MonolingualFile(TranslationFile):
     def target_messages(self):
         return self.read_messages(self.path)
 
+    @cached_property
+    def plural_forms(self):
+        return plural_forms(self.language)
+
     def untranslated_units(self):
         if self.is_source:
             return []
@@ -131,7 +136,14 @@ class MonolingualFile(TranslationFile):
         for key, message in self.source_messages.items():
             if self.is_translated(message, self.target_messages.get(key)):
                 continue
-            units.append(TranslationUnit(key=key, source=message.text, context=message.context))
+            if message.plurals:
+                other = message.plurals.get("other") or next(iter(message.plurals.values()))
+                units.append(TranslationUnit(
+                    key=key, source=message.plurals.get("one", other), plural_source=other,
+                    plural_forms=self.plural_forms, context=message.context,
+                ))
+            else:
+                units.append(TranslationUnit(key=key, source=message.text, context=message.context))
         return units
 
     def with_translated_forms(self, key, translation):
@@ -148,6 +160,8 @@ class MonolingualFile(TranslationFile):
 
     def is_translated(self, message, target):
         """True if the target's ``target`` message translates the source's ``message``, or it needn't."""
+        if message.plurals:
+            return bool(target) and all(target.plurals.get(form.index, "").strip() for form in self.plural_forms)
         return not message.text.strip() or bool(target and target.text.strip())
 
 
