@@ -1,6 +1,17 @@
 import pytest
 
+from llm_localize.icu import ICUSyntaxError, parse
 from llm_localize.plurals import plural_categories, plural_forms
+
+
+class TestParse:
+
+    @pytest.mark.parametrize("text", [
+        "Extra }",
+    ])
+    def test_syntax_errors(self, text):
+        with pytest.raises(ICUSyntaxError):
+            parse(text)
 
 
 class TestPluralForms:
