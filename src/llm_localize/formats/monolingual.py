@@ -9,6 +9,7 @@ import abc
 import os
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.languages import LANGUAGE_NAMES
@@ -51,7 +52,12 @@ class MonolingualFile(TranslationFile):
 
     @cached_property
     def language(self):
-        return self._language
+        return self._language or self.language_from_path()
+
+    def language_from_path(self):
+        """Return the language code in the file's path, or None."""
+        match = self._language_in_path()
+        return match[2] if match else None
 
     @cached_property
     def source_path(self):
@@ -63,6 +69,28 @@ class MonolingualFile(TranslationFile):
         raise ValueError(
             f"Can't find the {self.source_language} file to translate {self.path} from; "
             "pass it with --source")
+
+    def _language_in_path(self):
+        """Return ``(part index, token index, code)`` for the language code in the path, or None.
+
+        Looks at the file name first, then its directories, splitting each
+        on dots, so ``fr.json``, ``messages.fr.json`` and ``fr/app.json``
+        all name French. With an explicit language, only that language counts.
+        Directories above the current one aren't searched, so a project in
+        ``/home/de/`` isn't taken for German. For a path outside the current
+        directory, only its last four parts are, so ``/srv/de/notes.md`` is
+        German; pass the language to be sure.
+        """
+        parts = Path(self.path).parts
+        for part_index in reversed(range(_first_searched_part(self.path), len(parts))):
+            for token_index, token in enumerate(parts[part_index].split(".")):
+                if self._language:
+                    matches = _base(token) == _base(self._language) and _is_language_code(token, known=False)
+                else:
+                    matches = _is_language_code(token)
+                if matches:
+                    return part_index, token_index, token
+        return None
 
     @cached_property
     def source_messages(self):
@@ -95,6 +123,23 @@ class MonolingualFile(TranslationFile):
     def is_translated(self, message, target):
         """True if the target's ``target`` message translates the source's ``message``, or it needn't."""
         return not message.text.strip() or bool(target and target.text.strip())
+
+
+def _first_searched_part(path):
+    """Return the index of the first part of ``path`` to look for a language in.
+
+    That's the first part below the current directory, or for a path
+    outside it, the fourth from the end, whether it's given relative or absolute.
+    """
+    parts = Path(path).parts
+    relative = os.path.relpath(os.path.realpath(path), os.path.realpath(os.getcwd()))
+    if relative.startswith(os.pardir):
+        return max(0, len(parts) - 4)
+    return max(0, len(parts) - len(Path(relative).parts))
+
+
+def _base(code):
+    return code.lower().replace("_", "-").split("-")[0]
 
 
 def _is_language_code(token, known=True):

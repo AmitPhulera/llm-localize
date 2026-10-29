@@ -87,3 +87,25 @@ class TestTranslating:
               "--provider", "tests.fakes.FakeClient", "--api-key", "k"])
 
         assert read(locales.dir / "out.json") == {"hello": "T: Hello"}
+
+
+class TestReviewFixes:
+
+    def test_language_is_not_taken_from_above_the_current_directory(self, tmp_path, monkeypatch):
+        project = tmp_path / "de" / "project"
+        (project / "locales").mkdir(parents=True)
+        monkeypatch.chdir(project)
+
+        assert open_file(project / "locales" / "messages.json").language is None
+        assert open_file(project / "locales" / "fr.json").language == "fr"
+
+    def test_outside_the_current_directory_only_nearby_directories_count(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        path = tmp_path.parent / "de" / "a" / "b" / "c" / "messages.json"
+
+        assert open_file(path).language is None
+
+
+@pytest.mark.parametrize("path, language", [("locales/hi/to_trans.json", "hi"), ("my_notes.fr.json", "fr")])
+def test_file_names_that_start_like_a_language_code(path, language):
+    assert open_file(path).language == language

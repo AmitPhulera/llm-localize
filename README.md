@@ -52,6 +52,8 @@ JSON files hold one language each, so the source text comes from another file, n
 llm-localize out.json --lang es --source strings.json
 ```
 
+The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it.
+
 A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
 
 ### JSON
