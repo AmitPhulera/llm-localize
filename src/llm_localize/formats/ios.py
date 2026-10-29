@@ -1,5 +1,16 @@
 """iOS and macOS strings: ``.strings`` files, one per language."""
+import codecs
 import re
+
+TOKEN_RE = re.compile(r"""
+    (?P<space>\s+)
+  | (?P<comment>/\*.*?\*/|//[^\n]*)
+  | (?P<string>"(?:[^"\\]|\\.)*")
+  | (?P<word>[^\s=;"/]+)
+  | (?P<punct>[=;])
+""", re.S | re.X)
+
+BOMS = {"utf-8-sig": codecs.BOM_UTF8, "utf-16-le": codecs.BOM_UTF16_LE, "utf-16-be": codecs.BOM_UTF16_BE}
 
 ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "'": "'", "0": "\0"}
 
@@ -39,3 +50,15 @@ def _quote(text):
     # Lone surrogates can't be encoded, so they stay escapes, as they were read
     escaped = re.sub("[\ud800-\udfff]", lambda match: f"\\U{ord(match.group()):04X}", escaped)
     return f'"{escaped}"'
+
+
+def _encoding(data):
+    """Return a .strings file's encoding: UTF-16 with a byte order mark, or UTF-8 with or without one."""
+    for encoding, bom in BOMS.items():
+        if data.startswith(bom):
+            return encoding
+    return "utf-8"
+
+
+def _encode_file(text, encoding):
+    return BOMS.get(encoding, b"") + text.encode(encoding.replace("-sig", ""))
