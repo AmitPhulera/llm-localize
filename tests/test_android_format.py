@@ -274,6 +274,19 @@ def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
                                                   '<resources>\n</resources>\n')
 
 
+def test_an_existing_target_gets_the_entities_its_translations_use(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<?xml version="1.0" encoding="utf-8"?>\n'
+          '<!DOCTYPE resources [<!ENTITY appname "Notes">]>\n'
+          '<resources><string name="w">Welcome to &appname;</string></resources>')
+    target = write(tmp_path / "res" / "values-fr" / "strings.xml", "<resources></resources>")
+
+    translate_file(open_file(target), ScriptedClient([{"0": "Bienvenue dans &appname;"}]), "fr")
+
+    text = target.read_text(encoding="utf-8")
+    assert text.startswith('<!DOCTYPE resources [<!ENTITY appname "Notes">]>\n<resources>')
+    expat.ParserCreate().Parse(text, True)
+
+
 def test_nested_markup_takes_linear_time(tmp_path):
     depth = 100000
     write(tmp_path / "res" / "values" / "strings.xml",
@@ -300,6 +313,19 @@ def test_a_resource_from_an_entity_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="from an entity"):
         open_file(tmp_path / "res" / "values-fr" / "strings.xml").untranslated_units()
+
+
+def test_a_targets_own_doctype_gets_the_sources_entities(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<!DOCTYPE resources [<!ENTITY app "[Beta] Notes">]>\n'
+          '<resources><string name="w">Hello &app;</string></resources>')
+    target = write(tmp_path / "res" / "values-fr" / "strings.xml",
+                   '<!DOCTYPE resources [<!ENTITY co "Acme">]>\n<resources></resources>')
+
+    translate_file(open_file(target), ScriptedClient([{"0": "Bonjour &app;"}]), "fr")
+
+    text = target.read_text(encoding="utf-8")
+    assert text.startswith('<!DOCTYPE resources [<!ENTITY co "Acme"><!ENTITY app "[Beta] Notes">]>')
+    expat.ParserCreate().Parse(text, True)
 
 
 def test_quoted_parts_anywhere_are_android_syntax(tmp_path):

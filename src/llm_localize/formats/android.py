@@ -31,6 +31,8 @@ from llm_localize.formats.xml_utils import (
 NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
 # A CDATA section, whose & needn't be escaped, or a tag
 CDATA_OR_TAG_RE = re.compile(r"(<!\[CDATA\[.*?\]\]>|<[^>]*>)", re.S)
+# An internal entity's declaration, like <!ENTITY appname "Notes">
+ENTITY_RE = re.compile(rb"""<!ENTITY\s+([\w.-]+)\s+("[^"]*"|'[^']*')\s*>""")
 # Not escaped: after no backslash, or after escaped ones, whose run is kept as group 1, as in "C:\\"
 UNESCAPED = r"(?<!\\)((?:\\\\)*)"
 UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
@@ -181,6 +183,17 @@ class AndroidFile(MonolingualFile):
         else:
             replacements.append((target.root_end, target.root_end, b"".join(additions)))
         replacements.append((target.root_start, target.root_tag_end, root_tag.encode()))
+        if source.doctype and not target.doctype:
+            # The source's entities, like &appname;, that translations may use
+            replacements.append((target.root_start, target.root_start, source.doctype + b"\n"))
+        elif source.doctype:
+            # A DOCTYPE of its own: the source's entities it lacks are added to it
+            missing = sorted(_entities(source.doctype).keys() - _entities(target.doctype).keys())
+            if missing:
+                start = data.find(target.doctype)
+                declarations = b"".join(_entities(source.doctype)[name] for name in missing)
+                replacements.append((start, start + len(target.doctype),
+                                     _with_entities(target.doctype, declarations)))
         write_file(self.path, splice(data, replacements))
 
 
@@ -378,6 +391,30 @@ def _doctype(data):
         close = _subset_end(data, subset + 1)
         end = data.find(b">", close) if close >= 0 else -1
     return data[start:end + 1] if end >= 0 else b""
+
+
+def _entities(doctype):
+    """Return ``{name: declaration}`` for the entities a DOCTYPE declares.
+
+    >>> _entities(b'<!DOCTYPE resources [<!ENTITY app "Notes"> <!ENTITY co "Acme">]>')
+    {b'app': b'<!ENTITY app "Notes">', b'co': b'<!ENTITY co "Acme">'}
+    """
+    return {match.group(1): match.group() for match in ENTITY_RE.finditer(doctype)}
+
+
+def _with_entities(doctype, declarations):
+    """Return a DOCTYPE with ``declarations`` added at the end of its internal subset, making one if it has none.
+
+    >>> _with_entities(b"<!DOCTYPE resources>", b'<!ENTITY a "A">')
+    b'<!DOCTYPE resources [<!ENTITY a "A">]>'
+    >>> _with_entities(b'<!DOCTYPE resources [<!ENTITY b "B">]>', b'<!ENTITY a "A">')
+    b'<!DOCTYPE resources [<!ENTITY b "B"><!ENTITY a "A">]>'
+    """
+    subset = doctype.find(b"[")
+    if subset < 0:
+        return doctype[:-1].rstrip() + b" [" + declarations + b"]>"
+    close = _subset_end(doctype, subset + 1)
+    return doctype[:close] + declarations + doctype[close:]
 
 
 def _subset_end(data, index):
