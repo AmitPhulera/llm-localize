@@ -9,7 +9,9 @@ from functools import cached_property
 
 from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
+from llm_localize.plurals import CATEGORIES
 
+PLURAL_KEY_RE = re.compile(rf"^(.+)_({'|'.join(CATEGORIES)})$")
 # The most characters a file's keys may add up to, each string's key counted with those of the objects it's in
 MAX_KEYS_SIZE = 20_000_000
 
@@ -94,6 +96,43 @@ def _context(path):
     for name in path:
         key += f"[{name}]" if isinstance(name, int) else f".{name}" if key else name
     return "Key: " + key
+
+
+def _group_plurals(messages):
+    """Merge i18next plural keys like ``items_one`` and ``items_other`` into one plural message ``items``.
+
+    A key counts as plural when its object also has the ``_other`` key
+    and at least one other category, so a lone ``show_other`` stays plain.
+
+    >>> grouped = _group_plurals({
+    ...     '["items_one"]': Message("1 item"), '["items_other"]': Message("{{count}} items"),
+    ...     '["show_other"]': Message("Show other"),
+    ... })
+    >>> {key: (m.text, m.plurals) for key, m in grouped.items()}
+    {'["items"]': ('', {'one': '1 item', 'other': '{{count}} items'}), '["show_other"]': ('Show other', {})}
+    """
+    groups = {}
+    for key in messages:
+        path = json.loads(key)
+        match = isinstance(path[-1], str) and PLURAL_KEY_RE.match(path[-1])
+        if match:
+            groups.setdefault(_key([*path[:-1], match.group(1)]), {})[match.group(2)] = key
+    plural_keys = {}
+    for base_key, keys in groups.items():
+        if "other" in keys and len(keys) > 1:
+            for key in keys.values():
+                plural_keys[key] = base_key
+    grouped = {}
+    for key, message in messages.items():
+        if key not in plural_keys:
+            grouped[key] = message
+            continue
+        base_key = plural_keys[key]
+        if base_key not in grouped:
+            grouped[base_key] = Message(context=_context(json.loads(base_key)))
+        category = PLURAL_KEY_RE.match(json.loads(key)[-1]).group(2)
+        grouped[base_key].plurals[category] = message.text
+    return grouped
 
 
 def _ordered_like(value, source):

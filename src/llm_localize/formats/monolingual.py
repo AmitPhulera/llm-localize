@@ -7,7 +7,7 @@ like ``locales/en.json``, and each translation in another, like
 """
 import abc
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
@@ -22,10 +22,12 @@ class Message:
     """A message in one language's file.
 
     :param text: the text, for a message without plurals
+    :param plurals: ``{CLDR category: text}``, for a plural message
     :param context: a comment or key that helps translate it
     """
 
     text: str = ""
+    plurals: dict = field(default_factory=dict)
     context: str = ""
 
 

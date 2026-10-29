@@ -19,6 +19,8 @@ from importlib import resources
 from llm_localize.languages import normalize
 from llm_localize.units import PluralForm
 
+CATEGORIES = ("zero", "one", "two", "few", "many", "other")
+
 # For languages CLDR doesn't know: English-style singular and plural
 DEFAULT_CATEGORIES = {"one": "1", "other": "0, 2~16, 100, 1000, …"}
 
