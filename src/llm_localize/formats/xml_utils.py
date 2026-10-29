@@ -1,4 +1,8 @@
 """Helpers for XML formats that edit their files in place by byte offsets."""
+import re
+
+# An & that doesn't start an entity like &amp; or &#8230;
+BARE_AMPERSAND_RE = re.compile(r"&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9A-Fa-f]+);)")
 
 
 def open_tag(start_tag):
