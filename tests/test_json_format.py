@@ -240,6 +240,21 @@ class TestArrays:
         request = json.loads(client.calls[0][1])
         assert {"Key: faq[0].q", "Key: grid[0][0]"} <= {message["context"] for message in request.values()}
 
+    def test_an_array_is_written_only_once_every_string_is_translated(self, locales):
+        source = locales("arrays/en.json", {"title": "Settings", "weekdays": ["Monday", "Tuesday", "Wednesday"]})
+        target = source.parent / "fr.json"
+        # "Mardi {x}" adds a placeholder, so it's rejected
+        client = ScriptedClient([{"0": "Paramètres", "1": "Lundi", "2": "Mardi {x}", "3": "Mercredi"}])
+
+        result = translate(target, client)
+
+        assert (result.translated, dict(result.rejected)) == (3, {"placeholders": 1})
+        assert read(target) == {"title": "Paramètres"}
+
+        translate(target, ScriptedClient([{"0": "Lundi", "1": "Mardi", "2": "Mercredi"}]))
+
+        assert read(target) == {"title": "Paramètres", "weekdays": ["Lundi", "Mardi", "Mercredi"]}
+
     def test_an_array_shaped_differently_from_the_sources_is_translated_again(self, locales):
         locales("arrays/en.json", {"weekdays": ["Monday", "Tuesday", "Wednesday"]})
         target = locales("arrays/fr.json", {"weekdays": ["Mardi", "Mercredi"]})

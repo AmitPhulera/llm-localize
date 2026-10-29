@@ -6,9 +6,11 @@ and ICU messages like ``{count, plural, one {# item} other {# items}}``
 are checked with the ICU rules.
 
 Strings in arrays are translated too, with keys like ``weekdays[0]``,
-through arrays and objects up to ``MAX_ARRAY_DEPTH`` levels inside one,
-each array as a whole. Other values, like numbers, aren't translated,
-and a new target gets the source's.
+through arrays and objects up to ``MAX_ARRAY_DEPTH`` levels inside one.
+An array is translated as a whole, and written only once every string
+in it is translated: until then the target lacks it, so the app falls
+back to the source language rather than showing a gap. Other values,
+like numbers, aren't translated, and a new target gets the source's.
 """
 import json
 import os
@@ -98,8 +100,22 @@ class JsonFile(MonolingualFile):
 
     @cached_property
     def _pending_arrays(self):
-        """``{array path: copy}`` of arrays being translated as a whole, filled in from the source's."""
+        """``{array path: (copy, keys left)}`` of arrays translated as a whole, kept out of the target until done.
+
+        The keys left are the source's messages in the array not translated
+        in the copy yet; it goes in the target when none are left.
+        """
         return {}
+
+    @cached_property
+    def _array_messages(self):
+        """``{array path: keys}`` of the source's messages in each array that need translating."""
+        keys = {}
+        for key, message in self.source_messages.items():
+            root = _array_root(json.loads(key))
+            if root is not None and not self.is_translated(message, None):
+                keys.setdefault(root, set()).add(key)
+        return keys
 
     def find_problem(self, source, translation):
         if Counter(NESTING_RE.findall(source)) != Counter(NESTING_RE.findall(translation)):
@@ -115,10 +131,15 @@ class JsonFile(MonolingualFile):
         if root is None:
             _set(self.document, path, translation)
             return
-        # A whole array: filled in a copy of the source's, which goes in the target as it's filled
-        array = self._pending_arrays.setdefault(root, _blank(_get(self.source_document, root)))
+        # A whole array: filled in a copy of the source's, which goes in the target once it's done
+        if root not in self._pending_arrays:
+            self._pending_arrays[root] = (_blank(_get(self.source_document, root)),
+                                          set(self._array_messages.get(root, ())))
+        array, left = self._pending_arrays[root]
         _set(array, path[len(root):], translation)
-        _set(self.document, root, array)
+        left.discard(key)
+        if not left:
+            _set(self.document, root, self._pending_arrays.pop(root)[0])
 
     @cached_property
     def _save_style(self):
