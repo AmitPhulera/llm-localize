@@ -233,6 +233,16 @@ class TestTranslating:
             f'<?xml version="1.0" encoding="utf-8"?>\n{doctype}\n<resources>\n'
             '    <string name="welcome">Bienvenue dans &appname;</string>\n</resources>\n')
 
+    def test_a_doctype_in_a_comment_isnt_copied(self, tmp_path):
+        write(tmp_path / "res" / "values" / "strings.xml",
+              '<!-- Example: <!DOCTYPE resources SYSTEM "https://example.com/x.dtd"> -->\n'
+              '<resources><string name="a">Hi</string></resources>\n')
+        target = tmp_path / "res" / "values-fr" / "strings.xml"
+
+        translate_file(open_file(target), FakeClient(), "fr")
+
+        assert "DOCTYPE" not in target.read_text(encoding="utf-8")
+
     def test_invalid_target(self, res):
         write(res / "values-fr" / "strings.xml", "<resources><string>")
 

@@ -33,6 +33,8 @@ NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
 CDATA_OR_TAG_RE = re.compile(r"(<!\[CDATA\[.*?\]\]>|<[^>]*>)", re.S)
 # An internal entity's declaration, like <!ENTITY appname "Notes">
 ENTITY_RE = re.compile(rb"""<!ENTITY\s+([\w.-]+)\s+("[^"]*"|'[^']*')\s*>""")
+# Whitespace and a comment or processing instruction, as may come before a DOCTYPE
+PROLOG_ITEM_RE = re.compile(rb"\s*(?:<\?.*?\?>|<!--.*?-->)", re.S)
 # Not escaped: after no backslash, or after escaped ones, whose run is kept as group 1, as in "C:\\"
 UNESCAPED = r"(?<!\\)((?:\\\\)*)"
 UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
@@ -379,9 +381,15 @@ def _doctype(data):
     (b'', b'')
     >>> _doctype(b'<!DOCTYPE resources [<!ENTITY a "[x]"><!-- ] -->]><resources/>')
     b'<!DOCTYPE resources [<!ENTITY a "[x]"><!-- ] -->]>'
+    >>> _doctype(b'<!-- <!DOCTYPE resources SYSTEM "x.dtd"> --><resources/>')
+    b''
     """
-    start = data.find(b"<!DOCTYPE")
-    if start < 0:
+    # Only where XML allows one, before the root element, and not in a comment, which may quote one
+    start = 3 if data.startswith(b"\xef\xbb\xbf") else 0
+    while match := PROLOG_ITEM_RE.match(data, start):
+        start = match.end()
+    start = len(data) - len(data[start:].lstrip())
+    if not data.startswith(b"<!DOCTYPE", start):
         return b""
     end = data.find(b">", start)
     subset = data.find(b"[", start, end if end >= 0 else len(data))
