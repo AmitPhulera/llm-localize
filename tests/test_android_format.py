@@ -6,6 +6,7 @@ import pytest
 from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
+from llm_localize.formats.android import AndroidFile
 
 from .fakes import FakeClient, ScriptedClient
 
@@ -149,12 +150,6 @@ class TestTranslating:
         assert kept in text
         assert text.count('name="app_name"') == 1 and text.count('name="notes"') == 1
 
-    def test_invalid_target(self, res):
-        write(res / "values-fr" / "strings.xml", "<resources><string>")
-
-        with pytest.raises(ValueError, match="not valid XML"):
-            open_file(res / "values-fr" / "strings.xml").untranslated_units()
-
     def test_plural_forms_already_translated_are_kept(self, tmp_path):
         write(tmp_path / "res" / "values" / "strings.xml", '<resources><plurals name="files">'
               '<item quantity="one">%d file</item><item quantity="other">%d files</item></plurals></resources>')
@@ -197,6 +192,38 @@ class TestTranslating:
 
         assert "app_name" not in [unit.key.split("/")[1] for unit in units]
         assert alias in path.read_text(encoding="utf-8")
+
+    def test_escapes_what_the_model_writes(self, res):
+        client = ScriptedClient([{
+            "0": 'L\'appli "Notes"',
+            "1": "@ toi, %1$s",
+            "2": "Touchez <b>Enregistrer</b> & go",
+            "3": 'Vous avez <xliff:g id="count" example="3">%d</xliff:g> notes',
+            "4:one": "%d note", "4:many": "%d notes", "4:other": "%d notes",
+            "5": "  C'est espacé  ",
+        }])
+        path = res / "values-fr" / "strings.xml"
+
+        translate_file(open_file(path), client, "fr")
+
+        text = path.read_text(encoding="utf-8")
+        assert r'<string name="app_name">L\'appli \"Notes\"</string>' in text
+        assert r'<string name="welcome">\@ toi, %1$s</string>' in text
+        assert '<string name="bold">Touchez <b>Enregistrer</b> &amp; go</string>' in text
+        assert '<string name="quoted">"  C\'est espacé  "</string>' in text
+
+    def test_broken_xml_is_rejected(self, res):
+        android_file = AndroidFile(res / "values-fr" / "strings.xml")
+
+        assert android_file.find_problem("Tap <b>Save</b> &amp; go", "Touchez <b>Enregistrer</b> & go") is None
+        assert android_file.find_problem("A or B", "A < B") == "XML"
+        assert android_file.find_problem("Tap <b>Save</b>", "Touchez <B>Enregistrer</B>") == "XML tags"
+
+    def test_invalid_target(self, res):
+        write(res / "values-fr" / "strings.xml", "<resources><string>")
+
+        with pytest.raises(ValueError, match="not valid XML"):
+            open_file(res / "values-fr" / "strings.xml").untranslated_units()
 
     def test_cli(self, res, capsys):
         path = res / "values-de" / "strings.xml"
@@ -281,3 +308,11 @@ def test_a_quote_after_an_escaped_backslash_ends_the_string(tmp_path):
 
     assert unit.source == "C:\\\\"
     assert r'<string name="p">"C:\\"</string>' in target.read_text(encoding="utf-8")
+
+
+def test_text_in_cdata_is_translated_and_its_markup_kept(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hello</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+
+    assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b>Bonjour</b>]]>") is None
+    assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b onclick=x()>Bonjour</b>]]>") is not None

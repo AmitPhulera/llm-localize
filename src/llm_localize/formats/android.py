@@ -17,7 +17,7 @@ from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
-from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, open_tag, tag_end
+from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, changes_tags, line_indent, open_tag, tag_end
 
 NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
 # A CDATA section, whose & needn't be escaped, or a tag
@@ -37,6 +37,12 @@ NEW_FILE = '<?xml version="1.0" encoding="utf-8"?>\n'
 class AndroidFile(MonolingualFile):
     name = "android"
     extensions = (".xml",)
+    instructions = (
+        "Messages are Android string resources, and each one's context gives its resource name. "
+        "Keep format specifiers like %1$s, %2$d and %s, escapes like \\n and \\u2026, inline tags "
+        "like <b>, and <xliff:g> elements with their content, exactly as they are. Write apostrophes "
+        "and quotes plainly, without backslashes: they are escaped when saved."
+    )
 
     def language_from_path(self):
         match = _values_dir(self.path)
@@ -70,6 +76,18 @@ class AndroidFile(MonolingualFile):
     @cached_property
     def target_messages(self):
         return self.read_messages(self.path, references=True)
+
+    def find_problem(self, source, translation):
+        problem = super().find_problem(source, translation)
+        if problem:
+            return problem
+        if changes_tags(source, translation):
+            return "XML tags"
+        try:
+            expat.ParserCreate().Parse(f"<r>{_encode(translation, quoted=False)}</r>", True)
+        except expat.ExpatError:
+            return "XML"
+        return None
 
     @cached_property
     def _applied(self):
