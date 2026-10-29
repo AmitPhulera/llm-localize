@@ -70,8 +70,24 @@ class _Parser:
         name = self.token()
         if not name:
             raise ICUSyntaxError(f"argument without a name at {self.pos}")
+        if self.peek() == "}":
+            self.pos += 1
+            return Argument(name)
+        self.expect(",")
+        type_ = self.token()
+        style = ""
+        if self.peek() == ",":
+            self.pos += 1
+            style = self.style()
         self.expect("}")
-        return Argument(name)
+        return Argument(name, type_, style)
+
+    def style(self):
+        """Read a style like ``::currency/EUR``, which may hold quoted text but no braces."""
+        start = self.pos
+        while self.pos < len(self.text) and self.text[self.pos] not in "{}":
+            self.pos += 1
+        return self.text[start:self.pos].strip()
 
     def token(self):
         self.skip_space()

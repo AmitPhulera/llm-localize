@@ -1,10 +1,16 @@
 import pytest
 
-from llm_localize.icu import ICUSyntaxError, parse
+from llm_localize.icu import Argument, ICUSyntaxError, parse
 from llm_localize.plurals import plural_categories, plural_forms
 
 
 class TestParse:
+
+    def test_arguments(self):
+        nodes = parse("Paid {amount, number, ::currency/EUR} on {day, date, short}")
+
+        assert [(node.name, node.type, node.style) for node in nodes if isinstance(node, Argument)] == [
+            ("amount", "number", "::currency/EUR"), ("day", "date", "short")]
 
     def test_hash_is_text_outside_plurals(self):
         text, argument = parse("Item #{n}")
