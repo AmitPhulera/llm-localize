@@ -124,6 +124,33 @@ class TestTranslating:
         assert list(document) == ["home", "items_one", "items_many", "items_other", "show_other", "extra"]
         assert path.read_text().startswith('{\n    "home"')
 
+    def test_a_plain_key_beside_its_plural_keys(self, locales):
+        source = locales("same/en.json",
+                         {"item": "Item", "item_one": "{{count}} item", "item_other": "{{count}} items"})
+
+        translate(source.parent / "ru.json", language="ru")
+
+        # Russian "one" covers 21 too, so it's translated from the plural text
+        assert read(source.parent / "ru.json") == {
+            "item": "T: Item", "item_one": "T: {{count}} items", "item_few": "T: {{count}} items",
+            "item_many": "T: {{count}} items", "item_other": "T: {{count}} items"}
+
+    @pytest.mark.parametrize("language, keys", [
+        ("de", ["cart_zero", "cart_one", "cart_other"]),
+        ("lv", ["cart_zero", "cart_one", "cart_other"]),
+    ])
+    def test_the_i18next_zero_override(self, locales, language, keys):
+        source = locales("zero/en.json", {"cart_zero": "Your cart is empty", "cart_one": "{{count}} item",
+                                          "cart_other": "{{count}} items"})
+        target = source.parent / f"{language}.json"
+
+        result = translate(target, language=language)
+
+        assert list(read(target)) == keys
+        # German translates the override as its own message; Latvian's plural has a zero form of its own
+        assert result.untranslated == (2 if language == "de" else 1)
+        assert read(target)["cart_zero"] == ("T: Your cart is empty" if language == "de" else "T: {{count}} items")
+
     def test_plural_forms_already_translated_are_kept(self, locales):
         target = locales("ru.json", {"items_one": "{{count}} вещь", "items_other": "{{count}} вещи"})
 

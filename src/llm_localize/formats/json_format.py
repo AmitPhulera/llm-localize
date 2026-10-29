@@ -53,7 +53,13 @@ class JsonFile(MonolingualFile):
                 raise ValueError(f"{path} has too much key text: its strings' keys, each with the keys of the "
                                  f"objects it's in, add up to over {MAX_KEYS_SIZE:,} characters")
             messages[key] = Message(text=value, context=_context(path_in_file))
-        return _group_plurals(messages)
+        grouped = _group_plurals(messages)
+        if self.language and "zero" in self.plural_categories:
+            # A language with a zero form gets items_zero from the plural, not as the plain override
+            plurals = {_key(_plural_path(json.loads(key))) for key, message in grouped.items() if message.plurals}
+            grouped = {key: message for key, message in grouped.items()
+                       if not (key.endswith('_zero"]') and _key(_zero_base(json.loads(key))) in plurals)}
+        return grouped
 
     @cached_property
     def target_messages(self):
@@ -64,7 +70,7 @@ class JsonFile(MonolingualFile):
         """Return the source's messages found in ``values``, ``{path: text}``, keyed and grouped like its own."""
         messages = {}
         for key, message in self.source_messages.items():
-            path = json.loads(key)
+            path = _plural_path(json.loads(key))
             if message.plurals:
                 forms = {category: values.get((*path[:-1], f"{path[-1]}_{category}")) for category in CATEGORIES}
                 messages[key] = Message(plurals={category: text for category, text in forms.items() if text})
@@ -89,7 +95,7 @@ class JsonFile(MonolingualFile):
 
     def apply(self, key, translation):
         translation = self.with_translated_forms(key, translation)
-        path = json.loads(key)
+        path = _plural_path(json.loads(key))
         _set(self.document, path, translation)
 
     @cached_property
@@ -141,6 +147,16 @@ def _key(path):
     return json.dumps(list(path), ensure_ascii=False)
 
 
+def _plural_path(path):
+    """Return a message's path in the file, without the ``null`` that marks a plural sharing a plain key's."""
+    return path[:-1] if path and path[-1] is None else path
+
+
+def _zero_base(path):
+    """Return the plural path an ``items_zero`` path belongs to."""
+    return [*path[:-1], path[-1][:-len("_zero")]]
+
+
 def _context(path):
     """Return a message's context: its key, like ``home.title``."""
     key = ""
@@ -154,20 +170,28 @@ def _group_plurals(messages):
 
     A key counts as plural when its object also has the ``_other`` key
     and at least one other category, so a lone ``show_other`` stays plain.
+    ``items_zero`` stays plain too: i18next uses it for a count of 0 in
+    any language, not as a CLDR category. A plural whose key an object
+    also has as a plain string, like ``item`` beside ``item_one``, gets a
+    ``null`` after its path, so the two keys differ.
 
     >>> grouped = _group_plurals({
     ...     '["items_one"]': Message("1 item"), '["items_other"]': Message("{{count}} items"),
-    ...     '["show_other"]': Message("Show other"),
+    ...     '["show_other"]': Message("Show other"), '["items_zero"]': Message("No items"),
+    ...     '["item"]': Message("Item"), '["item_one"]': Message("1 item"), '["item_other"]': Message("items"),
     ... })
-    >>> {key: (m.text, m.plurals) for key, m in grouped.items()}
-    {'["items"]': ('', {'one': '1 item', 'other': '{{count}} items'}), '["show_other"]': ('Show other', {})}
+    >>> {key: (m.text, m.plurals) for key, m in grouped.items()}  # doctest: +NORMALIZE_WHITESPACE
+    {'["items"]': ('', {'one': '1 item', 'other': '{{count}} items'}), '["show_other"]': ('Show other', {}),
+     '["items_zero"]': ('No items', {}), '["item"]': ('Item', {}),
+     '["item", null]': ('', {'one': '1 item', 'other': 'items'})}
     """
     groups = {}
     for key in messages:
         path = json.loads(key)
         match = isinstance(path[-1], str) and PLURAL_KEY_RE.match(path[-1])
-        if match:
-            groups.setdefault(_key([*path[:-1], match.group(1)]), {})[match.group(2)] = key
+        if match and match.group(2) != "zero":
+            base = [*path[:-1], match.group(1)]
+            groups.setdefault(_key([*base, None] if _key(base) in messages else base), {})[match.group(2)] = key
     plural_keys = {}
     for base_key, keys in groups.items():
         if "other" in keys and len(keys) > 1:
@@ -180,7 +204,7 @@ def _group_plurals(messages):
             continue
         base_key = plural_keys[key]
         if base_key not in grouped:
-            grouped[base_key] = Message(context=_context(json.loads(base_key)))
+            grouped[base_key] = Message(context=_context(_plural_path(json.loads(base_key))))
         category = PLURAL_KEY_RE.match(json.loads(key)[-1]).group(2)
         grouped[base_key].plurals[category] = message.text
     return grouped
