@@ -41,12 +41,41 @@ def translate(path, client=None, **options):
 
 class TestFindingFiles:
 
+    @pytest.mark.parametrize("target, language, source", [
+        ("fr.json", "fr", "en.json"),
+        ("fr/common.json", "fr", "en/common.json"),
+        ("messages.fr.json", "fr", "messages.en.json"),
+        ("pt_BR.json", "pt_BR", "en.json"),
+        ("locales/zh-Hans/app.json", "zh-Hans", "locales/en/app.json"),
+    ])
+    def test_source_and_language_from_path(self, tmp_path, target, language, source):
+        (tmp_path / source).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / source).write_text("{}")
+
+        json_file = open_file(tmp_path / target, source_language="en")
+
+        assert (json_file.language, json_file.source_path) == (language, str(tmp_path / source))
+
+    def test_source_spelled_like_the_source_language(self, tmp_path):
+        (tmp_path / "en_US.json").write_text("{}")
+
+        json_file = open_file(tmp_path / "fr_FR.json", source_language="en_US")
+
+        assert json_file.source_path == str(tmp_path / "en_US.json")
+
     def test_explicit_source_and_language(self, locales):
         path = locales.dir / "french-strings.json"
 
         json_file = open_file(path, language="fr", source_path=locales.dir / "en.json")
 
         assert (json_file.language, json_file.source_path) == ("fr", str(locales.dir / "en.json"))
+
+    def test_explicit_language_django_and_cldr_dont_list(self, tmp_path):
+        (tmp_path / "en.json").write_text('{"a": "Hi"}')
+
+        json_file = open_file(tmp_path / "rw.json", language="rw", source_language="en")
+
+        assert json_file.source_path == str(tmp_path / "en.json")
 
     def test_missing_source(self, tmp_path):
         with pytest.raises(ValueError, match="Can't find the en file.*--source"):
@@ -62,13 +91,16 @@ class TestFindingFiles:
         with pytest.raises(ValueError, match="en.json has too much key text"):
             open_file(tmp_path / "fr.json", source_path=tmp_path / "en.json").untranslated_units()
 
+    def test_source_file_has_nothing_to_translate(self, locales):
+        assert open_file(locales.dir / "en.json", source_language="en").untranslated_units() == []
+
 
 class TestTranslating:
 
     def test_creates_the_target_file(self, locales):
         path = locales.dir / "fr.json"
 
-        result = translate(path, source_path=locales.dir / "en.json")
+        result = translate(path)
 
         assert result.translated == 5
         assert read(path) == {
@@ -79,6 +111,21 @@ class TestTranslating:
         }
         assert path.read_text().startswith('{\n  "home": {\n    "title"')
         assert path.read_text().endswith("}\n")
+
+    def test_context_and_instructions(self, locales):
+        client = FakeClient()
+
+        translate(locales.dir / "fr.json", client)
+
+        system_prompt, user_message, _ = client.calls[0]
+        assert json.loads(user_message)["0"] == {"text": "Welcome", "context": "Key: home.title"}
+
+    def test_cli(self, locales, capsys):
+        exit_code = main([str(locales.dir / "de.json"), "--provider", "tests.fakes.FakeClient", "--api-key", "k"])
+
+        assert exit_code == 0
+        assert read(locales.dir / "de.json")["home"]["title"] == "T: Welcome"
+        assert capsys.readouterr().out == f"{locales.dir / 'de.json'} (de): translated 5 of 5\n"
 
     def test_cli_with_source(self, locales):
         source = locales("base/strings.json", {"hello": "Hello"})

@@ -46,13 +46,16 @@ The format is chosen by file extension, or with `--format`.
 
 ### One file per language
 
-JSON files hold one language each, so the source text comes from another file, named with `--source`. Translating `out.json` reads it and writes the messages `out.json` lacks, creating the file if needed:
+JSON files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
 
 ```bash
+llm-localize locales/fr.json locales/de.json        # from locales/en.json
+llm-localize locales/fr/common.json                 # from locales/en/common.json
+llm-localize messages.fr.json --source-lang en_US   # from messages.en_US.json
 llm-localize out.json --lang es --source strings.json
 ```
 
-The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it.
+The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it. The source file is the same path with that code swapped for `--source-lang`, unless `--source` gives it. A glob that also matches the source file is fine: it has nothing missing.
 
 A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
 

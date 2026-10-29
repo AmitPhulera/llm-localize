@@ -12,7 +12,7 @@ from functools import cached_property
 from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile
-from llm_localize.languages import LANGUAGE_NAMES
+from llm_localize.languages import LANGUAGE_NAMES, to_locale
 from llm_localize.plurals import has_rules
 from llm_localize.units import TranslationUnit
 
@@ -66,9 +66,26 @@ class MonolingualFile(TranslationFile):
             if not os.path.isfile(self._source_path):
                 raise ValueError(f"The source file {self._source_path} doesn't exist")
             return str(self._source_path)
+        for candidate in self.source_path_candidates():
+            if os.path.isfile(candidate):
+                return str(candidate)
         raise ValueError(
             f"Can't find the {self.source_language} file to translate {self.path} from; "
             "pass it with --source")
+
+    def source_path_candidates(self):
+        """Yield paths the source file might have, with the language in the path swapped for the source's."""
+        match = self._language_in_path()
+        if not match:
+            return
+        part_index, token_index, _ = match
+        parts = list(Path(self.path).parts)
+        tokens = parts[part_index].split(".")
+        for spelling in dict.fromkeys([self.source_language, to_locale(self.source_language),
+                                       self.source_language.lower(), self.source_language.split("-")[0]]):
+            tokens[token_index] = spelling
+            parts[part_index] = ".".join(tokens)
+            yield Path(*parts)
 
     def _language_in_path(self):
         """Return ``(part index, token index, code)`` for the language code in the path, or None.
@@ -92,6 +109,11 @@ class MonolingualFile(TranslationFile):
                     return part_index, token_index, token
         return None
 
+    @property
+    def is_source(self):
+        """True if this is the source file itself, as when a glob matches it too."""
+        return os.path.exists(self.path) and os.path.samefile(self.path, self.source_path)
+
     @cached_property
     def source_messages(self):
         return self.read_messages(self.source_path)
@@ -101,6 +123,8 @@ class MonolingualFile(TranslationFile):
         return self.read_messages(self.path)
 
     def untranslated_units(self):
+        if self.is_source:
+            return []
         units = []
         for key, message in self.source_messages.items():
             if self.is_translated(message, self.target_messages.get(key)):
