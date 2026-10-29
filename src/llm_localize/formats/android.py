@@ -37,6 +37,8 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+# An xliff:g placeholder's start or end tag; only real ones, not escaped ones, which are markup
+XLIFF_G_RE = re.compile(r"</?xliff:g\b[^<>]*>")
 # XML's own entities, like &lt;
 PREDEFINED_ENTITY_RE = re.compile(r"&(amp|gt|quot|apos);")
 # Elements Html.fromHtml reads, and ones that change what follows with no attribute; any other with an
@@ -105,7 +107,10 @@ class AndroidFile(MonolingualFile):
 
     def find_problem(self, source, translation):
         # &#37;s and \\u0025s are %s to Android, so they're checked as that
-        problem = super().find_problem(_as_android_reads(source), _as_android_reads(translation))
+        # <xliff:g id="..."> placeholders may move, as word order needs, past each other and markup alike: their
+        # content, like %1$s, is checked as text, and changes_tags checks each tag is kept as it is
+        problem = super().find_problem(_as_android_reads(XLIFF_G_RE.sub("", source)),
+                                       _as_android_reads(XLIFF_G_RE.sub("", translation)))
         if problem:
             return problem
         if changes_tags(source, translation):

@@ -358,3 +358,14 @@ def test_markup_escaped_for_html_from_html_is_checked(tmp_path):
     assert android.find_problem("Tap here", padded) == "HTML tags"
     assert android.find_problem(source, 'Vous avez &lt;b>%1$d &lt;a href="/pay">messages&lt;/a>&lt;/b>.') \
         == "HTML tags"
+
+
+def test_xliff_g_placeholders_may_move_past_each_other(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hello</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+    inviter, invitee = '<xliff:g id="inviter">%1$s</xliff:g>', '<xliff:g id="invitee">%2$s</xliff:g>'
+
+    assert android.find_problem(f"{inviter} invited {invitee}", f"{invitee}さんは{inviter}さんに招待") is None
+    assert android.find_problem(f"{inviter} {invitee} {inviter}", f"{invitee} {inviter} {invitee}") == "XML tags"
+    assert android.find_problem(f"Hello {inviter}, <b>welcome</b>", f"<b>ようこそ</b>、{inviter}さん") is None
+    assert android.find_problem("Hi", 'Salut &lt;xliff:g id="x" onmouseover="evil()">!&lt;/xliff:g>') is not None
