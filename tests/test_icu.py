@@ -126,6 +126,10 @@ class TestFindProblem:
         # A link, a handler or a script in a case stays as it is
         ('<a href="{g, select, other {/safe}}">Go</a>',
          '<a href="{g, select, other {javascript:alert(1)}}">Aller</a>', "HTML attributes"),
+        ("<script>{g, select, other {go()}}</script>", "<script>{g, select, other {bad()}}</script>",
+         "HTML tags"),
+        ("<script>/* </scriptx> */{g, select, other {go()}}</script>",
+         "<script>/* </scriptx> */{g, select, other {bad()}}</script>", "HTML tags"),
         # A tag named by a case
         ("{g, select, male {He replied} other {They replied}}",
          "<{g, select, male {img} other {img}} src=x onerror=alert(1)>Il a répondu", "HTML tags"),

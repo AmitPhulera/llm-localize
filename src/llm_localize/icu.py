@@ -291,9 +291,9 @@ def _compare(source_nodes, translation_nodes, categories, place=None):
 def _places(nodes, place):
     """Return ``{id(choice): place}`` for a message level's choices, ``place`` if it's given, else where each is.
 
-    A place is None in text, ``("text", quote, name)`` in a quoted
-    attribute that holds text, like ``alt``, and ``("attribute", name)``
-    elsewhere in a tag.
+    A place is None in text, ``"script"`` in a script or style,
+    ``("text", quote, name)`` in a quoted attribute that holds text, like
+    ``alt``, and ``("attribute", name)`` elsewhere in a tag.
 
     >>> nodes = parse('<img alt="{n, plural, other {x}}" src="{n, plural, other {y}}"> {m, select, other {z}}')
     >>> list(_places(nodes, None).values())
@@ -315,10 +315,11 @@ def _places(nodes, place):
 
 
 class _Html:
-    """Where in HTML text read so far ends, tokenized as a browser does: a quote opens a value only after =."""
+    """Where in HTML text read so far ends, tokenized as a browser does: a quote opens a value only after
+    =, and <script> and <style> hold code up to their end tag."""
 
     def __init__(self):
-        self.state, self.tag, self.name, self.quote, self.seen = "text", "", "", "", ""
+        self.state, self.tag, self.name, self.quote, self.raw, self.seen = "text", "", "", "", "", ""
 
     def feed(self, text):
         for char in text:
@@ -326,14 +327,21 @@ class _Html:
 
     def step(self, char):
         state, previous, self.seen = self.state, self.seen, (self.seen + char.lower())[-9:]
-        if state == "text":
+        if state == "raw":
+            if self.seen.endswith("</" + self.raw):
+                self.state = "raw end"
+        elif state == "raw end":
+            # </script ends a script only as a whole name: </scriptx doesn't
+            self.state = "text" if char.isspace() or char in "/>" else "raw"
+        elif state == "text":
             if previous.endswith("<") and char.isalpha():
                 self.state, self.tag = "tag", char.lower()
         elif state == "quoted":
             if char == self.quote:
                 self.state = "attributes"
         elif char == ">":
-            self.state = "text"
+            # In HTML, <script/> opens a script all the same
+            self.state, self.raw = ("raw", self.tag) if self.tag in ("script", "style") else ("text", "")
         elif state == "tag":
             if char.isspace() or char == "/":
                 self.state = "attributes"
@@ -357,6 +365,8 @@ class _Html:
             self.state, self.name = "name", char.lower()
 
     def place(self):
+        if self.state in ("raw", "raw end"):
+            return "script"
         if self.state == "text":
             return None
         if self.state == "quoted" and is_text_attribute(self.tag, self.name):
@@ -380,9 +390,10 @@ def _compare_choice(source_choice, translation_choice, categories, place=None):
         if (source_choice.type != "select" and shown and _shows_number(source_case)
                 and not _shows_number(translation_case)):
             return "ICU arguments"
-        # A link or a handler in a case stays as it is
-        if place and place[0] == "attribute" and _render(translation_case) != _render(source_case):
-            return "HTML attributes"
+        # Code, a link or a handler in a case stays as it is
+        if (place == "script" or (place and place[0] == "attribute")) and _render(translation_case) != _render(
+                source_case):
+            return "HTML tags" if place == "script" else "HTML attributes"
         # A case in an attribute's text can't end the value or the tag, as `x" onerror="...` would
         if place and place[0] == "text":
             ends = place[1] + "<>"
