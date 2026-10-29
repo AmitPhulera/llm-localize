@@ -62,8 +62,6 @@ ESCAPE_RE = re.compile(r"\\[\\nt]")
 REFERENCE_RE = re.compile(r"\s*[@?](?:[\w.]+:)?[\w.]+/[\w.]+\s*")
 
 NEW_FILE = '<?xml version="1.0" encoding="utf-8"?>\n'
-# A DOCTYPE declaration, with entities like <!ENTITY appname "Notes"> that strings use as &appname;
-DOCTYPE_RE = re.compile(rb"<!DOCTYPE\s[^\[>]*(?:\[.*?\]\s*)?>", re.S)
 
 
 class AndroidFile(MonolingualFile):
@@ -353,8 +351,48 @@ class _Resources:
         self.root_start = self.root_tag_end = self.root_end = 0
         self.elements = {}
         self.indent = "    "
-        match = DOCTYPE_RE.search(data)
-        self.doctype = match.group() if match else b""
+        self.doctype = _doctype(data)
+
+
+def _doctype(data):
+    r"""Return the DOCTYPE declaration, with entities like ``<!ENTITY appname "Notes">``, or ``b""``.
+
+    Found by searching, not a regular expression, so an upload of many
+    unfinished declarations takes linear time.
+
+    >>> _doctype(b'<?xml version="1.0"?>\n<!DOCTYPE resources [\n<!ENTITY a "A">\n]>\n<resources/>')
+    b'<!DOCTYPE resources [\n<!ENTITY a "A">\n]>'
+    >>> _doctype(b"<resources/>"), _doctype(b"<!DOCTYPE [" * 3)
+    (b'', b'')
+    >>> _doctype(b'<!DOCTYPE resources [<!ENTITY a "[x]"><!-- ] -->]><resources/>')
+    b'<!DOCTYPE resources [<!ENTITY a "[x]"><!-- ] -->]>'
+    """
+    start = data.find(b"<!DOCTYPE")
+    if start < 0:
+        return b""
+    end = data.find(b">", start)
+    subset = data.find(b"[", start, end if end >= 0 else len(data))
+    if subset >= 0:
+        # The internal subset, [...], may hold ">" and, in quotes or comments, "]"; the declaration ends
+        # at the first ">" after the "]" that closes it
+        close = _subset_end(data, subset + 1)
+        end = data.find(b">", close) if close >= 0 else -1
+    return data[start:end + 1] if end >= 0 else b""
+
+
+def _subset_end(data, index):
+    """Return where the DOCTYPE's internal subset starting at ``index`` ends, at its "]", or -1."""
+    while index < len(data):
+        if data[index:index + 1] in (b'"', b"'"):
+            index = data.find(data[index:index + 1], index + 1)
+        elif data.startswith(b"<!--", index):
+            index = data.find(b"-->", index + 4)
+        elif data[index:index + 1] == b"]":
+            return index
+        if index < 0:
+            return -1
+        index += 1
+    return -1
 
 
 def _read(path):

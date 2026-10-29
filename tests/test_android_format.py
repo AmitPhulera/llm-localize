@@ -6,7 +6,7 @@ import pytest
 from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
-from llm_localize.formats.android import AndroidFile
+from llm_localize.formats.android import AndroidFile, _doctype
 
 from .fakes import FakeClient, ScriptedClient
 
@@ -253,6 +253,15 @@ def test_source_found_for_a_language_the_tables_dont_list(tmp_path):
     android = open_file(tmp_path / "res" / "values-rw" / "strings.xml", language="rw")
 
     assert android.source_path == str(tmp_path / "res" / "values" / "strings.xml")
+
+
+def test_finding_the_doctype_takes_linear_time():
+    # Each unfinished declaration made a regular expression scan the rest of the file again
+    data = b"<!DOCTYPE [" * 200000
+
+    started = time.perf_counter()
+    assert _doctype(data) == b""
+    assert time.perf_counter() - started < 0.5
 
 
 def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
