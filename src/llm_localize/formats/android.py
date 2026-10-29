@@ -9,6 +9,7 @@ without them. Translations are added to the end of an existing file, or
 replace empty elements in place, so the rest of the file is kept byte
 for byte.
 """
+import bisect
 import os
 import re
 from functools import cached_property
@@ -35,6 +36,19 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+# XML's own entities, like &lt;
+PREDEFINED_ENTITY_RE = re.compile(r"&(amp|gt|quot|apos);")
+# Elements Html.fromHtml reads, and ones that change what follows with no attribute; any other with an
+# attribute is markup too
+KNOWN_ELEMENTS = frozenset(
+    "a b big blockquote br cite del dfn div em font h1 h2 h3 h4 h5 h6 i img li p s small span strike strong "
+    "sub sup tt u ul script style svg math".split())
+# An escaped tag's start, its name ending where a browser ends it
+ESCAPED_TAG_START_RE = re.compile(r"&lt;(/?[A-Za-z][^\s/>&=\\]*)")
+# &lt; is left out: _unescape_tags decides which are markup
+PREDEFINED_ENTITIES = {"amp": "&", "gt": ">", "quot": '"', "apos": "'"}
+# Android's \\n or \\t, after any escaped backslashes
+_WHITESPACE_ESCAPE_RE = re.compile(UNESCAPED + r"\\([nt])")
 # Android's \\u0025, after any escaped backslashes
 _UNICODE_ESCAPE_RE = re.compile(UNESCAPED + r"\\u([0-9A-Fa-f]{4})")
 # A reference to another resource, like @string/app_name or ?attr/color, which isn't text
@@ -193,13 +207,43 @@ def _values_dir(path, language=None):
 def _as_android_reads(text):
     r"""Return text with its references and \u escapes as the characters they stand for, as Android reads it.
 
-    >>> _as_android_reads(r"50&#37; \u0025s \\u0025s")
-    '50% %s \\\\u0025s'
+    Markup escaped as ``&lt;b>`` is markup to ``Html.fromHtml``, so it's
+    checked as that.
+
+    >>> _as_android_reads(r"50&#37; \u0025s \\u0025s &lt;b>&amp;lt; &lt;Untitled&gt;")
+    '50% %s \\\\u0025s <b>&lt; &lt;Untitled>'
     """
-    # An & stays escaped, as decode_character_references keeps it
-    return _UNICODE_ESCAPE_RE.sub(
+    # An & stays escaped, as decode_character_references keeps it, so \u0026gt; can't become a tag's end
+    text = _UNICODE_ESCAPE_RE.sub(
         lambda match: match.group(1) + chr(int(match.group(2), 16)).replace("&", "&amp;"),
         decode_character_references(text))
+    # Android's \n and \t are whitespace, which can end a tag's name as well as a space
+    text = _unescape_tags(_WHITESPACE_ESCAPE_RE.sub(
+        lambda match: match.group(1) + {"n": "\n", "t": "\t"}[match.group(2)], text))
+    return PREDEFINED_ENTITY_RE.sub(lambda match: PREDEFINED_ENTITIES[match.group(1)], text)
+
+
+def _unescape_tags(text):
+    """Return text with each escaped tag, like ``&lt;b>``, as markup: an element Html.fromHtml reads or that
+    can run code, or any with an attribute. A word in brackets, like ``&lt;Untitled&gt;``, stays text.
+
+    >>> _unescape_tags("&lt;b>Hi&lt;/b> &lt;Untitled&gt; &lt;x.y hidden onclick=go()>")
+    '<b>Hi</b> &lt;Untitled&gt; <x.y hidden onclick=go()>'
+    """
+    if "&lt;" not in text:
+        return text
+    # Where each tag can end, and each =, so finding an = before a tag's end takes no rescanning
+    ends = [match.start() for match in re.finditer(r">|&gt;", text)]
+    equals = [match.start() for match in re.finditer("=", text)]
+
+    def unescape(match):
+        after = bisect.bisect_left(ends, match.end())
+        end = ends[after] if after < len(ends) else len(text)
+        equal = bisect.bisect_left(equals, match.end())
+        attribute = equal < len(equals) and equals[equal] < end
+        return "<" + match.group(1) if attribute or match.group(1).lstrip("/").lower() in KNOWN_ELEMENTS \
+            else match.group()
+    return ESCAPED_TAG_START_RE.sub(unescape, text)
 
 
 def _decode(raw):

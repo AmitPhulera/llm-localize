@@ -325,3 +325,26 @@ def test_text_in_cdata_is_translated_and_its_markup_kept(tmp_path):
 
     assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b>Bonjour</b>]]>") is None
     assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b onclick=x()>Bonjour</b>]]>") is not None
+
+
+def test_markup_escaped_for_html_from_html_is_checked(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hello</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+    source = "You have &lt;b>%1$d new messages&lt;/b>."
+
+    assert android.find_problem(source, "Vous avez &lt;b>%1$d nouveaux messages&lt;/b>.") is None
+    assert android.find_problem("&lt;Untitled&gt;", "&lt;Sans titre&gt;") is None
+    assert android.find_problem("copy &lt;source&gt;", "copier &lt;Quelle&gt;") is None
+    assert android.find_problem("&lt;b>Hi&lt;/b>", "&lt;b &#38;gt; onmouseover=alert(1)>Salut&lt;/b>") is not None
+    assert android.find_problem("&lt;b>Hi&lt;/b>", r"&lt;b \u0026gt; onclick=alert(1)>Salut&lt;/b>") is not None
+    assert android.find_problem("Read the guide", "Lisez le guide &lt;svg onload=alert(1)>") == "HTML tags"
+    assert android.find_problem("Read the guide", "Lisez le guide &lt;script>alert(1)&lt;/script>") == "HTML tags"
+    assert android.find_problem("Tap here", "Touchez &lt;x autofocus onfocus=alert(1)>ici") == "HTML tags"
+    assert android.find_problem("Tap here", "Touchez &lt;x/onclick=alert(1)>ici&lt;/x>") == "HTML tags"
+    assert android.find_problem("Tap here", "Touchez &lt;x.y onclick=alert(1)&gt;ici") == "HTML tags"
+    # Android's \n and \t are whitespace in a tag too
+    assert android.find_problem(r"Tap\nhere", r"&lt;a\nhref=//evil.example/x&gt;Touchez ici") == "HTML tags"
+    padded = "Touchez &lt;x" + " hidden" * 50 + " onclick=alert(1)&gt;ici"
+    assert android.find_problem("Tap here", padded) == "HTML tags"
+    assert android.find_problem(source, 'Vous avez &lt;b>%1$d &lt;a href="/pay">messages&lt;/a>&lt;/b>.') \
+        == "HTML tags"
