@@ -35,6 +35,23 @@ class JsonFile(MonolingualFile):
         return _group_plurals(messages)
 
     @cached_property
+    def target_messages(self):
+        """The target's messages, keyed like the source's, with plurals grouped as the source groups them."""
+        return self._messages_in({tuple(path): value for path, value in _strings(self.document)})
+
+    def _messages_in(self, values):
+        """Return the source's messages found in ``values``, ``{path: text}``, keyed and grouped like its own."""
+        messages = {}
+        for key, message in self.source_messages.items():
+            path = json.loads(key)
+            if message.plurals:
+                forms = {category: values.get((*path[:-1], f"{path[-1]}_{category}")) for category in CATEGORIES}
+                messages[key] = Message(plurals={category: text for category, text in forms.items() if text})
+            elif tuple(path) in values:
+                messages[key] = Message(text=values[tuple(path)])
+        return messages
+
+    @cached_property
     def source_document(self):
         return _load(self.source_path)
 
@@ -151,9 +168,15 @@ def _ordered_like(value, source):
 
 
 def _source_position(name, order):
-    """Sort a key by the source's position, putting keys it lacks at the end."""
+    """Sort a key by the source's position, putting plural keys where the source has any of theirs."""
     if name in order:
         return order[name]
+    match = PLURAL_KEY_RE.match(name)
+    if match:
+        positions = [order[f"{match.group(1)}_{category}"] for category in CATEGORIES
+                     if f"{match.group(1)}_{category}" in order]
+        if positions:
+            return min(positions) + CATEGORIES.index(match.group(2)) / 10
     return len(order)
 
 

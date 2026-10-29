@@ -120,7 +120,7 @@ class TestTranslating:
 
         document = read(path)
         assert document["home"] == {"title": "Bienvenue", "greeting": "T: Hi {{name}}"}
-        assert list(document) == ["home", "items_one", "items_other", "show_other", "extra", "items_many"]
+        assert list(document) == ["home", "items_one", "items_many", "items_other", "show_other", "extra"]
         assert path.read_text().startswith('{\n    "home"')
 
     def test_plural_forms_already_translated_are_kept(self, locales):
@@ -138,12 +138,19 @@ class TestTranslating:
         translate(locales.dir / "ru.json", client, language="ru")
 
         document = read(locales.dir / "ru.json")
-        assert {key for key in document if key.startswith("items_")} == {
-            "items_one", "items_few", "items_many", "items_other"}
+        assert [key for key in document if key.startswith("items_")] == [
+            "items_one", "items_few", "items_many", "items_other"]
         request = next(json.loads(call[1]) for call in client.calls if "items" in call[1])
         plural = next(value for value in request.values() if isinstance(value, dict) and "forms" in value)
         assert list(plural["forms"]) == ["one", "few", "many", "other"]
         assert plural["context"] == "Key: items"
+
+    def test_plural_translated_only_when_every_category_is(self, locales):
+        path = locales("ru.json", {"items_one": "{{count}} элемент", "items_other": "{{count}} элемента"})
+
+        units = open_file(path, source_language="en").untranslated_units()
+
+        assert "items" in [json.loads(unit.key)[-1] for unit in units]
 
     def test_context_and_instructions(self, locales):
         client = FakeClient()
