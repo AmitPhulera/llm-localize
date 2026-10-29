@@ -117,6 +117,12 @@ class TestFindProblem:
          "ICU arguments"),
         ("{n, plural, other {{g, select, male {# his} other {# their}}}}",
          "{n, plural, one {{g, select, male {его} other {их}}} few {#} many {#} other {#}}", "ICU arguments"),
+        # In an attribute, a case can't end the value and add another attribute
+        ('<img alt="{n, plural, other {# files}}">',
+         '<img alt="{n, plural, one {#} few {#} many {#} other {#" onerror="alert(1)}}">', "HTML attributes"),
+        ('<a title="a>b" alt="{n, plural, other {# y}}">',
+         '<a title="a>b" alt="{n, plural, one {#} few {#} many {#} other {#" onmouseover="alert(1)}}">',
+         "HTML attributes"),
         # A link, a handler or a script in a case stays as it is
         ('<a href="{g, select, other {/safe}}">Go</a>',
          '<a href="{g, select, other {javascript:alert(1)}}">Aller</a>', "HTML attributes"),
@@ -131,6 +137,10 @@ class TestFindProblem:
         source = "Under 5 < {n, plural, one {# item} other {# items}}"
         translation = "Moins de 5 < {n, plural, one {# élément} many {# d'éléments} other {# d'éléments}}"
         assert find_problem(source, translation, ["one", "many", "other"]) is None
+
+    def test_a_case_in_an_attribute_may_hold_the_other_quote(self):
+        source = '<img alt="{n, plural, other {# items}}">'
+        assert find_problem(source, '<img alt="{n, plural, other {# l\'article}}">', ["other"]) is None
 
     def test_selectordinal_needs_the_target_languages_ordinal_categories(self):
         source = "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"

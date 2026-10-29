@@ -8,8 +8,10 @@ check doesn't fit. Instead, each case of the translation is checked
 against the matching case of the source, or its ``other`` case.
 """
 import re
+from collections import Counter
 
 from llm_localize.validation import find_problem as find_text_problem
+from llm_localize.validation import is_text_attribute
 
 # An argument that chooses between cases, e.g. "{count, plural," or "{g, select,"
 CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*,")
@@ -289,11 +291,13 @@ def _compare(source_nodes, translation_nodes, categories, place=None):
 def _places(nodes, place):
     """Return ``{id(choice): place}`` for a message level's choices, ``place`` if it's given, else where each is.
 
-    A place is None in text, and ``("attribute", name)`` in a tag.
+    A place is None in text, ``("text", quote, name)`` in a quoted
+    attribute that holds text, like ``alt``, and ``("attribute", name)``
+    elsewhere in a tag.
 
     >>> nodes = parse('<img alt="{n, plural, other {x}}" src="{n, plural, other {y}}"> {m, select, other {z}}')
     >>> list(_places(nodes, None).values())
-    [('attribute', 'alt'), ('attribute', 'src'), None]
+    [('text', '"', 'alt'), ('attribute', 'src'), None]
     >>> list(_places(parse("Score < {n, plural, other {# points}}"), None).values())
     [None]
     """
@@ -353,7 +357,11 @@ class _Html:
             self.state, self.name = "name", char.lower()
 
     def place(self):
-        return None if self.state == "text" else ("attribute", self.name)
+        if self.state == "text":
+            return None
+        if self.state == "quoted" and is_text_attribute(self.tag, self.name):
+            return "text", self.quote, self.name
+        return "attribute", self.name
 
 
 def _compare_choice(source_choice, translation_choice, categories, place=None):
@@ -375,6 +383,12 @@ def _compare_choice(source_choice, translation_choice, categories, place=None):
         # A link or a handler in a case stays as it is
         if place and place[0] == "attribute" and _render(translation_case) != _render(source_case):
             return "HTML attributes"
+        # A case in an attribute's text can't end the value or the tag, as `x" onerror="...` would
+        if place and place[0] == "text":
+            ends = place[1] + "<>"
+            if Counter(c for c in _render(translation_case) if c in ends) != Counter(
+                    c for c in _render(source_case) if c in ends):
+                return "HTML attributes"
         problem = _compare(source_case, translation_case, categories, place)
         if problem:
             return problem
