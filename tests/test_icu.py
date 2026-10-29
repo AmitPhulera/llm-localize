@@ -29,6 +29,9 @@ class TestParse:
         [select] = choice.cases["other"]
         assert isinstance(select, Choice) and select.cases["male"] == [NUMBER, " his"]
 
+    def test_quoting(self):
+        assert parse("It''s '{not an argument}' and '#'") == ["It's {not an argument} and '#'"]
+
     @pytest.mark.parametrize("text", [
         "{n, plural, one {# file}}",                   # no other case
         "{n, plural, one {# file} one {x} other {y}}",  # repeated case

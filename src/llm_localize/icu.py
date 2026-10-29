@@ -60,6 +60,8 @@ def parse(text):
 
     >>> [type(node).__name__ for node in parse("Hi {name}, {n, plural, one {# file} other {# files}}")]
     ['str', 'Argument', 'str', 'Choice']
+    >>> parse("It''s '{literal}'")
+    ["It's {literal}"]
     """
     parser = _Parser(text)
     nodes = parser.message(in_plural=False)
@@ -91,12 +93,38 @@ class _Parser:
                     buffer = []
                 nodes.append(NUMBER)
                 self.pos += 1
+            elif char == "'":
+                buffer.append(self.quoted(in_plural))
             else:
                 buffer.append(char)
                 self.pos += 1
         if buffer:
             nodes.append("".join(buffer))
         return nodes
+
+    def quoted(self, in_plural):
+        """Read an apostrophe: '' is a literal apostrophe, and '{...}' quotes syntax characters."""
+        text = self.text
+        if text.startswith("''", self.pos):
+            self.pos += 2
+            return "'"
+        special = "{}#" if in_plural else "{}"
+        if self.pos + 1 < len(text) and text[self.pos + 1] in special:
+            end = self.pos + 1
+            chars = []
+            while end < len(text):
+                if text.startswith("''", end):
+                    chars.append("'")
+                    end += 2
+                elif text[end] == "'":
+                    break
+                else:
+                    chars.append(text[end])
+                    end += 1
+            self.pos = end + 1
+            return "".join(chars)
+        self.pos += 1
+        return "'"
 
     def argument(self, in_plural):
         self.pos += 1  # {
