@@ -61,7 +61,7 @@ A message counts as missing when its key is absent or its value is empty. A chan
 
 ### JSON
 
-Keys may nest, and each message is sent with its key (`home.title`) as context. Only values are translated, never keys. Arrays, numbers and other values that aren't text are left alone.
+Keys may nest, and each message is sent with its key (`home.title`) as context. Only values are translated, never keys. Translations are written in the source's key order, with the target file's own extra keys kept at the end, and with the target's indentation (or the source's, for a new file). Arrays, numbers and other values that aren't text are left alone.
 
 A message that fails to translate, because its batch failed or its translation was rejected, is left out of the target, and the next run tries it again. Until then the app shows whatever it does for a missing key: i18next and vue-i18n fall back to their fallback language, ngx-translate to its fallback language if one is set, and next-intl shows the key unless you merge in the default locale's messages.
 

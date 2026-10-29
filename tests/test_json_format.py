@@ -112,6 +112,16 @@ class TestTranslating:
         assert path.read_text().startswith('{\n  "home": {\n    "title"')
         assert path.read_text().endswith("}\n")
 
+    def test_fills_in_only_what_is_missing(self, locales):
+        path = locales("fr.json", {"extra": "Gardé", "home": {"title": "Bienvenue", "greeting": ""}}, indent=4)
+
+        translate(path)
+
+        document = read(path)
+        assert document["home"] == {"title": "Bienvenue", "greeting": "T: Hi {{name}}"}
+        assert list(document) == ["home", "items_one", "items_other", "show_other", "extra"]
+        assert path.read_text().startswith('{\n    "home"')
+
     def test_context_and_instructions(self, locales):
         client = FakeClient()
 

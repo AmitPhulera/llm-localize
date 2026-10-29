@@ -4,6 +4,7 @@ Keys may nest: ``{"home": {"title": "Welcome"}}``.
 """
 import json
 import os
+import re
 from functools import cached_property
 
 from llm_localize.formats.base import write_file
@@ -31,6 +32,10 @@ class JsonFile(MonolingualFile):
         return messages
 
     @cached_property
+    def source_document(self):
+        return _load(self.source_path)
+
+    @cached_property
     def document(self):
         return _load(self.path)
 
@@ -38,9 +43,16 @@ class JsonFile(MonolingualFile):
         path = json.loads(key)
         _set(self.document, path, translation)
 
+    @cached_property
+    def _save_style(self):
+        """The target's indentation and ending, or the source's for a new or empty target; read once."""
+        return _style(self.path) if _load(self.path) else _style(self.source_path)
+
     def save(self):
-        text = json.dumps(self.document, ensure_ascii=False, indent=2)
-        write_file(self.path, (text + "\n").encode())
+        style = self._save_style
+        document = _ordered_like(self.document, self.source_document)
+        text = json.dumps(document, ensure_ascii=False, indent=style["indent"])
+        write_file(self.path, (text + style["end"]).encode())
 
 
 def _load(path):
@@ -82,3 +94,27 @@ def _context(path):
     for name in path:
         key += f"[{name}]" if isinstance(name, int) else f".{name}" if key else name
     return "Key: " + key
+
+
+def _ordered_like(value, source):
+    """Return ``value`` with its objects' keys in the source's order, and keys only it has at the end."""
+    if not (isinstance(value, dict) and isinstance(source, dict)):
+        return value
+    order = {name: index for index, name in enumerate(source)}
+    return {name: _ordered_like(value[name], source.get(name))
+            for name in sorted(value, key=lambda name: _source_position(name, order))}
+
+
+def _source_position(name, order):
+    """Sort a key by the source's position, putting keys it lacks at the end."""
+    if name in order:
+        return order[name]
+    return len(order)
+
+
+def _style(path):
+    """Return the file's indentation and ending, so a save keeps them."""
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read()
+    match = re.search(r"^\{\s*?\n([ \t]+)\S", text)
+    return {"indent": match.group(1) if match else None, "end": "\n" if text.endswith("\n") else ""}
