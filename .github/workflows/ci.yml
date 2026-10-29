@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Each job asks for what it needs
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each supported Django line, on the oldest and newest Python it supports
+        include:
+          - { django: "4.2", python: "3.10" }
+          - { django: "4.2", python: "3.12" }
+          - { django: "5.0", python: "3.12" }
+          - { django: "5.1", python: "3.13" }
+          - { django: "5.2", python: "3.10" }
+          - { django: "5.2", python: "3.14" }
+          - { django: "6.0", python: "3.12" }
+          - { django: "6.1", python: "3.14" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y gettext
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+      - run: uv sync --group dev
+      - run: uv pip install "Django~=${{ matrix.django }}.0"
+      - run: uv run --no-sync pytest -W error::DeprecationWarning
+      - run: uv run --no-sync ruff check .
+
+  without-django:
+    # The core must install and run without the django extra
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y gettext
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - run: uv sync --group dev
+      - run: uv pip uninstall django pytest-django
+      - run: uv run --no-sync pytest -p no:django -W error::DeprecationWarning

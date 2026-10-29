@@ -261,6 +261,10 @@ Your source strings and their context comments are sent to the LLM provider. Onl
 uv sync --group dev
 uv run pytest
 uv run ruff check .
+
+# The core without Django, as CI runs it
+uv pip uninstall django pytest-django && uv run --no-sync pytest -p no:django
+uv sync --group dev   # to put them back
 ```
 
 ## License
