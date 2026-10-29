@@ -15,7 +15,7 @@ requires-python = ">=3.10"
 dependencies = [
     "polib>=1.2",
 ]
-keywords = ["i18n", "l10n", "gettext", "po", "json", "i18next", "translation", "llm", "openai", "claude", "gemini", "django"]
+keywords = ["i18n", "l10n", "gettext", "po", "json", "i18next", "icu", "translation", "llm", "openai", "claude", "gemini", "django"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",

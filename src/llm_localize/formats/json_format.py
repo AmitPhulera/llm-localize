@@ -1,18 +1,24 @@
 """JSON translation files, one per language, as used by i18next, FormatJS, next-intl and vue-i18n.
 
 Keys may nest: ``{"home": {"title": "Welcome"}}``. Plurals are read in
-i18next's style, a key per CLDR category (``items_one``, ``items_other``).
+i18next's style, a key per CLDR category (``items_one``, ``items_other``),
+and ICU messages like ``{count, plural, one {# item} other {# items}}``
+are checked with the ICU rules.
 """
 import json
 import os
 import re
+from collections import Counter
 from functools import cached_property
 
+from llm_localize import icu
 from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
-from llm_localize.plurals import CATEGORIES
+from llm_localize.plurals import CATEGORIES, ordinal_categories
 
 PLURAL_KEY_RE = re.compile(rf"^(.+)_({'|'.join(CATEGORIES)})$")
+# An i18next reference to another key, like $t(common.save) or $t(key, {"count": 2})
+NESTING_RE = re.compile(r"\$t\((?:[^()]|\([^()]*\))*\)")
 # The most characters a file's keys may add up to, each string's key counted with those of the objects it's in
 MAX_KEYS_SIZE = 20_000_000
 
@@ -20,6 +26,21 @@ MAX_KEYS_SIZE = 20_000_000
 class JsonFile(MonolingualFile):
     name = "json"
     extensions = (".json",)
+
+    @property
+    def instructions(self):
+        return (
+            "Messages come from a JSON translation file, e.g. for i18next or FormatJS, and each one's "
+            "context gives its key. Keep {{name}} and {{- name}} interpolations, $t(...) references and "
+            "ICU arguments like {name} or {count, number} exactly as they are. A message in ICU "
+            "MessageFormat, like \"{count, plural, one {# file} other {# files}}\", must stay valid ICU: "
+            "keep the argument names, any exact cases like =0 and every select case, translate only the "
+            "text inside the cases, and give each plural argument one case per plural category of the "
+            f"target language: {', '.join(self.plural_categories)}. In ICU messages an apostrophe "
+            "before {, } or # starts quoted text, so write it twice: l''{app}, not l'{app}. Some "
+            "values aren't text for people to read, like file formats (png), language or locale codes "
+            "(en, fr-CA), identifiers, URLs and CSS classes: keep those exactly as they are."
+        )
 
     def read_messages(self, path):
         messages, size = {}, 0
@@ -58,6 +79,13 @@ class JsonFile(MonolingualFile):
     @cached_property
     def document(self):
         return _load(self.path)
+
+    def find_problem(self, source, translation):
+        if Counter(NESTING_RE.findall(source)) != Counter(NESTING_RE.findall(translation)):
+            return "placeholders"
+        if icu.is_icu_choice(source):
+            return icu.find_problem(source, translation, self.plural_categories, ordinal_categories(self.language))
+        return super().find_problem(source, translation)
 
     def apply(self, key, translation):
         translation = self.with_translated_forms(key, translation)

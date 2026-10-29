@@ -13,7 +13,7 @@ from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile
 from llm_localize.languages import LANGUAGE_NAMES, to_locale
-from llm_localize.plurals import has_rules, plural_forms
+from llm_localize.plurals import has_rules, plural_categories, plural_forms
 from llm_localize.units import TranslationUnit
 
 
@@ -128,6 +128,10 @@ class MonolingualFile(TranslationFile):
     @cached_property
     def plural_forms(self):
         return plural_forms(self.language)
+
+    @property
+    def plural_categories(self):
+        return list(plural_categories(self.language))
 
     def untranslated_units(self):
         if self.is_source:

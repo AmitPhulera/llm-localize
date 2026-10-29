@@ -9,6 +9,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 - **URLs** (`http`, `https`, `ftp`, `mailto:`, `tel:`, `www.`) and email addresses must be unchanged, and none may be added.
 - **Control characters** that the model invented (e.g. `—` corrupted into `\x14`) are rejected.
 - **Plurals** are translated once per plural form of the target language. The model is told which numbers each form covers ("used when n is 2, 3, 4, 22, …"), worked out from a PO file's `Plural-Forms` header, or from the Unicode CLDR plural rules for formats that name forms `one`, `few`, `many`, `other`.
+- **ICU messages** like `{count, plural, one {# file} other {# files}}` (in JSON) must keep their arguments and select cases, and get a plural case for each category the target language uses.
 - **Format checks.** PO files are run through `msgfmt --check` afterwards, and any entry it rejects is blanked. Errors no translation caused, like a message defined twice, stop with an error instead. A PO file without a real charset, or in another one, is saved as UTF-8, so any translation fits.
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
@@ -42,7 +43,7 @@ The format is chosen by file extension, or with `--format`.
 | Format | Extension | Holds | Plurals |
 | --- | --- | --- | --- |
 | `po` | `.po` | source and translation, one file per language | `msgstr[N]`, from the `Plural-Forms` header |
-| `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`) |
+| `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`), or ICU messages |
 
 ### One file per language
 
@@ -66,6 +67,8 @@ Keys may nest, and each message is sent with its key (`home.title`) as context. 
 A message that fails to translate, because its batch failed or its translation was rejected, is left out of the target, and the next run tries it again. Until then the app shows whatever it does for a missing key: i18next and vue-i18n fall back to their fallback language, ngx-translate to its fallback language if one is set, and next-intl shows the key unless you merge in the default locale's messages.
 
 - **i18next plurals** are keys with a CLDR category suffix. The target gets one key per category its language uses: `items_one` and `items_other` in English become `items_one`, `items_few`, `items_many` and `items_other` in Russian.
+- **ICU messages** (FormatJS, next-intl, vue-i18n) stay one string. The model is told the target language's categories, and the translation is checked as ICU: same arguments and select cases, the source's exact cases like `=0`, and a case for every plural category.
+- `{{name}}` interpolations, `$t(...)` references and ICU arguments are kept as they are.
 
 ## LLM providers
 

@@ -5,8 +5,9 @@ import pytest
 from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
+from llm_localize.formats.json_format import JsonFile
 
-from .fakes import FakeClient
+from .fakes import FakeClient, ScriptedClient
 
 SOURCE = {
     "home": {"title": "Welcome", "greeting": "Hi {{name}}"},
@@ -159,6 +160,7 @@ class TestTranslating:
 
         system_prompt, user_message, _ = client.calls[0]
         assert json.loads(user_message)["0"] == {"text": "Welcome", "context": "Key: home.title"}
+        assert "plural category of the target language: one, many, other" in system_prompt
 
     def test_cli(self, locales, capsys):
         exit_code = main([str(locales.dir / "de.json"), "--provider", "tests.fakes.FakeClient", "--api-key", "k"])
@@ -176,7 +178,56 @@ class TestTranslating:
         assert read(locales.dir / "out.json") == {"hello": "T: Hello"}
 
 
+class TestArrays:
+    def test_the_prompt_says_to_keep_codes_as_they_are(self, locales):
+        assert "language or locale codes" in open_file(locales.dir / "fr.json").instructions
+
+
+class TestICU:
+    SOURCE = {"files": "{count, plural, one {# file} other {# files}}", "hello": "Hi {name}"}
+    RUSSIAN = "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}"
+
+    def test_valid_icu_translation_is_saved(self, locales):
+        source = locales("icu/en.json", self.SOURCE)
+        client = ScriptedClient([{"0": self.RUSSIAN, "1": "Привет {name}"}])
+
+        result = translate_file(open_file(source.parent / "ru.json"), client, "ru")
+
+        assert result.translated == 2
+        assert read(source.parent / "ru.json")["files"] == self.RUSSIAN
+
+    @pytest.mark.parametrize("translation, reason", [
+        ("{count, plural, one {# файл} other {# файлов}}", "plural forms"),
+        ("{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", "ICU arguments"),
+        ("{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}", "ICU syntax"),
+    ])
+    def test_broken_icu_is_rejected(self, locales, translation, reason):
+        source = locales("icu/en.json", self.SOURCE)
+
+        result = translate_file(open_file(source.parent / "ru.json"),
+                                ScriptedClient([{"0": translation, "1": "Привет {name}"}]), "ru")
+
+        assert dict(result.rejected) == {reason: 1}
+
+    def test_find_problem_uses_icu_rules_only_for_icu_messages(self, locales):
+        json_file = JsonFile(locales.dir / "fr.json")
+
+        assert json_file.find_problem("Hi {name}", "Salut {nom}") == "placeholders"
+        assert json_file.find_problem(self.SOURCE["files"], "{count, plural, one {# fichier} other {# x}}") \
+            == "plural forms"
+
+
 class TestReviewFixes:
+
+    def test_nesting_references_are_kept(self, locales):
+        json_file = JsonFile(locales.dir / "fr.json")
+
+        assert json_file.find_problem("Use $t(common.save)", "Utilisez $t(common.save)") is None
+        assert json_file.find_problem("Use $t(common.save)", "Utilisez $t(common.delete)") == "placeholders"
+        assert json_file.find_problem('See $t(items, {"count": 2})', "Voir $t(items)") == "placeholders"
+
+    def test_icu_apostrophes_are_explained(self, locales):
+        assert "l''{app}" in JsonFile(locales.dir / "fr.json").instructions
 
     def test_language_is_not_taken_from_above_the_current_directory(self, tmp_path, monkeypatch):
         project = tmp_path / "de" / "project"
