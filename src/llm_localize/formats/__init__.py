@@ -11,6 +11,7 @@ from llm_localize.utils import import_class
 FORMATS = {
     'po': 'llm_localize.formats.po.PoFile',
     'json': 'llm_localize.formats.json_format.JsonFile',
+    'android': 'llm_localize.formats.android.AndroidFile',
 }
 
 

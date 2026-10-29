@@ -6,6 +6,7 @@ from functools import cached_property
 from pathlib import Path
 from xml.parsers import expat
 
+from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
 from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, tag_end
 
@@ -17,6 +18,7 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+NEW_FILE = '<?xml version="1.0" encoding="utf-8"?>\n'
 
 
 class AndroidFile(MonolingualFile):
@@ -48,6 +50,29 @@ class AndroidFile(MonolingualFile):
 
     def apply(self, key, translation):
         self._applied[key] = translation
+
+    def save(self):
+        """Write the target file: its original bytes, with each translation replacing or added after the rest."""
+        source = _read(self.source_path)
+        target = _read(self.path)
+        if not target.data:
+            target = _Resources((NEW_FILE + source.root_start_tag + "\n</resources>\n").encode())
+            target.root_start = len(NEW_FILE)
+            target.root_tag_end = target.root_start + len(source.root_start_tag.encode())
+            target.root_end = target.data.rindex(b"</resources>")
+        data = target.data
+        indent = source.indent
+        replacements, additions = [], []
+        for key, translation in self._applied.items():
+            text = _element_text(source.elements[key], translation, self.plural_categories, indent).encode()
+            if key in target.elements:
+                replacements.append((target.elements[key].start, target.elements[key].end, text))
+            else:
+                additions.append(indent.encode() + text + b"\n")
+        replacements.append((target.root_end, target.root_end, b"".join(additions)))
+        for start, end, text in sorted(replacements, reverse=True):
+            data = data[:start] + text + data[end:]
+        write_file(self.path, data)
 
 
 def _values_dir(path):
@@ -121,6 +146,10 @@ def _encode(text, quoted):
 def _escape_quotes(text, quoted):
     text = UNESCAPED_QUOTE_RE.sub(r'\1\\"', text)
     return text if quoted else UNESCAPED_APOSTROPHE_RE.sub(r"\1\\'", text)
+
+
+def _element_text(element, translation, categories, indent):
+    return f"{element.start_tag}{_encode(translation, _decode(element.raw)[1])}</string>"
 
 
 class _Element:

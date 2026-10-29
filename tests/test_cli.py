@@ -185,7 +185,7 @@ def test_cleanup_only_without_a_language(tmp_path, capsys):
     assert capsys.readouterr().out == f"{path}: nothing to translate\n  cleared 1 broken translations\n"
 
 
-@pytest.mark.parametrize("target", ["fr.json"])
+@pytest.mark.parametrize("target", ["fr.json", "res/values-fr/strings.xml"])
 def test_a_missing_source_is_an_error_with_paths_too(tmp_path, monkeypatch, capsys, target):
     monkeypatch.chdir(tmp_path)
 
