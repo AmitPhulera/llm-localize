@@ -12,6 +12,8 @@ SOURCE = r'''<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2" xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Notes</string>
     <string name="welcome">Don\'t forget, %1$s!</string>
+    <string name="api_key" translatable="false">abc123</string>
+    <string name="link">@string/app_name</string>
     <string name="bold">Tap <b>Save</b> &amp; go</string>
     <string name="count">You have <xliff:g id="count" example="3">%d</xliff:g> notes</string>
     <plurals name="notes">
@@ -94,6 +96,18 @@ class TestTranslating:
 '''
         assert open_file(path).untranslated_units() == []
 
+    @pytest.mark.parametrize("tag", ["string", "plurals"])
+    def test_strings_the_target_marks_untranslatable_are_left_alone(self, res, tag):
+        kept = (f'<{tag} name="{"app_name" if tag == "string" else "notes"}" translatable="false">'
+                + ("Notes" if tag == "string" else '<item quantity="other">%d notes</item>') + f"</{tag}>")
+        path = write(res / "values-fr" / "strings.xml", f"<resources>\n    {kept}\n</resources>\n")
+
+        translate_file(open_file(path), FakeClient(), "fr")
+
+        text = path.read_text(encoding="utf-8")
+        assert kept in text
+        assert text.count('name="app_name"') == 1 and text.count('name="notes"') == 1
+
     def test_plural_forms_already_translated_are_kept(self, tmp_path):
         write(tmp_path / "res" / "values" / "strings.xml", '<resources><plurals name="files">'
               '<item quantity="one">%d file</item><item quantity="other">%d files</item></plurals></resources>')
@@ -126,6 +140,16 @@ class TestTranslating:
         translate_file(open_file(target), FakeClient(prefix=""), "fr")
 
         assert '<string name="c"><![CDATA[<b>Bold</b> & co]]></string>' in target.read_text(encoding="utf-8")
+
+    def test_a_reference_in_the_target_counts_as_translated(self, res):
+        alias = '<string name="app_name">@string/brand</string>'
+        path = write(res / "values-fr" / "strings.xml", f"<resources>\n    {alias}\n</resources>\n")
+
+        units = open_file(path).untranslated_units()
+        translate_file(open_file(path), FakeClient(), "fr")
+
+        assert "app_name" not in [unit.key.split("/")[1] for unit in units]
+        assert alias in path.read_text(encoding="utf-8")
 
     def test_cli(self, res, capsys):
         path = res / "values-de" / "strings.xml"

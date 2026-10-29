@@ -1,4 +1,13 @@
 """Android string resources: ``res/values/strings.xml`` and its translations, like ``res/values-fr/strings.xml``.
+
+``<string>`` and ``<plurals>`` elements are translated; strings marked
+``translatable="false"`` and references like ``@string/name`` are not,
+and ``<string-array>`` elements are left alone. The language comes from
+the ``values-`` directory's qualifiers (``values-pt-rBR``,
+``values-b+sr+Latn``), and the source is the ``values`` directory
+without them. Translations are added to the end of an existing file, or
+replace empty elements in place, so the rest of the file is kept byte
+for byte.
 """
 import os
 import re
@@ -18,6 +27,9 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+# A reference to another resource, like @string/app_name or ?attr/color, which isn't text
+REFERENCE_RE = re.compile(r"\s*[@?](?:[\w.]+:)?[\w.]+/[\w.]+\s*")
+
 NEW_FILE = '<?xml version="1.0" encoding="utf-8"?>\n'
 
 
@@ -37,16 +49,26 @@ class AndroidFile(MonolingualFile):
             parts[part_index] = "-".join(["values", *other_qualifiers])
             yield Path(*parts)
 
-    def read_messages(self, path):
+    def read_messages(self, path, references=False):
+        """Return the file's strings and plurals; references like ``@string/name`` only with ``references``.
+
+        A reference isn't text to translate, but in a target it stands for
+        the string, as an alias another language chose, so it counts there.
+        """
         messages = {}
         for key, element in _read(path).elements.items():
             context = f"Key: {element.name}"
             if element.tag == "plurals":
                 plurals = {quantity: _decode(raw)[0] for quantity, raw in element.items.items()}
-                messages[key] = Message(plurals=plurals, context=context)
-            else:
-                messages[key] = Message(text=_decode(element.raw)[0], context=context)
+                messages[key] = Message(plurals=plurals, context=context, translatable=element.translatable)
+            elif references or not REFERENCE_RE.fullmatch(element.raw):
+                messages[key] = Message(text=_decode(element.raw)[0], context=context,
+                                        translatable=element.translatable)
         return messages
+
+    @cached_property
+    def target_messages(self):
+        return self.read_messages(self.path, references=True)
 
     @cached_property
     def _applied(self):
@@ -217,7 +239,9 @@ def _read(path):
             resources.root_start_tag = data[start_index:inner_start].decode()
             resources.root_start, resources.root_tag_end = start_index, inner_start
         elif len(stack) == 1 and tag in ("string", "plurals"):
-            element = _Element(tag, attrs.get("name", ""), start_index, data[start_index:inner_start].decode(), "")
+            # Strings marked translatable="false" are kept too: in a target they mustn't be added again
+            element = _Element(tag, attrs.get("name", ""), start_index, data[start_index:inner_start].decode(),
+                               "", translatable=attrs.get("translatable") != "false")
             if not resources.elements and line_indent(data, start_index):
                 resources.indent = line_indent(data, start_index).decode()
             resources.elements[f"{tag}/{element.name}"] = element

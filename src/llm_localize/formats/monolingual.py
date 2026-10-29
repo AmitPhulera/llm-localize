@@ -24,11 +24,14 @@ class Message:
     :param text: the text, for a message without plurals
     :param plurals: ``{CLDR category: text}``, for a plural message
     :param context: a comment or key that helps translate it
+    :param translatable: False for a message marked not to be translated,
+        which is skipped in the source and counts as done in the target
     """
 
     text: str = ""
     plurals: dict = field(default_factory=dict)
     context: str = ""
+    translatable: bool = True
 
 
 class MonolingualFile(TranslationFile):
@@ -164,6 +167,8 @@ class MonolingualFile(TranslationFile):
 
     def is_translated(self, message, target):
         """True if the target's ``target`` message translates the source's ``message``, or it needn't."""
+        if not message.translatable or (target and not target.translatable):
+            return True
         if message.plurals:
             return bool(target) and all(target.plurals.get(form.index, "").strip() for form in self.plural_forms)
         return not message.text.strip() or bool(target and target.text.strip())
