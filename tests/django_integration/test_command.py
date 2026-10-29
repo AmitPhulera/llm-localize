@@ -55,6 +55,17 @@ def test_langs_limits_languages(locale_dir):
     assert (msgstr(locale_dir, "es"), msgstr(locale_dir, "fr")) == ("", "T: Hello")
 
 
+def test_explicit_path(locale_dir):
+    call_command("llm_localize", str(locale_dir / "es" / "LC_MESSAGES" / "django.po"), verbosity=0)
+
+    assert (msgstr(locale_dir, "es"), msgstr(locale_dir, "fr")) == ("T: Hello", "")
+
+
+def test_explicit_paths_take_one_language(locale_dir):
+    with pytest.raises(CommandError, match="at most one"):
+        call_command("llm_localize", "x.po", "--langs", "es", "fr", verbosity=0)
+
+
 def test_failed_batches_raise(locale_dir, settings):
     settings.LLM_LOCALIZE = {"PROVIDER": "tests.fakes.FailingClient", "API_KEY": "k"}
     stdout, stderr = StringIO(), StringIO()

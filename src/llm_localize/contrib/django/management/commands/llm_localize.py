@@ -9,15 +9,19 @@ from llm_localize.runner import summarize
 
 class Command(BaseCommand):
     help = (
-        "Translate untranslated messages with an LLM, in the PO files in LOCALE_PATHS for every "
-        "language in LANGUAGES."
+        "Translate untranslated messages with an LLM. With no paths, translates the PO files "
+        "in LOCALE_PATHS for every language in LANGUAGES."
     )
 
     def add_arguments(self, parser):
         config = get_config()
+        parser.add_argument('paths', nargs='*',
+                            help="Translation files to translate instead of the project's PO files")
         parser.add_argument('--langs', nargs='+',
                             help="Languages to translate to (default: settings.LANGUAGES minus the "
-                                 "source language)")
+                                 "source language). With paths, give at most one, for files that "
+                                 "don't declare theirs; a PO file declaring another language is "
+                                 "refused.")
         parser.add_argument('--domains', nargs='+', default=config['DOMAINS'],
                             help="gettext domains to look for (default: %(default)s)")
         parser.add_argument('--locale-dirs', nargs='+', default=config['LOCALE_PATHS'],
@@ -55,6 +59,11 @@ class Command(BaseCommand):
 
     def _jobs(self, options, config):
         langs = options['langs']
+        if options['paths']:
+            if langs and len(langs) > 1:
+                raise CommandError("Give at most one language with --langs when passing paths")
+            lang = langs[0] if langs else None
+            return [(path, lang) for path in options['paths']]
         return list(find_po_files(options['locale_dirs'], langs or config['LANGUAGES'], options['domains']))
 
 

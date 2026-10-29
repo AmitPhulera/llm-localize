@@ -100,6 +100,7 @@ With no arguments, `llm_localize` translates `<locale>/LC_MESSAGES/{django,djang
 
 ```bash
 ./manage.py llm_localize --langs fr de               # only some languages
+./manage.py llm_localize path/to/messages.po         # specific files
 ./manage.py llm_localize --cleanup-only              # only blank broken translations
 ./manage.py llm_localize --instructions "Use informal 'tu' in French."
 ```
