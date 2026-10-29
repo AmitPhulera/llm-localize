@@ -122,6 +122,13 @@ def _read(path):
 
     def start(tag, attrs):
         start_index = parser.CurrentByteIndex
+        # Only the root and the resources are kept. Finding where every nested element's tag ends would
+        # be slow for those from an entity, each placed at its reference.
+        if len(stack) > 1:
+            stack.append((tag, attrs, None))
+            return
+        if not data.startswith(b"<", start_index):
+            raise ValueError(f"{path} has a resource from an entity, which can't be translated where it is")
         inner_start = tag_end(data, start_index)
         if not stack:
             resources.root_start_tag = data[start_index:inner_start].decode()
@@ -133,6 +140,25 @@ def _read(path):
             resources.elements[f"{tag}/{element.name}"] = element
         stack.append((tag, attrs, inner_start))
 
+    def end(tag):
+        _, attrs, inner_start = stack.pop()
+        if inner_start is None:
+            return
+        end_index = parser.CurrentByteIndex
+        self_closing = data[inner_start - 2:inner_start] == b"/>"
+        if not stack:
+            resources.root_end = inner_start if self_closing else end_index
+            return
+        raw = "" if self_closing else data[inner_start:end_index].decode()
+        element_end = inner_start if self_closing else data.index(b">", end_index) + 1
+        if len(stack) == 1:
+            element = resources.elements.get(f"{tag}/{attrs.get('name', '')}")
+            if element:
+                element.raw, element.end = raw, element_end
+
     parser.StartElementHandler = start
+    parser.EndElementHandler = end
     parser.Parse(data, True)
+    # Only elements that were read in full count; resources without a name can't be matched
+    resources.elements = {key: element for key, element in resources.elements.items() if element.name}
     return resources
