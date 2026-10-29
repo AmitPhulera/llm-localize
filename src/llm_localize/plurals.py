@@ -16,6 +16,7 @@ import functools
 import json
 from importlib import resources
 
+from llm_localize.languages import normalize
 from llm_localize.units import PluralForm
 
 # For languages CLDR doesn't know: English-style singular and plural
@@ -29,7 +30,7 @@ def _table(name="plurals"):
 
 def _lookup(table, language):
     """Return ``table``'s entry for ``language``, falling back from a regional variant to its language."""
-    code = language.lower().replace("_", "-")
+    code = normalize(language)
     while code:
         if code in table:
             return table[code]

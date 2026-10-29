@@ -274,6 +274,17 @@ def test_a_missing_plural_forms_header_is_added_for_the_language(write_po, heade
     assert run_msgfmt(path).returncode == 0
 
 
+def test_gettext_locale_modifiers_are_understood(write_po):
+    path = write_po('msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n' + PLURAL_ENTRIES,
+                    "sr@latin/LC_MESSAGES/django.po")
+
+    po_file = PoFile.open(path)
+    result = translate_file(po_file, FakeClient(), po_file.language)
+
+    assert result.translated == 2
+    assert polib.pofile(str(path)).metadata["Plural-Forms"].startswith("nplurals=3;")
+
+
 def test_plurals_are_skipped_when_the_languages_rules_arent_known(write_po, caplog):
     path = write_po('msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n' + PLURAL_ENTRIES)
 

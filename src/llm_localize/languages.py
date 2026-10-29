@@ -115,6 +115,21 @@ LANGUAGE_NAMES = {
 }
 
 
+def normalize(code):
+    """Return a language code or locale name lower-cased and hyphenated, as the tables key them.
+
+    gettext's ``@latin`` and ``@cyrillic`` become scripts, other modifiers
+    and a charset are dropped.
+
+    >>> normalize("pt_BR"), normalize("sr@latin"), normalize("ca_ES.UTF-8@valencia"), normalize("zh-Hans")
+    ('pt-br', 'sr-latn', 'ca-es', 'zh-hans')
+    """
+    code, _, modifier = code.partition("@")
+    code = code.split(".")[0].lower().replace("_", "-")
+    script = {"latin": "latn", "cyrillic": "cyrl"}.get(modifier.lower())
+    return f"{code}-{script}" if script else code
+
+
 def language_name(lang_code):
     """Return the English name for a language code, or the code itself if it isn't known.
 
@@ -131,7 +146,7 @@ def language_name(lang_code):
     >>> language_name("am")
     'am'
     """
-    code = lang_code.lower().replace("_", "-")
+    code = normalize(lang_code)
     return LANGUAGE_NAMES.get(code) or LANGUAGE_NAMES.get(code.split("-")[0]) or lang_code
 
 
@@ -143,7 +158,7 @@ def same_language(code, other):
     >>> same_language("en", "en-us"), same_language("pt-br", "pt"), same_language("fr", "en")
     (True, False, False)
     """
-    code, other = code.lower().replace("_", "-"), other.lower().replace("_", "-")
+    code, other = normalize(code), normalize(other)
     return code == other or other.startswith(f"{code}-")
 
 
