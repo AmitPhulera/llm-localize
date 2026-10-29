@@ -117,6 +117,9 @@ class TestFindProblem:
          "ICU arguments"),
         ("{n, plural, other {{g, select, male {# his} other {# their}}}}",
          "{n, plural, one {{g, select, male {его} other {их}}} few {#} many {#} other {#}}", "ICU arguments"),
+        # A tag named by a case
+        ("{g, select, male {He replied} other {They replied}}",
+         "<{g, select, male {img} other {img}} src=x onerror=alert(1)>Il a répondu", "HTML tags"),
     ])
     def test_invalid(self, source, translation, reason):
         assert find_problem(source, translation, RUSSIAN) == reason

@@ -19,6 +19,10 @@ MAX_DEPTH = 20
 # Braces in literal text, rendered as look-alikes so they aren't taken for arguments
 LITERAL_BRACES = str.maketrans("{}", "\ufe5b\ufe5c")
 PLURAL_KEYWORDS = ("zero", "one", "two", "few", "many", "other")
+# An argument's name, its kind or a case's key
+TOKEN_RE = re.compile(r"[^\s{},]+")
+# A choice where a tag's name would be
+TAG_NAMED_BY_CHOICE_RE = re.compile(r"</?\{")
 # An exact case's number, like =0, =-1 or =1.5
 EXACT_CASE_RE = re.compile(r"=-?\d+(?:\.\d+)?")
 
@@ -192,7 +196,7 @@ class _Parser:
 
     def token(self):
         self.skip_space()
-        match = re.compile(r"[^\s{},]+").match(self.text, self.pos)
+        match = TOKEN_RE.match(self.text, self.pos)
         if not match:
             return ""
         self.pos = match.end()
@@ -253,9 +257,13 @@ def _compare(source_nodes, translation_nodes, categories):
             != {name: [choice.type for choice in choices] for name, choices in translation_choices.items()}):
         return "ICU arguments"
     # The text around choices, with each choice standing in as {name}
-    problem = find_text_problem(_render(source_nodes), _render(translation_nodes))
+    source_text, translation_text = _render(source_nodes), _render(translation_nodes)
+    problem = find_text_problem(source_text, translation_text)
     if problem:
         return "ICU arguments" if problem == "placeholders" else problem
+    # A tag named by a choice, like <{g, select, other {img}} onerror=...>, is no tag to the checks
+    if len(TAG_NAMED_BY_CHOICE_RE.findall(translation_text)) > len(TAG_NAMED_BY_CHOICE_RE.findall(source_text)):
+        return "HTML tags"
     # Only a plural shows the number with #; anywhere else a # the translation adds is printed as is
     if _text_hashes(translation_nodes) > _text_hashes(source_nodes):
         return "ICU arguments"
