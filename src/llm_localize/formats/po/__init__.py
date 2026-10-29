@@ -11,6 +11,7 @@ from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.po.cleanup import entry_has_control_chars, remove_errored_translations, save_po
 from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
 from llm_localize.languages import to_locale
+from llm_localize.plurals import gettext_plural_forms
 from llm_localize.units import PluralForm, TranslationUnit
 
 LC_MESSAGES = "LC_MESSAGES"
@@ -66,7 +67,11 @@ class PoFile(TranslationFile):
 
     @cached_property
     def _plural_forms_header(self):
-        return self.po.metadata.get("Plural-Forms", "")
+        """The ``Plural-Forms`` header, or the language's from CLDR when the file has none, which save() adds."""
+        header = self.po.metadata.get("Plural-Forms", "")
+        if not PLURAL_RULE_RE.search(header) and self.language:
+            return gettext_plural_forms(self.language) or header
+        return header
 
     @cached_property
     def nplurals(self):
@@ -96,11 +101,11 @@ class PoFile(TranslationFile):
             and (entry.fuzzy or not self._is_translated(entry) or entry_has_control_chars(entry))
         ]
         if not PLURAL_RULE_RE.search(self._plural_forms_header):
-            # Without a plural rule msgfmt rejects plural translations
+            # Without the language's rule msgfmt rejects plural translations; cleanup would blank them
             plurals = [key for key, entry in entries if entry.msgid_plural]
             if plurals:
-                logger.warning("%s: %d plural messages skipped: the file has no Plural-Forms header; add it",
-                               self.path, len(plurals))
+                logger.warning("%s: %d plural messages skipped: the file has no Plural-Forms header, and its "
+                               "language's plural rules aren't known; add the header", self.path, len(plurals))
             entries = [(key, entry) for key, entry in entries if not entry.msgid_plural]
         return [self._unit(key, entry) for key, entry in entries]
 
@@ -142,9 +147,20 @@ class PoFile(TranslationFile):
 
     def save(self):
         self._use_utf8()
+        self._complete_headers()
+        save_po(self.po)
+
+    def _complete_headers(self):
+        """Add a missing Language and Plural-Forms, the language's, and return whether that changed anything."""
+        changed = False
         if self._language and not self.po.metadata.get("Language", "").strip():
             self.po.metadata["Language"] = to_locale(self._language)
-        save_po(self.po)
+            changed = True
+        if PLURAL_RULE_RE.search(self._plural_forms_header) and not PLURAL_RULE_RE.search(
+                self.po.metadata.get("Plural-Forms", "")):
+            self.po.metadata["Plural-Forms"] = self._plural_forms_header
+            changed = True
+        return changed
 
     def _use_utf8(self):
         """Declare UTF-8 unless the header already does, and return whether that changed anything.
@@ -167,7 +183,11 @@ class PoFile(TranslationFile):
         return True
 
     def cleanup(self):
-        if self._use_utf8():
+        # Headers first: without Plural-Forms, msgfmt would reject every plural translation, even old ones
+        # Both run: each may change the file
+        changed = self._use_utf8()
+        changed |= self._complete_headers()
+        if changed:
             save_po(self.po)
         count = remove_errored_translations(self.path)
         # The file changed on disk, so drop the stale in-memory copy

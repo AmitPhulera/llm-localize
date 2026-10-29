@@ -1,6 +1,11 @@
 import pytest
 
-from llm_localize.formats.po.plurals import counts_by_plural_index_from_header, nplurals_from_header
+from llm_localize.formats.po.plurals import (
+    counts_by_plural_index_from_header,
+    nplurals_from_header,
+    plural_index_function_from_header,
+)
+from llm_localize.plurals import _table, gettext_plural_forms, plural_categories
 
 # Plural-Forms headers from real Django locale files
 ENGLISH_PLURAL_FORMS = "nplurals=2; plural=(n != 1);"
@@ -46,3 +51,27 @@ def test_no_more_plural_forms_than_a_language_could_have():
     assert nplurals_from_header("nplurals=10; plural=0;") == 10
     with pytest.raises(ValueError, match="no language has 11 plural forms"):
         nplurals_from_header("nplurals=11; plural=0;")
+
+
+def test_cldr_plural_forms_headers_pick_each_numbers_category():
+    for language in _table("gettext_plurals"):
+        header = gettext_plural_forms(language)
+        # Categories only fractions use, like Russian "other", have no index: gettext counts whole numbers
+        categories = [category for category, samples in plural_categories(language).items() if samples]
+        index_for = plural_index_function_from_header(header)
+        assert len(counts_by_plural_index_from_header(header)) == len(categories), language
+        for category, samples in categories_and_whole_numbers(language):
+            assert {categories[index_for(n)] for n in samples} == {category}, (language, category)
+
+
+def categories_and_whole_numbers(language):
+    """Yield each category and the whole numbers CLDR gives as its samples."""
+    for category, text in plural_categories(language).items():
+        if not text:
+            continue
+        numbers = []
+        for part in text.replace("…", "").split(","):
+            low, _, high = part.strip().partition("~")
+            if low:
+                numbers.extend(range(int(low), int(high or low) + 1))
+        yield category, numbers

@@ -260,12 +260,28 @@ msgstr[1] ""
 """
 
 
-def test_plurals_are_skipped_without_a_plural_forms_header(write_po, caplog):
+@pytest.mark.parametrize("header", ["", '"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\\n"\n'])
+def test_a_missing_plural_forms_header_is_added_for_the_language(write_po, header):
+    path = write_po(
+        'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n' + header + PLURAL_ENTRIES)
+
+    result = translate_file(PoFile.open(path, language="ru"), FakeClient(), "ru")
+
+    po = polib.pofile(str(path))
+    assert (result.translated, result.cleared) == (2, 0)
+    assert po.metadata["Plural-Forms"].startswith("nplurals=3; plural=(n%10==1 && n%100!=11) ? 0 :")
+    assert list(po.find("%(count)s file").msgstr_plural) == [0, 1, 2]
+    assert run_msgfmt(path).returncode == 0
+
+
+def test_plurals_are_skipped_when_the_languages_rules_arent_known(write_po, caplog):
     path = write_po('msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n' + PLURAL_ENTRIES)
 
-    units = PoFile(path).untranslated_units()
+    result = translate_file(PoFile.open(path, language="xx"), FakeClient(), "xx")
 
-    assert [unit.source for unit in units] == ["Hello"]
+    po = polib.pofile(str(path))
+    assert (result.translated, result.cleared) == (1, 0)
+    assert po.find("%(count)s file").msgstr_plural == {0: "", 1: ""}
     assert "1 plural messages skipped: the file has no Plural-Forms header" in caplog.text
 
 
@@ -331,3 +347,14 @@ def test_quotes_are_written_plainly(write_po):
     assert "without escaping them" in po_file.instructions
     assert escaped == "escaped quotes"
     assert polib.pofile(str(path)).find('Click "Save"').msgstr == 'Cliquez sur « Enregistrer » et "OK"'
+
+
+def test_plurals_already_translated_survive_cleanup_without_a_plural_forms_header(write_po):
+    path = write_po('msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n"Language: fr\\n"\n\n'
+                    'msgid "%(n)s file"\nmsgid_plural "%(n)s files"\n'
+                    'msgstr[0] "un"\nmsgstr[1] "deux"\nmsgstr[2] "trois"\n')
+
+    result = translate_file(PoFile.open(path), FakeClient(), "fr")
+
+    assert (result.untranslated, result.cleared) == (0, 0)
+    assert polib.pofile(str(path)).find("%(n)s file").msgstr_plural == {0: "un", 1: "deux", 2: "trois"}

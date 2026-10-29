@@ -6,7 +6,11 @@ the Unicode CLDR (cldr-json 48.2.0, supplemental/plurals.json), under
 the Unicode license in licenses/Unicode-LICENSE.txt. Samples written in
 compact notation (1c6) are left out, and "…" ends a list that goes on.
 ``data/ordinals.json`` lists ordinal categories (1st, 2nd) the same way,
-from supplemental/ordinals.json.
+from supplemental/ordinals.json. ``data/gettext_plurals.json`` holds a
+gettext ``Plural-Forms`` header per language, made from the same CLDR
+rules for whole numbers (gettext's ``n`` is one): the fraction and
+exponent operands are 0, categories only fractions use are left out, and
+the rest keep CLDR's order as their index.
 """
 import functools
 import json
@@ -81,3 +85,14 @@ def _describe(samples):
     if not samples:
         return "used only for fractions, like 1.5"
     return f"used when n is {samples.replace('~', '-').replace('…', '...')}"
+
+
+def gettext_plural_forms(language):
+    """Return a gettext ``Plural-Forms`` header for a language, from CLDR, or None if CLDR doesn't know it.
+
+    >>> gettext_plural_forms("pt_BR")
+    'nplurals=3; plural=(n>=0 && n<=1) ? 0 : (n!=0 && n%1000000==0) ? 1 : 2;'
+    >>> gettext_plural_forms("ja"), gettext_plural_forms("xx")
+    ('nplurals=1; plural=0;', None)
+    """
+    return _lookup(_table("gettext_plurals"), language)
