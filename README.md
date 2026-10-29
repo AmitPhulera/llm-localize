@@ -94,6 +94,24 @@ export OPENAI_API_KEY=...
 
 Nothing runs on its own: translations change only when you run one of these commands. Commit the updated `.po` files (or the compiled `.mo` files, if you deploy those) like any other change.
 
+### With `makemessages`
+
+To extract and translate in one step, pass `--translate`:
+
+```bash
+./manage.py makemessages -a --translate
+```
+
+This runs Django's `makemessages` unchanged, then `llm_localize` on exactly what it just updated:
+
+- the locales given with `-l`, or with `-a` the languages in `LANGUAGES`
+- the `--domain` (`django` or `djangojs`)
+- every locale directory it wrote to, including `locale/` directories inside apps
+
+If translation fails, the command exits with an error, but the extracted catalogs are already written, and rerunning translates what's left.
+
+The app provides `makemessages` by overriding Django's command. Django uses the first installed app that defines a command, so if another app in `INSTALLED_APPS` also overrides `makemessages`, list `llm_localize.contrib.django` before it.
+
 ### `llm_localize`
 
 With no arguments, `llm_localize` translates `<locale>/LC_MESSAGES/{django,djangojs}.po` under every path in `LOCALE_PATHS`, for every language in `LANGUAGES` except `LANGUAGE_CODE`. Useful options:
