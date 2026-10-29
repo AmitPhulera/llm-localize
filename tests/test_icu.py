@@ -142,6 +142,12 @@ class TestFindProblem:
         translation = "Moins de 5 < {n, plural, one {# élément} many {# d'éléments} other {# d'éléments}}"
         assert find_problem(source, translation, ["one", "many", "other"]) is None
 
+    def test_a_buttons_value_is_text(self):
+        source = '<input type="submit" value="{n, plural, one {Delete # file} other {Delete # files}}">'
+        translation = ('<input type="submit" value="{n, plural, one {Supprimer # fichier} '
+                       'many {Supprimer # fichiers} other {Supprimer # fichiers}}">')
+        assert find_problem(source, translation, ["one", "many", "other"]) is None
+
     def test_a_case_in_an_attribute_may_hold_the_other_quote(self):
         source = '<img alt="{n, plural, other {# items}}">'
         assert find_problem(source, '<img alt="{n, plural, other {# l\'article}}">', ["other"]) is None

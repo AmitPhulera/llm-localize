@@ -320,6 +320,7 @@ class _Html:
 
     def __init__(self):
         self.state, self.tag, self.name, self.quote, self.raw, self.seen = "text", "", "", "", "", ""
+        self.value, self.type = "", ""  # the value being read, and the tag's type="..." so far
 
     def feed(self, text):
         for char in text:
@@ -335,11 +336,15 @@ class _Html:
             self.state = "text" if char.isspace() or char in "/>" else "raw"
         elif state == "text":
             if previous.endswith("<") and char.isalpha():
-                self.state, self.tag = "tag", char.lower()
+                self.state, self.tag, self.type = "tag", char.lower(), ""
         elif state == "quoted":
             if char == self.quote:
-                self.state = "attributes"
+                self.end_value()
+            else:
+                self.value += char
         elif char == ">":
+            if state == "unquoted":
+                self.end_value()
             # In HTML, <script/> opens a script all the same
             self.state, self.raw = ("raw", self.tag) if self.tag in ("script", "style") else ("text", "")
         elif state == "tag":
@@ -349,12 +354,14 @@ class _Html:
                 self.tag += char.lower()
         elif state == "value":
             if char in "\"'":
-                self.state, self.quote = "quoted", char
+                self.state, self.quote, self.value = "quoted", char, ""
             elif not char.isspace():
-                self.state = "unquoted"
+                self.state, self.value = "unquoted", char
         elif state == "unquoted":
             if char.isspace():
-                self.state = "attributes"
+                self.end_value()
+            else:
+                self.value += char
         elif char == "=" and state in ("name", "after name"):
             self.state = "value"
         elif char.isspace() or char == "/":
@@ -364,12 +371,18 @@ class _Html:
         else:
             self.state, self.name = "name", char.lower()
 
+    def end_value(self):
+        self.state = "attributes"
+        if self.name == "type":
+            self.type = self.value.lower()
+
     def place(self):
         if self.state in ("raw", "raw end"):
             return "script"
         if self.state == "text":
             return None
-        if self.state == "quoted" and is_text_attribute(self.tag, self.name):
+        # As validation has it, a button's value is text too
+        if self.state == "quoted" and is_text_attribute(self.tag, self.name, self.type):
             return "text", self.quote, self.name
         return "attribute", self.name
 
