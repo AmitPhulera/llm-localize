@@ -4,7 +4,8 @@ ICU messages, used by FormatJS (react-intl), next-intl, Angular and
 others, pick text by argument: ``{count, plural, one {# file} other {#
 files}}``. A translation has the same arguments, but its plural cases
 are the target language's CLDR categories, so the generic placeholder
-check doesn't fit, and the translation is checked as ICU instead.
+check doesn't fit. Instead, each case of the translation is checked
+against the matching case of the source, or its ``other`` case.
 """
 import re
 
@@ -210,9 +211,14 @@ class _Parser:
 def find_problem(source, translation, plural_categories=None, ordinal_categories=None):
     """Return why an ICU ``translation`` doesn't fit ``source``, or None.
 
-    The translation must keep the same arguments.
+    The translation must keep the same arguments and offsets. Each case
+    is then checked like any message, against the source case with the
+    same key, or the source's ``other`` case.
 
     >>> source = "{n, plural, one {# file} other {# files}}"
+    >>> find_problem(source, "{n, plural, one {# fichier} many {# fichiers} other {# fichiers}}",
+    ...              ["one", "many", "other"]) is None
+    True
     >>> find_problem(source, "{count, plural, one {# fichier} other {# fichiers}}", ["one", "many", "other"])
     'ICU arguments'
     """
@@ -238,6 +244,23 @@ def _compare(source_nodes, translation_nodes, categories):
     problem = find_text_problem(_render(source_nodes), _render(translation_nodes))
     if problem:
         return "ICU arguments" if problem == "placeholders" else problem
+    # The same argument may choose more than once; pair each use with the translation's use in the same position
+    for name, choices in source_choices.items():
+        for source_choice, translation_choice in zip(choices, translation_choices[name], strict=True):
+            problem = _compare_choice(source_choice, translation_choice, categories)
+            if problem:
+                return problem
+    return None
+
+
+def _compare_choice(source_choice, translation_choice, categories):
+    if source_choice.offset != translation_choice.offset:
+        return "ICU arguments"
+    for key, translation_case in translation_choice.cases.items():
+        source_case = source_choice.cases.get(key, source_choice.cases["other"])
+        problem = _compare(source_case, translation_case, categories)
+        if problem:
+            return problem
     return None
 
 

@@ -65,6 +65,16 @@ class TestFindProblem:
         (FILES, "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", "ICU arguments"),
         (FILES, "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}", "ICU syntax"),
         ("Hi {name}", "Привет {nom}", "ICU arguments"),
+        ("{n, plural, one {{name} has # file} other {{name} has # files}}",
+         "{n, plural, one {# файл} few {{name} # файла} many {{name} # файлов} other {{name}}}", "ICU arguments"),
+        ("{n, plural, one {<b>#</b> file} other {<b>#</b> files}}",
+         "{n, plural, one {<i>#</i> файл} few {# файла} many {# файлов} other {#}}", "HTML tags"),
+        ("{n, plural, offset:1 one {#} other {#}}", "{n, plural, one {#} few {#} many {#} other {#}}",
+         "ICU arguments"),
+        # Every use of a repeated choice is checked, not only the last
+        ("{g, select, male {Hi {name}} other {Hello {name}}} / {g, select, male {Bye} other {Goodbye}}",
+         "{g, select, male {Salut} other {Bonjour}} / {g, select, male {Au revoir} other {Adieu}}",
+         "ICU arguments"),
     ])
     def test_invalid(self, source, translation, reason):
         assert find_problem(source, translation, RUSSIAN) == reason
