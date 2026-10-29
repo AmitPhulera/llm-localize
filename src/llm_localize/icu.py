@@ -16,6 +16,8 @@ CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*
 # Deeper than any real message, and shallow enough that parsing and checking stay within Python's recursion limit
 MAX_DEPTH = 20
 
+# Braces in literal text, rendered as look-alikes so they aren't taken for arguments
+LITERAL_BRACES = str.maketrans("{}", "\ufe5b\ufe5c")
 PLURAL_KEYWORDS = ("zero", "one", "two", "few", "many", "other")
 # An exact case's number, like =0, =-1 or =1.5
 EXACT_CASE_RE = re.compile(r"=-?\d+(?:\.\d+)?")
@@ -327,5 +329,13 @@ def _case_keys_problem(source_choice, translation_choice, language_categories):
 
 
 def _render(nodes):
-    """Write nodes back as text, with each argument and choice as ``{name}``, for the generic checks."""
-    return "".join(node if isinstance(node, str) else "#" if node is NUMBER else node.render() for node in nodes)
+    """Write nodes back as text, with each argument and choice as ``{name}``, for the generic checks.
+
+    Braces in literal text, like quoted '{name}', become look-alikes, so only
+    real arguments read as placeholders: a literal can't stand in for one.
+
+    >>> _render(parse("Hi {name}")), _render(parse("Hi '{name}'"))
+    ('Hi {name}', 'Hi ﹛name﹜')
+    """
+    return "".join(node.translate(LITERAL_BRACES) if isinstance(node, str) else "#" if node is NUMBER
+                   else node.render() for node in nodes)

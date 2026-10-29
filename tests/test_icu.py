@@ -112,6 +112,9 @@ class TestFindProblem:
         ("{n, plural, one {'#'1 file} other {'#'1 files}}",
          "{n, plural, one {'#'1 '#'файл} few {'#'1 файла} many {'#'1 файлов} other {'#'1 файла}}",
          "ICU arguments"),
+        # A quoted literal can't stand in for an argument
+        ("{n, plural, other {Hello {name}}}", "{n, plural, one {#} few {#} many {#} other {Bonjour '{name}'}}",
+         "ICU arguments"),
         ("{n, plural, other {{g, select, male {# his} other {# their}}}}",
          "{n, plural, one {{g, select, male {его} other {их}}} few {#} many {#} other {#}}", "ICU arguments"),
     ])
