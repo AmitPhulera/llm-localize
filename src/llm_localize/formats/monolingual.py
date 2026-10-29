@@ -12,6 +12,7 @@ from functools import cached_property
 from llm_localize.formats.base import TranslationFile
 from llm_localize.languages import LANGUAGE_NAMES
 from llm_localize.plurals import has_rules
+from llm_localize.units import TranslationUnit
 
 
 @dataclass
@@ -58,6 +59,26 @@ class MonolingualFile(TranslationFile):
         raise ValueError(
             f"Can't find the {self.source_language} file to translate {self.path} from; "
             "pass it with --source")
+
+    @cached_property
+    def source_messages(self):
+        return self.read_messages(self.source_path)
+
+    @cached_property
+    def target_messages(self):
+        return self.read_messages(self.path)
+
+    def untranslated_units(self):
+        units = []
+        for key, message in self.source_messages.items():
+            if self.is_translated(message, self.target_messages.get(key)):
+                continue
+            units.append(TranslationUnit(key=key, source=message.text, context=message.context))
+        return units
+
+    def is_translated(self, message, target):
+        """True if the target's ``target`` message translates the source's ``message``, or it needn't."""
+        return not message.text.strip() or bool(target and target.text.strip())
 
 
 def _is_language_code(token, known=True):
