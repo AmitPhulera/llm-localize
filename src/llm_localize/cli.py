@@ -79,10 +79,12 @@ DEFAULTS = {
     'FORMAT': None,
     'PROVIDER': 'openai',
     'MODEL': None,
+    'API_KEY': None,
     'API_BASE': None,
     'BATCH_SIZE': 50,
     'WORKERS': 10,
     'EXTRA_INSTRUCTIONS': '',
+    'MODEL_PARAMS': {},
 }
 
 

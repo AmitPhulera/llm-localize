@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 name = "llm-localize"
 dynamic = ["version"]
-description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact."
+description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact. Works standalone or as a Django app."
 readme = "README.md"
 license = "MIT AND BSD-3-Clause"
 license-files = ["LICENSE", "licenses/*"]
@@ -15,9 +15,17 @@ requires-python = ">=3.10"
 dependencies = [
     "polib>=1.2",
 ]
-keywords = ["i18n", "l10n", "gettext", "po", "translation", "llm", "openai", "claude", "gemini"]
+keywords = ["i18n", "l10n", "gettext", "po", "translation", "llm", "openai", "claude", "gemini", "django"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.0",
+    "Framework :: Django :: 6.1",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -30,6 +38,9 @@ classifiers = [
     "Topic :: Software Development :: Localization",
 ]
 
+[project.optional-dependencies]
+django = ["Django>=4.2"]
+
 [project.scripts]
 llm-localize = "llm_localize.cli:main"
 
@@ -39,7 +50,9 @@ Issues = "https://github.com/amitphulera/llm-localize/issues"
 
 [dependency-groups]
 dev = [
+    "Django>=4.2",
     "pytest>=8",
+    "pytest-django>=4.9",
     "ruff>=0.6",
 ]
 
@@ -54,6 +67,7 @@ exclude = [".claude"]
 packages = ["src/llm_localize"]
 
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "--doctest-modules --import-mode=importlib"

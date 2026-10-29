@@ -1,4 +1,10 @@
+import importlib.util
+
 import pytest
+
+# Lets the core suite run where Django isn't installed (with -p no:django)
+if importlib.util.find_spec("django") is None:
+    collect_ignore = ["django_integration"]
 
 
 @pytest.fixture(autouse=True)

@@ -13,15 +13,17 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs as a command line tool or from Python. The engine is format-agnostic. gettext PO files ship today, and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO files ship today, and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
 ```bash
-pip install llm-localize
+pip install llm-localize             # command line tool and Python API
+pip install "llm-localize[django]"   # plus the Django app
+uv tool install llm-localize         # just the command, in its own environment
 ```
 
-The only dependency is polib. LLM APIs are called over plain HTTP with the standard library, so no provider SDK is needed. Install gettext if you want the `msgfmt` check (`brew install gettext`, `apt install gettext`).
+The only dependency is polib; the `django` extra adds Django. LLM APIs are called over plain HTTP with the standard library, so no provider SDK is needed. Install gettext if you want the `msgfmt` check (`brew install gettext`, `apt install gettext`).
 
 ## Command line
 
@@ -71,6 +73,37 @@ Notes by provider:
 `MODEL_PARAMS` are merged into the request body, with dict values merged one level deep. Use them for anything provider-specific, e.g. `{"output_config": {"effort": "low"}}` for Claude, or `{"generationConfig": {"temperature": 0.2}}` for Gemini.
 
 Rate limits (429), overload (500/502/503/504/529), timeouts and connection failures are retried up to 5 times, waiting as long as the server's `Retry-After` asks (up to 5 minutes), or otherwise 1–2, 2–4, 4–8, 8–16 and 16–32 seconds. A reply that reaches the model's output token limit fails its batch with a message to use a smaller batch size. Authentication, billing, permission and not-found errors (401/402/403/404), such as a wrong API key or model name, stop the run at once, since every request would fail the same way.
+
+## Django
+
+```python
+INSTALLED_APPS = [
+    ...,
+    "llm_localize.contrib.django",
+]
+```
+
+### Settings
+
+Every key is optional:
+
+```python
+LLM_LOCALIZE = {
+    "PROVIDER": "openai",          # "openai", "anthropic", "gemini", "grok", or a dotted path
+    "API_BASE": None,              # None: the provider's API; set for compatible servers
+    "MODEL": None,                 # None: the provider's default
+    "API_KEY": None,               # None: LLM_LOCALIZE_API_KEY, then e.g. OPENAI_API_KEY
+    "MODEL_PARAMS": {},            # extra request params, e.g. {"temperature": 0}
+    "SOURCE_LANGUAGE": None,       # None: LANGUAGE_CODE
+    "LANGUAGES": None,             # None: LANGUAGES minus the source language
+    "LOCALE_PATHS": None,          # None: LOCALE_PATHS, or ./locale
+    "DOMAINS": ["django", "djangojs"],
+    "FORMAT": None,                # None: detect from the file extension
+    "BATCH_SIZE": 50,              # messages per LLM request
+    "WORKERS": 10,                 # LLM requests in flight at once
+    "EXTRA_INSTRUCTIONS": "",      # e.g. "Use gender-neutral language."
+}
+```
 
 ## Translating strings in your app
 
