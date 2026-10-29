@@ -16,6 +16,16 @@ class ICUSyntaxError(ValueError):
     pass
 
 
+class _Number:
+    """The ``#`` in a plural case, which shows the number. Plain ``"#"`` strings are quoted text."""
+
+    def __repr__(self):
+        return "#"
+
+
+NUMBER = _Number()
+
+
 class Argument:
     """A ``{name}`` or ``{name, type, style}`` argument."""
 
@@ -46,7 +56,7 @@ def is_icu_choice(text):
 
 
 def parse(text):
-    """Parse an ICU message into a list of strings, ``Argument`` and ``Choice`` nodes.
+    """Parse an ICU message into a list of strings, ``NUMBER`` markers, ``Argument`` and ``Choice`` nodes.
 
     >>> [type(node).__name__ for node in parse("Hi {name}, {n, plural, one {# file} other {# files}}")]
     ['str', 'Argument', 'str', 'Choice']
@@ -75,6 +85,12 @@ class _Parser:
                     nodes.append("".join(buffer))
                     buffer = []
                 nodes.append(self.argument(in_plural))
+            elif char == "#" and in_plural:
+                if buffer:
+                    nodes.append("".join(buffer))
+                    buffer = []
+                nodes.append(NUMBER)
+                self.pos += 1
             else:
                 buffer.append(char)
                 self.pos += 1
@@ -119,6 +135,7 @@ class _Parser:
             if key in cases:
                 raise ICUSyntaxError(f"case {key!r} repeated in {name!r}")
             self.expect("{")
+            # "#" stands for the nearest plural's number, also inside a select within it
             cases[key] = self.message(in_plural=in_plural or type_ != "select")
             self.expect("}")
         self.pos += 1

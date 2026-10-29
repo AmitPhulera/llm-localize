@@ -1,6 +1,6 @@
 import pytest
 
-from llm_localize.icu import Argument, ICUSyntaxError, parse
+from llm_localize.icu import NUMBER, Argument, Choice, ICUSyntaxError, parse
 from llm_localize.plurals import plural_categories, plural_forms
 
 
@@ -12,10 +12,22 @@ class TestParse:
         assert [(node.name, node.type, node.style) for node in nodes if isinstance(node, Argument)] == [
             ("amount", "number", "::currency/EUR"), ("day", "date", "short")]
 
+    def test_choices(self):
+        [choice] = parse("{n, plural, offset:1 =0 {none} one {# file} other {# files}}")
+
+        assert (choice.type, choice.offset, list(choice.cases)) == ("plural", "1", ["=0", "one", "other"])
+        assert choice.cases["one"] == [NUMBER, " file"]
+
     def test_hash_is_text_outside_plurals(self):
         text, argument = parse("Item #{n}")
 
         assert (text, argument.name) == ("Item #", "n")
+
+    def test_hash_counts_in_a_select_inside_a_plural(self):
+        [choice] = parse("{n, plural, other {{g, select, male {# his} other {# their}}}}")
+
+        [select] = choice.cases["other"]
+        assert isinstance(select, Choice) and select.cases["male"] == [NUMBER, " his"]
 
     @pytest.mark.parametrize("text", [
         "{n, plural, one {# file}}",                   # no other case
