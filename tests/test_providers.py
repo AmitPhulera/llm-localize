@@ -71,7 +71,8 @@ def fake_http():
 @pytest.fixture(autouse=True)
 def no_provider_env(monkeypatch):
     for name in ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
-                 "GEMINI_API_KEY", "GEMINI_BASE_URL", "XAI_API_KEY", "XAI_BASE_URL", "FAKE_API_KEY"]:
+                 "GEMINI_API_KEY", "GEMINI_BASE_URL", "XAI_API_KEY", "XAI_BASE_URL", "FAKE_API_KEY",
+                 "LLM_LOCALIZE_MODEL"]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -188,6 +189,12 @@ class TestRegistry:
         client = get_client("openai", api_key="k", model_params={"temperature": 0})
 
         assert (client.model, client.model_params) == ("gpt-6-luna", {"temperature": 0})
+
+    def test_model_from_env(self, monkeypatch):
+        monkeypatch.setenv("LLM_LOCALIZE_MODEL", "gpt-7")
+
+        assert get_client("openai", api_key="k").model == "gpt-7"
+        assert get_client("openai", api_key="k", model="gpt-8").model == "gpt-8"
 
 
 class TestRetry:

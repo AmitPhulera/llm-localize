@@ -17,6 +17,9 @@ TRANSIENT_STATUS_CODES = (429, 500, 502, 503, 504, 529)
 # request will fail the same way
 FATAL_STATUS_CODES = (401, 402, 403, 404)
 
+# A model for every provider, when none is given: a way past a default the provider has retired
+MODEL_ENV_VAR = "LLM_LOCALIZE_MODEL"
+
 # Longest wait between retries, in seconds, unless the server asks for
 # longer with Retry-After, which is honoured up to MAX_RETRY_AFTER
 MAX_RETRY_DELAY = 60
@@ -151,7 +154,7 @@ class LLMClient(abc.ABC):
 
     def __init__(self, api_key=None, model=None, model_params=None, max_retries=5):
         self.api_key = api_key
-        self.model = model or self.default_model
+        self.model = model or os.environ.get(MODEL_ENV_VAR) or self.default_model
         self.model_params = model_params or {}
         self.max_retries = max_retries
         if not self.model:

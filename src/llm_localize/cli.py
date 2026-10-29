@@ -53,7 +53,8 @@ def add_translation_arguments(parser, defaults):
                         help=f"API style of the LLM, one of {', '.join(PROVIDERS)}, or a dotted path to an "
                              "LLMClient subclass (default: %(default)s)")
     parser.add_argument('--model', default=defaults['MODEL'],
-                        help="Model to use (default: the provider's default)")
+                        help="Model to use (default: settings, then the LLM_LOCALIZE_MODEL environment variable, "
+                             "then the provider's default)")
     parser.add_argument('--api-key', default=None,
                         help="API key (default: the LLM_LOCALIZE_API_KEY environment variable, then the "
                              "provider's own, e.g. OPENAI_API_KEY). Optional when --api-base points at "

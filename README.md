@@ -48,6 +48,8 @@ Three API styles are built in, plus a preset for Grok. Each works with the vendo
 
 As each vendor's tooling does, an `openai` or `grok` base URL includes the `/v1` and the others don't.
 
+The model is, in order, `--model`, `"MODEL"` in settings, the `LLM_LOCALIZE_MODEL` environment variable, and then the provider's default from the table. The defaults are the current models when a version is released; when a provider retires one, an older version stops with an error naming the model, and setting `LLM_LOCALIZE_MODEL` once (or upgrading) gets it going again.
+
 The API key is read, in order, from `--api-key`, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different `--api-base`, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server.
 
 The API key is required for the vendor's own API, and optional anywhere else, so local servers work without one:
@@ -91,7 +93,7 @@ Every key is optional:
 LLM_LOCALIZE = {
     "PROVIDER": "openai",          # "openai", "anthropic", "gemini", "grok", or a dotted path
     "API_BASE": None,              # None: the provider's API; set for compatible servers
-    "MODEL": None,                 # None: the provider's default
+    "MODEL": None,                 # None: LLM_LOCALIZE_MODEL, then the provider's default
     "API_KEY": None,               # None: LLM_LOCALIZE_API_KEY, then e.g. OPENAI_API_KEY
     "MODEL_PARAMS": {},            # extra request params, e.g. {"temperature": 0}
     "SOURCE_LANGUAGE": None,       # None: LANGUAGE_CODE
