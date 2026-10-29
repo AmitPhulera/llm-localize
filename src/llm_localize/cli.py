@@ -126,6 +126,7 @@ def run(options, jobs, api_key=None, model_params=None):
         format=options.format,
         cleanup=not options.no_cleanup,
         cleanup_only=options.cleanup_only,
+        source_path=getattr(options, "source", None),
     )
 
 
@@ -135,7 +136,11 @@ def main(argv=None):
         description="Translate untranslated messages in translation files with an LLM.",
     )
     parser.add_argument('paths', nargs='+', help="Translation files to translate")
-    parser.add_argument('--lang', help="Target language (default: the language each file declares)")
+    parser.add_argument('--lang', help="Target language (default: the language each file declares, or "
+                                       "for one file per language, the language in its path)")
+    parser.add_argument('--source', help="For formats with one file per language, like JSON: the file to "
+                                         "translate from (default: the file beside each path, with the "
+                                         "language in its path swapped for --source-lang)")
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument('-q', '--quiet', action='store_const', const=0, dest='verbosity', default=1,
                            help="Only show the summary, warnings and errors")

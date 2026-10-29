@@ -46,7 +46,11 @@ The format is chosen by file extension, or with `--format`.
 
 ### One file per language
 
-JSON files hold one language each, so the source text comes from another file. Translating `locales/fr.json` from `locales/en.json` writes the messages `fr.json` lacks, creating the file if needed.
+JSON files hold one language each, so the source text comes from another file, named with `--source`. Translating `out.json` reads it and writes the messages `out.json` lacks, creating the file if needed:
+
+```bash
+llm-localize out.json --lang es --source strings.json
+```
 
 A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
 

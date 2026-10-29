@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 
@@ -78,3 +79,11 @@ class TestTranslating:
         }
         assert path.read_text().startswith('{\n  "home": {\n    "title"')
         assert path.read_text().endswith("}\n")
+
+    def test_cli_with_source(self, locales):
+        source = locales("base/strings.json", {"hello": "Hello"})
+
+        main([str(locales.dir / "out.json"), "--lang", "es", "--source", str(source),
+              "--provider", "tests.fakes.FakeClient", "--api-key", "k"])
+
+        assert read(locales.dir / "out.json") == {"hello": "T: Hello"}

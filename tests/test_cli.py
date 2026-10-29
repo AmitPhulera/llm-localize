@@ -3,6 +3,7 @@ import json
 import logging
 import urllib.error
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import polib
@@ -182,3 +183,15 @@ def test_cleanup_only_without_a_language(tmp_path, capsys):
     assert exit_code == 0
     assert polib.pofile(str(path)).find("Hello").msgstr == ""
     assert capsys.readouterr().out == f"{path}: nothing to translate\n  cleared 1 broken translations\n"
+
+
+@pytest.mark.parametrize("target", ["fr.json"])
+def test_a_missing_source_is_an_error_with_paths_too(tmp_path, monkeypatch, capsys, target):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit):
+        main([target, "--lang", "fr", "--source", "nope" + Path(target).suffix,
+              "--provider", "tests.fakes.FakeClient", "--api-key", "k"])
+
+    assert f"The source file nope{Path(target).suffix} doesn't exist" in capsys.readouterr().err
+    assert not Path(target).exists()

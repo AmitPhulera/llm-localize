@@ -6,6 +6,7 @@ like ``locales/en.json``, and each translation in another, like
 ``en.json`` and fills in those ``fr.json`` lacks, creating it if needed.
 """
 import abc
+import os
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -55,6 +56,9 @@ class MonolingualFile(TranslationFile):
     @cached_property
     def source_path(self):
         if self._source_path:
+            # A missing one would read as a file with nothing in it, so nothing would be translated
+            if not os.path.isfile(self._source_path):
+                raise ValueError(f"The source file {self._source_path} doesn't exist")
             return str(self._source_path)
         raise ValueError(
             f"Can't find the {self.source_language} file to translate {self.path} from; "
