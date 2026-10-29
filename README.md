@@ -104,7 +104,7 @@ To extract and translate in one step, pass `--translate`:
 
 This runs Django's `makemessages` unchanged, then `llm_localize` on exactly what it just updated:
 
-- the locales given with `-l` (minus any `-x`), or with `-a` the languages in `LANGUAGES`
+- the locales given with `-l` (minus any `-x`), or with `-a` the languages in `LANGUAGES` that have a catalog; it names the others, which `makemessages -l` starts
 - the `--domain` (`django` or `djangojs`)
 - every locale directory it wrote to, including `locale/` directories inside apps
 

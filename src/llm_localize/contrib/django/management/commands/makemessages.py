@@ -9,6 +9,7 @@ the configured languages), the same ``--domain`` and every locale
 directory ``makemessages`` wrote to. The source language is skipped.
 """
 import argparse
+import os
 
 from django.core.management import call_command
 from django.core.management.commands import makemessages
@@ -47,6 +48,16 @@ class Command(makemessages.Command):
         # Without locale directories, as when makemessages found nothing to extract, there's nothing to translate
         if not langs or not self.locale_paths:
             return
+        if options['all']:
+            # makemessages -a only updates catalogs that exist, so a language without one yet got none
+            new = [lang for lang in langs if not any(
+                os.path.isdir(os.path.join(path, to_locale(lang), "LC_MESSAGES")) for path in self.locale_paths)]
+            if new:
+                start = " ".join(f"-l {to_locale(lang)}" for lang in new)
+                self.stderr.write(f"No catalog yet for {', '.join(new)}; start one with makemessages {start}")
+                langs = [lang for lang in langs if lang not in new]
+            if not langs:
+                return
         # The catalogs are already written, so a failure here leaves them
         # updated but partly untranslated; rerunning picks up the rest
         call_command(
