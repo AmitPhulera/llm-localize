@@ -1,10 +1,14 @@
-"""ICU MessageFormat: parsing messages.
+"""ICU MessageFormat: parsing messages, and checking a translation keeps their structure.
 
 ICU messages, used by FormatJS (react-intl), next-intl, Angular and
 others, pick text by argument: ``{count, plural, one {# file} other {#
-files}}``.
+files}}``. A translation has the same arguments, but its plural cases
+are the target language's CLDR categories, so the generic placeholder
+check doesn't fit, and the translation is checked as ICU instead.
 """
 import re
+
+from llm_localize.validation import find_problem as find_text_problem
 
 # An argument that chooses between cases, e.g. "{count, plural," or "{g, select,"
 CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*,")
@@ -201,3 +205,51 @@ class _Parser:
     def skip_space(self):
         while self.pos < len(self.text) and self.text[self.pos].isspace():
             self.pos += 1
+
+
+def find_problem(source, translation, plural_categories=None, ordinal_categories=None):
+    """Return why an ICU ``translation`` doesn't fit ``source``, or None.
+
+    The translation must keep the same arguments.
+
+    >>> source = "{n, plural, one {# file} other {# files}}"
+    >>> find_problem(source, "{count, plural, one {# fichier} other {# fichiers}}", ["one", "many", "other"])
+    'ICU arguments'
+    """
+    try:
+        source_nodes = parse(source)
+    except ICUSyntaxError:
+        return find_text_problem(source, translation)
+    try:
+        translation_nodes = parse(translation)
+    except ICUSyntaxError:
+        return "ICU syntax"
+    categories = {"plural": plural_categories, "selectordinal": ordinal_categories}
+    return _compare(source_nodes, translation_nodes, categories)
+
+
+def _compare(source_nodes, translation_nodes, categories):
+    """``categories`` maps a choice type, like ``plural``, to the target language's categories for it, or None."""
+    source_choices, translation_choices = _choices(source_nodes), _choices(translation_nodes)
+    if ({name: [choice.type for choice in choices] for name, choices in source_choices.items()}
+            != {name: [choice.type for choice in choices] for name, choices in translation_choices.items()}):
+        return "ICU arguments"
+    # The text around choices, with each choice standing in as {name}
+    problem = find_text_problem(_render(source_nodes), _render(translation_nodes))
+    if problem:
+        return "ICU arguments" if problem == "placeholders" else problem
+    return None
+
+
+def _choices(nodes):
+    """Group a message level's choices by argument name, in order."""
+    choices = {}
+    for node in nodes:
+        if isinstance(node, Choice):
+            choices.setdefault(node.name, []).append(node)
+    return choices
+
+
+def _render(nodes):
+    """Write nodes back as text, with each argument and choice as ``{name}``, for the generic checks."""
+    return "".join(node if isinstance(node, str) else "#" if node is NUMBER else node.render() for node in nodes)

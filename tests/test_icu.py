@@ -1,7 +1,10 @@
 import pytest
 
-from llm_localize.icu import NUMBER, Argument, Choice, ICUSyntaxError, parse
+from llm_localize.icu import NUMBER, Argument, Choice, ICUSyntaxError, find_problem, parse
 from llm_localize.plurals import plural_categories, plural_forms
+
+RUSSIAN = ["one", "few", "many", "other"]
+FILES = "{count, plural, one {# file} other {# files}}"
 
 
 class TestParse:
@@ -44,6 +47,31 @@ class TestParse:
     def test_syntax_errors(self, text):
         with pytest.raises(ICUSyntaxError):
             parse(text)
+
+
+class TestFindProblem:
+
+    @pytest.mark.parametrize("source, translation", [
+        (FILES, "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}"),
+        ("{g, select, male {He} female {She} other {They}} replied",
+         "{g, select, male {Он} female {Она} other {Они}} ответили"),
+        ("Hi <b>{name}</b>", "Привет <b>{name}</b>"),
+    ])
+    def test_valid(self, source, translation):
+        assert find_problem(source, translation, RUSSIAN) is None
+
+    @pytest.mark.parametrize("source, translation, reason", [
+        (FILES, "{count, select, one {#} few {#} many {#} other {#}}", "ICU arguments"),
+        (FILES, "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", "ICU arguments"),
+        (FILES, "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}", "ICU syntax"),
+        ("Hi {name}", "Привет {nom}", "ICU arguments"),
+    ])
+    def test_invalid(self, source, translation, reason):
+        assert find_problem(source, translation, RUSSIAN) == reason
+
+    def test_source_that_isnt_icu_gets_the_generic_checks(self):
+        assert find_problem("Hi {name", "Salut {name") is None
+        assert find_problem("Hi %s {", "Salut {") == "placeholders"
 
 
 class TestPluralForms:
