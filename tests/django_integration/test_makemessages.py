@@ -41,10 +41,35 @@ def test_uses_configured_languages_with_all(project):
     assert msgstr(project / "locale", "es") == "T: Hello"
 
 
+def test_exclude(project):
+    makemessages("-l", "es", "-l", "fr", "-x", "fr")
+
+    assert msgstr(project / "locale", "es") == "T: Hello"
+    assert not (project / "locale" / "fr").exists()
+
+
+def test_exclude_takes_locale_names(project, settings):
+    settings.LLM_LOCALIZE = {**settings.LLM_LOCALIZE, "LANGUAGES": ["es", "pt-br"]}
+    (project / "locale" / "es").mkdir()
+    pt_br = project / "locale" / "pt_BR" / "LC_MESSAGES"
+    pt_br.mkdir(parents=True)
+    (pt_br / "django.po").write_text('msgid "Hello"\nmsgstr ""\n')
+
+    makemessages("--all", "-x", "pt_BR")
+
+    assert (msgstr(project / "locale", "es"), msgstr(project / "locale", "pt_BR")) == ("T: Hello", "")
+
+
 def test_locale_names_with_suffixes(project):
     makemessages("-l", "nl_NL-x-informal")
 
     assert msgstr(project / "locale", "nl_NL-x-informal") == "T: Hello"
+
+
+def test_skips_source_language(project):
+    makemessages("-l", "en", "-l", "es")
+
+    assert (msgstr(project / "locale", "en"), msgstr(project / "locale", "es")) == ("", "T: Hello")
 
 
 def test_app_locale_dirs(project):

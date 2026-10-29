@@ -104,11 +104,11 @@ To extract and translate in one step, pass `--translate`:
 
 This runs Django's `makemessages` unchanged, then `llm_localize` on exactly what it just updated:
 
-- the locales given with `-l`, or with `-a` the languages in `LANGUAGES`
+- the locales given with `-l` (minus any `-x`), or with `-a` the languages in `LANGUAGES`
 - the `--domain` (`django` or `djangojs`)
 - every locale directory it wrote to, including `locale/` directories inside apps
 
-If translation fails, the command exits with an error, but the extracted catalogs are already written, and rerunning translates what's left.
+The source language is skipped. If translation fails, the command exits with an error, but the extracted catalogs are already written, and rerunning translates what's left.
 
 It's off by default because `makemessages` often runs in pre-commit hooks and CI checks, where paid, network-dependent and non-deterministic output is unwelcome. To always translate, set `"AFTER_MAKEMESSAGES": True` in `LLM_LOCALIZE`; `--no-translate` then skips it for one run.
 
