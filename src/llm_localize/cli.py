@@ -56,9 +56,9 @@ def add_translation_arguments(parser, defaults):
                         help="Model to use (default: settings, then the LLM_LOCALIZE_MODEL environment variable, "
                              "then the provider's default)")
     parser.add_argument('--api-key', default=None,
-                        help="API key (default: the LLM_LOCALIZE_API_KEY environment variable, then the "
-                             "provider's own, e.g. OPENAI_API_KEY). Optional when --api-base points at "
-                             "another host.")
+                        help="API key (default: settings, then the LLM_LOCALIZE_API_KEY environment variable, "
+                             "then the provider's own, e.g. OPENAI_API_KEY). Optional when --api-base "
+                             "points at another host.")
     parser.add_argument('--api-base', default=defaults['API_BASE'],
                         help="Base URL of the API, for compatible or self-hosted servers "
                              "(default: the provider's own API, or its *_BASE_URL environment variable)")
