@@ -1,10 +1,12 @@
 """Android string resources: ``res/values/strings.xml`` and its translations, like ``res/values-fr/strings.xml``.
 """
+import os
 import re
 from pathlib import Path
+from xml.parsers import expat
 
 from llm_localize.formats.monolingual import _is_language_code
-from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE
+from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, tag_end
 
 # A CDATA section, whose & needn't be escaped, or a tag
 CDATA_OR_TAG_RE = re.compile(r"(<!\[CDATA\[.*?\]\]>|<[^>]*>)", re.S)
@@ -107,3 +109,30 @@ class _Resources:
         self.root_start = self.root_tag_end = self.root_end = 0
         self.elements = {}
         self.indent = "    "
+
+
+def _read(path):
+    if not os.path.exists(path):
+        return _Resources()
+    with open(path, "rb") as f:
+        data = f.read()
+    resources = _Resources(data)
+    parser = expat.ParserCreate("utf-8")
+    stack = []
+
+    def start(tag, attrs):
+        start_index = parser.CurrentByteIndex
+        inner_start = tag_end(data, start_index)
+        if not stack:
+            resources.root_start_tag = data[start_index:inner_start].decode()
+            resources.root_start, resources.root_tag_end = start_index, inner_start
+        elif len(stack) == 1 and tag == "string":
+            element = _Element(tag, attrs.get("name", ""), start_index, data[start_index:inner_start].decode(), "")
+            if not resources.elements and line_indent(data, start_index):
+                resources.indent = line_indent(data, start_index).decode()
+            resources.elements[f"{tag}/{element.name}"] = element
+        stack.append((tag, attrs, inner_start))
+
+    parser.StartElementHandler = start
+    parser.Parse(data, True)
+    return resources
