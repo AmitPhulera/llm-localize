@@ -6,7 +6,7 @@ from functools import cached_property
 from pathlib import Path
 from xml.parsers import expat
 
-from llm_localize.formats.base import write_file
+from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
 from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, tag_end
 
@@ -70,9 +70,7 @@ class AndroidFile(MonolingualFile):
             else:
                 additions.append(indent.encode() + text + b"\n")
         replacements.append((target.root_end, target.root_end, b"".join(additions)))
-        for start, end, text in sorted(replacements, reverse=True):
-            data = data[:start] + text + data[end:]
-        write_file(self.path, data)
+        write_file(self.path, splice(data, replacements))
 
 
 def _values_dir(path):
