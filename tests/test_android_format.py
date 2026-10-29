@@ -82,6 +82,16 @@ class TestTranslating:
 '''
         assert open_file(path).untranslated_units() == []
 
+    def test_the_targets_own_attributes_are_kept(self, tmp_path):
+        write(tmp_path / "res" / "values" / "strings.xml",
+              '<resources><string name="x">100% %s</string></resources>')
+        target = write(tmp_path / "res" / "values-fr" / "strings.xml",
+                       '<resources><string name="x" formatted="false"></string></resources>')
+
+        translate_file(open_file(target), FakeClient(), "fr")
+
+        assert '<string name="x" formatted="false">T: 100% %s</string>' in target.read_text(encoding="utf-8")
+
     def test_cdata_keeps_its_ampersands(self, tmp_path):
         write(tmp_path / "res" / "values" / "strings.xml",
               '<resources><string name="c"><![CDATA[<b>Bold</b> & co]]></string></resources>')

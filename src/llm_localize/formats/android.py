@@ -67,7 +67,11 @@ class AndroidFile(MonolingualFile):
         indent = source.indent
         replacements, additions = [], []
         for key, translation in self._applied.items():
-            text = _element_text(source.elements[key], translation, self.plural_categories, indent).encode()
+            # An element the target has keeps its own start tag, and attributes like formatted="false"
+            own = target.elements[key].start_tag if key in target.elements else None
+            if own:
+                own = open_tag(own)
+            text = _element_text(source.elements[key], translation, self.plural_categories, indent, own).encode()
             if key in target.elements:
                 replacements.append((target.elements[key].start, target.elements[key].end, text))
             else:
@@ -149,8 +153,10 @@ def _escape_quotes(text, quoted):
     return text if quoted else UNESCAPED_APOSTROPHE_RE.sub(r"\1\\'", text)
 
 
-def _element_text(element, translation, categories, indent):
-    return f"{element.start_tag}{_encode(translation, _decode(element.raw)[1])}</string>"
+def _element_text(element, translation, categories, indent, start_tag=None):
+    """Write a translated element, like the source's, with ``start_tag`` if the target has one of its own."""
+    start_tag = start_tag or element.start_tag
+    return f"{start_tag}{_encode(translation, _decode(element.raw)[1])}</string>"
 
 
 class _Element:
