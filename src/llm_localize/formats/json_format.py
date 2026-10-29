@@ -4,6 +4,43 @@ Keys may nest: ``{"home": {"title": "Welcome"}}``.
 """
 import json
 import os
+from functools import cached_property
+
+from llm_localize.formats.base import write_file
+from llm_localize.formats.monolingual import Message, MonolingualFile
+
+# The most characters a file's keys may add up to, each string's key counted with those of the objects it's in
+MAX_KEYS_SIZE = 20_000_000
+
+
+class JsonFile(MonolingualFile):
+    name = "json"
+    extensions = (".json",)
+
+    def read_messages(self, path):
+        messages, size = {}, 0
+        for path_in_file, value in _strings(_load(path)):
+            key = _key(path_in_file)
+            # Each string's key holds the keys of every object it's in, so a small file of long keys nested
+            # deep could otherwise take gigabytes
+            size += len(key)
+            if size > MAX_KEYS_SIZE:
+                raise ValueError(f"{path} has too much key text: its strings' keys, each with the keys of the "
+                                 f"objects it's in, add up to over {MAX_KEYS_SIZE:,} characters")
+            messages[key] = Message(text=value, context=_context(path_in_file))
+        return messages
+
+    @cached_property
+    def document(self):
+        return _load(self.path)
+
+    def apply(self, key, translation):
+        path = json.loads(key)
+        _set(self.document, path, translation)
+
+    def save(self):
+        text = json.dumps(self.document, ensure_ascii=False, indent=2)
+        write_file(self.path, (text + "\n").encode())
 
 
 def _load(path):

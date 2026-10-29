@@ -13,7 +13,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO files ship today, and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO and JSON files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
@@ -34,6 +34,27 @@ llm-localize strings.po --lang pt-br --model gpt-4o
 ```
 
 The target language comes from `--lang`, the PO `Language` header, or the `<locale>/LC_MESSAGES/` directory, in that order. A file whose `Language` header names another language is refused, since its `Plural-Forms` are that language's; a file without one gets `--lang` as its `Language`. A file without a `Plural-Forms` header gets its language's, made from the Unicode CLDR plural rules, so its plural messages can be translated. This works with any project that uses gettext PO files, e.g. Flask-Babel's `translations/<locale>/LC_MESSAGES/messages.po`. Run `llm-localize --help` for every option.
+
+## Formats
+
+The format is chosen by file extension, or with `--format`.
+
+| Format | Extension | Holds | Plurals |
+| --- | --- | --- | --- |
+| `po` | `.po` | source and translation, one file per language | `msgstr[N]`, from the `Plural-Forms` header |
+| `json` | `.json` | one language per file | — |
+
+### One file per language
+
+JSON files hold one language each, so the source text comes from another file. Translating `locales/fr.json` from `locales/en.json` writes the messages `fr.json` lacks, creating the file if needed.
+
+A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
+
+### JSON
+
+Keys may nest, and each message is sent with its key (`home.title`) as context. Only values are translated, never keys. Arrays, numbers and other values that aren't text are left alone.
+
+A message that fails to translate, because its batch failed or its translation was rejected, is left out of the target, and the next run tries it again. Until then the app shows whatever it does for a missing key: i18next and vue-i18n fall back to their fallback language, ngx-translate to its fallback language if one is set, and next-intl shows the key unless you merge in the default locale's messages.
 
 ## LLM providers
 
@@ -223,7 +244,7 @@ The command exits with an error if any batch failed or the run was stopped, but 
 
 ## Adding a format
 
-Subclass `TranslationFile`:
+Subclass `TranslationFile` for a file that holds both the source and the translation, like PO, or `MonolingualFile` (in `llm_localize.formats.monolingual`) for one language per file, like JSON: it finds the source file and the language, and you implement `read_messages(path)`, `apply` and `save`. For a `TranslationFile`:
 
 ```python
 from llm_localize.formats.base import TranslationFile

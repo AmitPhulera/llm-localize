@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 name = "llm-localize"
 dynamic = ["version"]
-description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact. Works standalone or as a Django app."
+description = "Translate gettext PO, JSON and other i18n files with LLMs, with validation that keeps placeholders, markup and plurals intact. Works standalone or as a Django app."
 readme = "README.md"
 license = "MIT AND BSD-3-Clause AND Unicode-3.0"
 license-files = ["LICENSE", "licenses/*"]
@@ -15,7 +15,7 @@ requires-python = ">=3.10"
 dependencies = [
     "polib>=1.2",
 ]
-keywords = ["i18n", "l10n", "gettext", "po", "translation", "llm", "openai", "claude", "gemini", "django"]
+keywords = ["i18n", "l10n", "gettext", "po", "json", "translation", "llm", "openai", "claude", "gemini", "django"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
