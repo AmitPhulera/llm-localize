@@ -135,6 +135,18 @@ def language_name(lang_code):
     return LANGUAGE_NAMES.get(code) or LANGUAGE_NAMES.get(code.split("-")[0]) or lang_code
 
 
+def same_language(code, other):
+    """Return True if ``code`` names the same language as ``other``, or a variant of it.
+
+    Accepts locale names (``pt_BR``) as well as language codes.
+
+    >>> same_language("en", "en-us"), same_language("pt-br", "pt"), same_language("fr", "en")
+    (True, False, False)
+    """
+    code, other = code.lower().replace("_", "-"), other.lower().replace("_", "-")
+    return code == other or other.startswith(f"{code}-")
+
+
 def to_locale(language):
     """Turn a language code into a locale directory name, like Django's ``to_locale``.
 
