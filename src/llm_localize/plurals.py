@@ -10,6 +10,8 @@ import functools
 import json
 from importlib import resources
 
+from llm_localize.units import PluralForm
+
 # For languages CLDR doesn't know: English-style singular and plural
 DEFAULT_CATEGORIES = {"one": "1", "other": "0, 2~16, 100, 1000, …"}
 
@@ -43,3 +45,26 @@ def plural_categories(language):
     True
     """
     return _lookup(_table(), language) or DEFAULT_CATEGORIES
+
+
+def plural_forms(language):
+    """Return a ``PluralForm`` per CLDR category of ``language``, indexed by category name.
+
+    >>> few = plural_forms("ru")[1]
+    >>> few.index, few.description
+    ('few', 'used when n is 2-4, 22-24, 32-34, 42-44, 52-54, 62, 102, 1002, ...')
+    >>> plural_forms("ru")[3].description
+    'used only for fractions, like 1.5'
+    >>> plural_forms("en")[0].singular, plural_forms("fr")[0].singular
+    (True, False)
+    """
+    return tuple(
+        PluralForm(index=category, description=_describe(samples), singular=samples == "1")
+        for category, samples in plural_categories(language).items()
+    )
+
+
+def _describe(samples):
+    if not samples:
+        return "used only for fractions, like 1.5"
+    return f"used when n is {samples.replace('~', '-').replace('…', '...')}"
