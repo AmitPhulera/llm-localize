@@ -34,7 +34,7 @@ def is_icu_choice(text):
 
 
 def parse(text):
-    """Parse an ICU message into a list of strings."""
+    """Parse an ICU message into a list of strings and ``Argument`` nodes."""
     parser = _Parser(text)
     nodes = parser.message(in_plural=False)
     if parser.pos != len(text):
@@ -53,12 +53,44 @@ class _Parser:
             char = self.text[self.pos]
             if char == "}":
                 break
+            if char == "{":
+                if buffer:
+                    nodes.append("".join(buffer))
+                    buffer = []
+                nodes.append(self.argument(in_plural))
             else:
                 buffer.append(char)
                 self.pos += 1
         if buffer:
             nodes.append("".join(buffer))
         return nodes
+
+    def argument(self, in_plural):
+        self.pos += 1  # {
+        name = self.token()
+        if not name:
+            raise ICUSyntaxError(f"argument without a name at {self.pos}")
+        self.expect("}")
+        return Argument(name)
+
+    def token(self):
+        self.skip_space()
+        match = re.compile(r"[^\s{},]+").match(self.text, self.pos)
+        if not match:
+            return ""
+        self.pos = match.end()
+        return match.group()
+
+    def peek(self):
+        self.skip_space()
+        if self.pos >= len(self.text):
+            raise ICUSyntaxError("message ends inside an argument")
+        return self.text[self.pos]
+
+    def expect(self, char):
+        if self.peek() != char:
+            raise ICUSyntaxError(f"expected {char!r} at {self.pos}")
+        self.pos += 1
 
     def skip_space(self):
         while self.pos < len(self.text) and self.text[self.pos].isspace():

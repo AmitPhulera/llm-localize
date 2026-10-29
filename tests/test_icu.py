@@ -6,7 +6,14 @@ from llm_localize.plurals import plural_categories, plural_forms
 
 class TestParse:
 
+    def test_hash_is_text_outside_plurals(self):
+        text, argument = parse("Item #{n}")
+
+        assert (text, argument.name) == ("Item #", "n")
+
     @pytest.mark.parametrize("text", [
+        "Hi {}",
+        "Hi {name",
         "Extra }",
     ])
     def test_syntax_errors(self, text):
