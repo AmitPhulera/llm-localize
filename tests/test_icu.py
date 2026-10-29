@@ -152,6 +152,12 @@ class TestFindProblem:
         source = '<img alt="{n, plural, other {# items}}">'
         assert find_problem(source, '<img alt="{n, plural, other {# l\'article}}">', ["other"]) is None
 
+    def test_a_no_break_space_isnt_space_in_a_tag(self):
+        # A browser reads alt=\xa0"..." as unquoted, so the case isn't in quotes, and its words are attributes
+        source = '<img src="x" alt="{n, plural, other {#}}">'
+        translation = '<img src="x" alt=\xa0"{n, plural, other {# onerror=alert(1)}}">'
+        assert find_problem(source, translation, ["other"]) == "HTML attributes"
+
     def test_selectordinal_needs_the_target_languages_ordinal_categories(self):
         source = "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"
         english, russian = list(ordinal_categories("en")), list(ordinal_categories("ru"))

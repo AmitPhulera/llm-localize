@@ -17,6 +17,8 @@ from llm_localize.validation import is_text_attribute
 CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*,")
 # Deeper than any real message, and shallow enough that parsing and checking stay within Python's recursion limit
 MAX_DEPTH = 20
+# What a browser takes for space in a tag: not others, like a no-break space, which is part of a name or value
+HTML_SPACE = " \t\n\r\f"
 
 # Braces in literal text, rendered as look-alikes so they aren't taken for arguments
 LITERAL_BRACES = str.maketrans("{}", "\ufe5b\ufe5c")
@@ -333,7 +335,7 @@ class _Html:
                 self.state = "raw end"
         elif state == "raw end":
             # </script ends a script only as a whole name: </scriptx doesn't
-            self.state = "text" if char.isspace() or char in "/>" else "raw"
+            self.state = "text" if char in HTML_SPACE or char in "/>" else "raw"
         elif state == "text":
             if previous.endswith("<") and char.isalpha():
                 self.state, self.tag, self.type = "tag", char.lower(), ""
@@ -348,23 +350,23 @@ class _Html:
             # In HTML, <script/> opens a script all the same
             self.state, self.raw = ("raw", self.tag) if self.tag in ("script", "style") else ("text", "")
         elif state == "tag":
-            if char.isspace() or char == "/":
+            if char in HTML_SPACE or char == "/":
                 self.state = "attributes"
             else:
                 self.tag += char.lower()
         elif state == "value":
             if char in "\"'":
                 self.state, self.quote, self.value = "quoted", char, ""
-            elif not char.isspace():
+            elif char not in HTML_SPACE:
                 self.state, self.value = "unquoted", char
         elif state == "unquoted":
-            if char.isspace():
+            if char in HTML_SPACE:
                 self.end_value()
             else:
                 self.value += char
         elif char == "=" and state in ("name", "after name"):
             self.state = "value"
-        elif char.isspace() or char == "/":
+        elif char in HTML_SPACE or char == "/":
             self.state = "after name" if state == "name" else state
         elif state == "name":
             self.name += char.lower()
