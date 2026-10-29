@@ -24,6 +24,16 @@ class Argument:
         return "{" + ", ".join(part for part in (self.name, self.type, self.style) if part) + "}"
 
 
+class Choice:
+    """A ``plural``, ``selectordinal`` or ``select`` argument and its cases."""
+
+    def __init__(self, name, type_, cases, offset=""):
+        self.name, self.type, self.cases, self.offset = name, type_, cases, offset
+
+    def render(self):
+        return "{" + self.name + "}"
+
+
 def is_icu_choice(text):
     """Return True if ``text`` has a plural, selectordinal or select argument.
 
@@ -34,7 +44,11 @@ def is_icu_choice(text):
 
 
 def parse(text):
-    """Parse an ICU message into a list of strings and ``Argument`` nodes."""
+    """Parse an ICU message into a list of strings, ``Argument`` and ``Choice`` nodes.
+
+    >>> [type(node).__name__ for node in parse("Hi {name}, {n, plural, one {# file} other {# files}}")]
+    ['str', 'Argument', 'str', 'Choice']
+    """
     parser = _Parser(text)
     nodes = parser.message(in_plural=False)
     if parser.pos != len(text):
@@ -75,12 +89,36 @@ class _Parser:
             return Argument(name)
         self.expect(",")
         type_ = self.token()
+        if type_ in ("plural", "selectordinal", "select"):
+            self.expect(",")
+            return self.choice(name, type_, in_plural)
         style = ""
         if self.peek() == ",":
             self.pos += 1
             style = self.style()
         self.expect("}")
         return Argument(name, type_, style)
+
+    def choice(self, name, type_, in_plural):
+        offset = ""
+        self.skip_space()
+        if type_ != "select" and self.text.startswith("offset:", self.pos):
+            self.pos += len("offset:")
+            offset = self.token()
+        cases = {}
+        while self.peek() != "}":
+            key = self.token()
+            if not key:
+                raise ICUSyntaxError(f"case without a key in {name!r}")
+            if key in cases:
+                raise ICUSyntaxError(f"case {key!r} repeated in {name!r}")
+            self.expect("{")
+            cases[key] = self.message(in_plural=in_plural or type_ != "select")
+            self.expect("}")
+        self.pos += 1
+        if "other" not in cases:
+            raise ICUSyntaxError(f"{name!r} has no 'other' case")
+        return Choice(name, type_, cases, offset)
 
     def style(self):
         """Read a style like ``::currency/EUR``, which may hold quoted text but no braces."""

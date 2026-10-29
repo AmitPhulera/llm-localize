@@ -18,6 +18,9 @@ class TestParse:
         assert (text, argument.name) == ("Item #", "n")
 
     @pytest.mark.parametrize("text", [
+        "{n, plural, one {# file}}",                   # no other case
+        "{n, plural, one {# file} one {x} other {y}}",  # repeated case
+        "{n, plural, one {# file} other {# files}",    # unclosed
         "Hi {}",
         "Hi {name",
         "Extra }",
