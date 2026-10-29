@@ -288,6 +288,16 @@ def test_quoted_parts_anywhere_are_android_syntax(tmp_path):
     assert unit.source == "Hello and bye"
 
 
+def test_a_translation_keeps_backslash_escapes(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", r'<resources><string name="p">C:\\t</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+
+    assert android.find_problem(r"Line\nC:\\temp", r"Ligne\nC:\\temp") is None
+    assert android.find_problem(r"C:\\temp", r"C:\temp") == "escapes"
+    assert android.find_problem(r"Line\nBreak", "Ligne saut") == "escapes"
+    assert android.find_problem(r"Don\'t", "N'oubliez pas") is None
+
+
 def test_plural_items_are_quoted_if_any_source_item_is(tmp_path):
     write(tmp_path / "res" / "values" / "strings.xml", '<resources><plurals name="n">'
           '<item quantity="one">" %d note "</item></plurals></resources>')

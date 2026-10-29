@@ -12,6 +12,7 @@ for byte.
 import bisect
 import os
 import re
+from collections import Counter
 from functools import cached_property
 from pathlib import Path
 from xml.parsers import expat
@@ -51,6 +52,8 @@ PREDEFINED_ENTITIES = {"amp": "&", "gt": ">", "quot": '"', "apos": "'"}
 _WHITESPACE_ESCAPE_RE = re.compile(UNESCAPED + r"\\([nt])")
 # Android's \\u0025, after any escaped backslashes
 _UNICODE_ESCAPE_RE = re.compile(UNESCAPED + r"\\u([0-9A-Fa-f]{4})")
+# A backslash, newline or tab escape, like \\ or \n; escaped quotes may differ, as apostrophes do
+ESCAPE_RE = re.compile(r"\\[\\nt]")
 # A reference to another resource, like @string/app_name or ?attr/color, which isn't text
 REFERENCE_RE = re.compile(r"\s*[@?](?:[\w.]+:)?[\w.]+/[\w.]+\s*")
 
@@ -107,6 +110,9 @@ class AndroidFile(MonolingualFile):
             return problem
         if changes_tags(source, translation):
             return "XML tags"
+        # The model sees Android's escapes as written; dropping a backslash would change the text
+        if Counter(ESCAPE_RE.findall(source)) != Counter(ESCAPE_RE.findall(translation)):
+            return "escapes"
         try:
             expat.ParserCreate().Parse(f"<r>{_encode(translation, quoted=False)}</r>", True)
         except expat.ExpatError:
