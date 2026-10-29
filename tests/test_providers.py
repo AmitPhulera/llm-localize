@@ -289,6 +289,20 @@ class TestPostJson:
             self.client().post_json("https://host/x", {}, {})
         assert error.value.status == code
 
+    def test_a_model_the_provider_doesnt_have_says_how_to_pick_another(self, fake_http):
+        fake_http(http_error(404, b'{"error": {"message": "The model `gpt-6-luna` does not exist"}}'))
+
+        with pytest.raises(FatalError, match="has no model 'gpt-6-luna'.*LLM_LOCALIZE_MODEL") as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert "does not exist" in str(error.value)
+
+    def test_a_404_about_something_else_is_left_as_it_is(self, fake_http):
+        fake_http(http_error(404, b'{"error": "no such route"}'))
+
+        with pytest.raises(FatalError) as error:
+            self.client().post_json("https://host/x", {}, {})
+        assert "LLM_LOCALIZE_MODEL" not in str(error.value)
+
     def test_error_responses_are_closed(self, fake_http):
         error = http_error(400)
         fake_http(error)

@@ -229,7 +229,14 @@ class HttpClient(LLMClient):
             with urlopen(request, timeout=self.timeout) as response:
                 return json.load(response)
         except urllib.error.HTTPError as e:
-            raise self.http_error(e) from e
+            error = self.http_error(e)
+            # Each provider answers a model it doesn't have with a 404 whose message names it
+            if error.status == 404 and self.model in str(error).partition(f"{e.url}: ")[2]:
+                raise FatalError(
+                    f"{self.api_base} has no model {self.model!r}, or none this API key can use. Pass one it has "
+                    f"with --model, or set {MODEL_ENV_VAR} (MODEL in Django's LLM_LOCALIZE).\n{error}",
+                    status=404) from e
+            raise error from e
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise TransientError(f"Can't reach {url}: {e}") from e
 
