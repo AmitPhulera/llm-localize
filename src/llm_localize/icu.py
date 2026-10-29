@@ -276,6 +276,53 @@ def _compare(source_nodes, translation_nodes, categories):
     return None
 
 
+def _places(nodes, place):
+    """Return ``{id(choice): place}`` for a message level's choices, ``place`` if it's given, else where each is.
+
+    A place is None in text, and ``("attribute", "")`` in a tag, which
+    attribute not being read yet.
+
+    >>> nodes = parse('<img alt="{n, plural, other {x}}" src="{n, plural, other {y}}"> {m, select, other {z}}')
+    >>> list(_places(nodes, None).values())
+    [('attribute', ''), ('attribute', ''), None]
+    >>> list(_places(parse("Score < {n, plural, other {# points}}"), None).values())
+    [None]
+    """
+    # Without a <, every choice is in text
+    if place is None and not any("<" in node for node in nodes if isinstance(node, str)):
+        return {id(node): None for node in nodes if isinstance(node, Choice)}
+    places, html = {}, None if place is not None else _Html()
+    for node in nodes:
+        if isinstance(node, Choice):
+            places[id(node)] = place if html is None else html.place()
+        if html is not None:
+            # Read as it goes, so each choice's place takes one pass, not a scan of all the text before it
+            html.feed(_render([node]))
+    return places
+
+
+class _Html:
+    """Where in HTML text read so far ends: in text, or inside a tag."""
+
+    def __init__(self):
+        self.state, self.seen = "text", ""
+
+    def feed(self, text):
+        for char in text:
+            self.step(char)
+
+    def step(self, char):
+        state, previous, self.seen = self.state, self.seen, (self.seen + char.lower())[-9:]
+        if state == "text":
+            if previous.endswith("<") and char.isalpha():
+                self.state = "tag"
+        elif char == ">":
+            self.state = "text"
+
+    def place(self):
+        return None if self.state == "text" else ("attribute", "")
+
+
 def _compare_choice(source_choice, translation_choice, categories):
     if source_choice.offset != translation_choice.offset:
         return "ICU arguments"
