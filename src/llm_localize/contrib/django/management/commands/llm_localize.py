@@ -1,7 +1,9 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from llm_localize import cli
 from llm_localize.contrib.django.conf import get_config
+from llm_localize.formats.po import find_po_files
+from llm_localize.providers.base import LLMError
 
 
 class Command(BaseCommand):
@@ -20,3 +22,29 @@ class Command(BaseCommand):
         parser.add_argument('--locale-dirs', nargs='+', default=config['LOCALE_PATHS'],
                             help="Locale directories to look in (default: LOCALE_PATHS, or ./locale)")
         cli.add_translation_arguments(parser, config)
+
+    def handle(self, *args, **options):
+        config = get_config()
+        cli.configure_logging(options['verbosity'], self.stdout, self.stderr)
+        jobs = self._jobs(options, config)
+        if not jobs:
+            raise CommandError("No translation files found")
+        try:
+            results = cli.run(_Options(options), jobs, api_key=config['API_KEY'],
+                              model_params=config['MODEL_PARAMS'])
+        except (LLMError, ValueError, OSError) as e:
+            raise CommandError(cli.error_message(e)) from e
+        failed = sum(result.failed_batches for result in results)
+        if failed:
+            raise CommandError(f"{failed} batches failed; rerun to retry them")
+
+    def _jobs(self, options, config):
+        langs = options['langs']
+        return list(find_po_files(options['locale_dirs'], langs or config['LANGUAGES'], options['domains']))
+
+
+class _Options:
+    """Exposes the command's options dict with the attribute names ``cli.run`` expects."""
+
+    def __init__(self, options):
+        self.__dict__.update(options)

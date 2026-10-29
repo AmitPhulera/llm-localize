@@ -37,7 +37,7 @@ The target language comes from `--lang`, the PO `Language` header, or the `<loca
 
 ## LLM providers
 
-Three API styles are built in, plus a preset for Grok. Each works with the vendor's own API and with any server that copies that API. To use another server, set its base URL with `--api-base` or the env var below.
+Three API styles are built in, plus a preset for Grok. Each works with the vendor's own API and with any server that copies that API. To use another server, set its base URL with `--api-base`, `"API_BASE"` in settings, or the env var below.
 
 | `PROVIDER`  | API               | Default model       | API key env var     | Base URL env var     | Default base URL                            |
 | ----------- | ----------------- | ------------------- | ------------------- | -------------------- | ------------------------------------------- |
@@ -50,7 +50,7 @@ As each vendor's tooling does, an `openai` or `grok` base URL includes the `/v1`
 
 The model is, in order, `--model`, `"MODEL"` in settings, the `LLM_LOCALIZE_MODEL` environment variable, and then the provider's default from the table. The defaults are the current models when a version is released; when a provider retires one, an older version stops with an error naming the model, and setting `LLM_LOCALIZE_MODEL` once (or upgrading) gets it going again.
 
-The API key is read, in order, from `--api-key`, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different `--api-base`, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server.
+The API key is read, in order, from `--api-key`, `"API_KEY"` in settings, the `LLM_LOCALIZE_API_KEY` environment variable (used for every provider), and then the provider's own variable from the table. The provider's own variable is only used for the provider's own API: with a different `--api-base`, pass the key explicitly or set `LLM_LOCALIZE_API_KEY`, so an OpenAI key is never sent to some other server. On a shared machine, prefer the environment variables to `--api-key`, which other users can see in the process list.
 
 The API key is required for the vendor's own API, and optional anywhere else, so local servers work without one:
 
@@ -83,6 +83,25 @@ INSTALLED_APPS = [
     ...,
     "llm_localize.contrib.django",
 ]
+```
+
+```bash
+export OPENAI_API_KEY=...
+./manage.py makemessages -a
+./manage.py llm_localize
+./manage.py compilemessages
+```
+
+Nothing runs on its own: translations change only when you run one of these commands. Commit the updated `.po` files (or the compiled `.mo` files, if you deploy those) like any other change.
+
+### `llm_localize`
+
+With no arguments, `llm_localize` translates `<locale>/LC_MESSAGES/{django,djangojs}.po` under every path in `LOCALE_PATHS`, for every language in `LANGUAGES` except `LANGUAGE_CODE`. Useful options:
+
+```bash
+./manage.py llm_localize --langs fr de               # only some languages
+./manage.py llm_localize --cleanup-only              # only blank broken translations
+./manage.py llm_localize --instructions "Use informal 'tu' in French."
 ```
 
 ### Settings
@@ -165,11 +184,11 @@ locale/fr/LC_MESSAGES/django.po (fr): translated 112 of 130
   cleared 2 broken translations
 ```
 
-- **Rejected** translations failed a check, or were missing from the reply. They stay untranslated and are retried on the next run. Use `-v` to see each one, with its source and the rejected text.
-- **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count. Use `-v` for tracebacks.
+- **Rejected** translations failed a check, or were missing from the reply. They stay untranslated and are retried on the next run. Use `-v` (CLI) or `-v 2` (Django) to see each one, with its source and the rejected text.
+- **Failed batches** got an API error after retries, or a reply that wasn't JSON. Identical errors are listed once, with a count. Use `-v`/`-v 2` for tracebacks.
 - **Cleared** translations were already saved but break the file, e.g. `msgfmt --check` errors. They're blanked so the next run retranslates them. If `msgfmt` still rejects the file for another reason, such as a duplicate message (fix it with `msguniq`), the run stops with its errors.
 
-Progress, warnings and errors go to stderr, and the summary to stdout.
+Progress goes to stdout in Django and stderr in the CLI, and warnings and errors always go to stderr. The CLI prints the summary on stdout.
 
 The command exits with an error if any batch failed or the run was stopped, but not for rejections, which are expected now and then. Every finished batch is saved as it completes, so rerunning only sends what's still missing.
 
@@ -204,11 +223,11 @@ class JsonFile(TranslationFile):
         ...
 ```
 
-Use it with `--format myproject.formats.JsonFile`. Override `find_problem(source, translation)` to change the checks: it returns a short reason, which is counted in the summary, or `None` if the translation is fine, and `cleanup()` to add a format-specific check after translating.
+Use it with `--format myproject.formats.JsonFile`, or `"FORMAT"` in settings. Override `find_problem(source, translation)` to change the checks: it returns a short reason, which is counted in the summary, or `None` if the translation is fine, and `cleanup()` to add a format-specific check after translating.
 
 ## Adding a provider
 
-Most LLM servers copy one of the three built-in APIs, so try `--api-base` first. For anything else, subclass `llm_localize.providers.base.HttpClient` and implement `call_llm(system_prompt, user_message)`, which returns the model's text reply. Use `self.post_json(url, payload, headers)` for the request. It raises `TransientError` for responses worth retrying, `FatalError` for ones that stop the run, and `LLMError` (with the API's message) for anything else. For a non-HTTP backend, subclass `LLMClient` instead and raise those errors yourself. Select your class with `--provider myproject.llm.MyClient`.
+Most LLM servers copy one of the three built-in APIs, so try `--api-base` first. For anything else, subclass `llm_localize.providers.base.HttpClient` and implement `call_llm(system_prompt, user_message)`, which returns the model's text reply. Use `self.post_json(url, payload, headers)` for the request. It raises `TransientError` for responses worth retrying, `FatalError` for ones that stop the run, and `LLMError` (with the API's message) for anything else. For a non-HTTP backend, subclass `LLMClient` instead and raise those errors yourself. Select your class with `--provider myproject.llm.MyClient` or `"PROVIDER"` in settings.
 
 ## Privacy and cost
 
