@@ -8,7 +8,7 @@ from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
-from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, tag_end
+from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, open_tag, tag_end
 
 # A CDATA section, whose & needn't be escaped, or a tag
 CDATA_OR_TAG_RE = re.compile(r"(<!\[CDATA\[.*?\]\]>|<[^>]*>)", re.S)
@@ -56,9 +56,12 @@ class AndroidFile(MonolingualFile):
         source = _read(self.source_path)
         target = _read(self.path)
         if not target.data:
-            target = _Resources((NEW_FILE + source.root_start_tag + "\n</resources>\n").encode())
+            # A source with no strings may be <resources/>, which the new file opens
+            root = source.root_start_tag
+            root = open_tag(root)
+            target = _Resources((NEW_FILE + root + "\n</resources>\n").encode())
             target.root_start = len(NEW_FILE)
-            target.root_tag_end = target.root_start + len(source.root_start_tag.encode())
+            target.root_tag_end = target.root_start + len(root.encode())
             target.root_end = target.data.rindex(b"</resources>")
         data = target.data
         indent = source.indent

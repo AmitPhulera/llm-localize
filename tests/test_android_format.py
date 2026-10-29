@@ -99,6 +99,16 @@ class TestTranslating:
         assert capsys.readouterr().out == f"{path} (de): translated 5 of 5\n"
 
 
+def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", "<resources/>")
+    target = tmp_path / "res" / "values-fr" / "strings.xml"
+
+    open_file(target).save()
+
+    assert target.read_text(encoding="utf-8") == ('<?xml version="1.0" encoding="utf-8"?>\n'
+                                                  '<resources>\n</resources>\n')
+
+
 def test_nested_markup_takes_linear_time(tmp_path):
     depth = 100000
     write(tmp_path / "res" / "values" / "strings.xml",
