@@ -104,11 +104,14 @@ class TestTranslating:
         result = translate(path)
 
         assert result.translated == 4
+        # The source's numbers and other values are copied
         assert read(path) == {
             "home": {"title": "T: Welcome", "greeting": "T: Hi {{name}}"},
             "items_one": "T: {{count}} items",
             "items_many": "T: {{count}} items",
             "items_other": "T: {{count}} items",
+            "count": 3,
+            "tags": ["a", "b"],
             "show_other": "T: Show other",
         }
         assert path.read_text().startswith('{\n  "home": {\n    "title"')

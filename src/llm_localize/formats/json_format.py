@@ -4,11 +4,15 @@ Keys may nest: ``{"home": {"title": "Welcome"}}``. Plurals are read in
 i18next's style, a key per CLDR category (``items_one``, ``items_other``),
 and ICU messages like ``{count, plural, one {# item} other {# items}}``
 are checked with the ICU rules.
+
+Other values, like numbers, aren't translated, and a new target gets
+the source's.
 """
 import json
 import os
 import re
 from collections import Counter
+from copy import deepcopy as copy_of
 from functools import cached_property
 
 from llm_localize import icu
@@ -84,7 +88,8 @@ class JsonFile(MonolingualFile):
 
     @cached_property
     def document(self):
-        return _load(self.path)
+        """The target's JSON; a new one starts with the source's numbers and other values that aren't text."""
+        return _load(self.path) or _without_strings(self.source_document)
 
     def find_problem(self, source, translation):
         if Counter(NESTING_RE.findall(source)) != Counter(NESTING_RE.findall(translation)):
@@ -122,6 +127,23 @@ def _load(path):
     if not isinstance(document, dict):
         raise ValueError(f"{path} must hold a JSON object of messages")
     return document
+
+
+def _without_strings(document):
+    """Return a copy of nested objects without the text to translate, or objects left with nothing.
+
+    >>> _without_strings({"a": "Hi", "c": {"d": "Bye", "e": 3}, "f": {"g": "Go"}, "h": [1, 2]})
+    {'c': {'e': 3}, 'h': [1, 2]}
+    """
+    copy = {}
+    for name, value in document.items():
+        if isinstance(value, dict):
+            value = _without_strings(value)
+            if value:
+                copy[name] = value
+        elif not isinstance(value, str):
+            copy[name] = copy_of(value)
+    return copy
 
 
 def _strings(document, path=()):
