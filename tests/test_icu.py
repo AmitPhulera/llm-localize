@@ -24,6 +24,7 @@ class TestParse:
         "Hi {}",
         "Hi {name",
         "Extra }",
+        "{n, plural, other {" * 21 + "x" + "}}" * 21,  # nested deeper than any message is
     ])
     def test_syntax_errors(self, text):
         with pytest.raises(ICUSyntaxError):

@@ -8,6 +8,8 @@ import re
 
 # An argument that chooses between cases, e.g. "{count, plural," or "{g, select,"
 CHOICE_RE = re.compile(r"\{\s*[^{},\s]+\s*,\s*(?:plural|select|selectordinal)\s*,")
+# Deeper than any real message, and shallow enough that parsing and checking stay within Python's recursion limit
+MAX_DEPTH = 20
 
 
 class ICUSyntaxError(ValueError):
@@ -60,6 +62,7 @@ class _Parser:
     def __init__(self, text):
         self.text = text
         self.pos = 0
+        self.depth = 0  # how many choices the parser is inside
 
     def message(self, in_plural):
         nodes, buffer = [], []
@@ -100,6 +103,9 @@ class _Parser:
         return Argument(name, type_, style)
 
     def choice(self, name, type_, in_plural):
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            raise ICUSyntaxError(f"choices nested more than {MAX_DEPTH} deep")
         offset = ""
         self.skip_space()
         if type_ != "select" and self.text.startswith("offset:", self.pos):
@@ -118,6 +124,7 @@ class _Parser:
         self.pos += 1
         if "other" not in cases:
             raise ICUSyntaxError(f"{name!r} has no 'other' case")
+        self.depth -= 1
         return Choice(name, type_, cases, offset)
 
     def style(self):
