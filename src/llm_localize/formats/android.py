@@ -37,6 +37,8 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+# A reference to an entity a DOCTYPE declares, not one of XML's own like &amp;
+ENTITY_REFERENCE_RE = re.compile(r"&(?!(?:amp|lt|gt|quot|apos);)([A-Za-z_][\w.-]*);")
 # An xliff:g placeholder's start or end tag; only real ones, not escaped ones, which are markup
 XLIFF_G_RE = re.compile(r"</?xliff:g\b[^<>]*>")
 # XML's own entities, like &lt;
@@ -60,6 +62,8 @@ ESCAPE_RE = re.compile(r"\\[\\nt]")
 REFERENCE_RE = re.compile(r"\s*[@?](?:[\w.]+:)?[\w.]+/[\w.]+\s*")
 
 NEW_FILE = '<?xml version="1.0" encoding="utf-8"?>\n'
+# A DOCTYPE declaration, with entities like <!ENTITY appname "Notes"> that strings use as &appname;
+DOCTYPE_RE = re.compile(rb"<!DOCTYPE\s[^\[>]*(?:\[.*?\]\s*)?>", re.S)
 
 
 class AndroidFile(MonolingualFile):
@@ -115,14 +119,23 @@ class AndroidFile(MonolingualFile):
             return problem
         if changes_tags(source, translation):
             return "XML tags"
+        # An entity the DOCTYPE declares may stand for markup or a placeholder, so each stays as it is
+        if Counter(ENTITY_REFERENCE_RE.findall(source)) != Counter(ENTITY_REFERENCE_RE.findall(translation)):
+            return "entities"
         # The model sees Android's escapes as written; dropping a backslash would change the text
         if Counter(ESCAPE_RE.findall(source)) != Counter(ESCAPE_RE.findall(translation)):
             return "escapes"
+        # Parsed under the source's DOCTYPE, so entities it declares, like &appname;, are known
+        text = _encode(translation, quoted=False)
         try:
-            expat.ParserCreate().Parse(f"<r>{_encode(translation, quoted=False)}</r>", True)
+            expat.ParserCreate().Parse(f"{self._source_doctype}<resources>{text}</resources>", True)
         except expat.ExpatError:
             return "XML"
         return None
+
+    @cached_property
+    def _source_doctype(self):
+        return _read(self.source_path).doctype.decode()
 
     @cached_property
     def _applied(self):
@@ -136,11 +149,13 @@ class AndroidFile(MonolingualFile):
         source = _read(self.source_path)
         target = _read(self.path)
         if not target.data:
+            # With the source's DOCTYPE, for the entities its strings use
+            head = NEW_FILE + (source.doctype.decode() + "\n" if source.doctype else "")
             # A source with no strings may be <resources/>, which the new file opens
             root = source.root_start_tag
             root = open_tag(root)
-            target = _Resources((NEW_FILE + root + "\n</resources>\n").encode())
-            target.root_start = len(NEW_FILE)
+            target = _Resources((head + root + "\n</resources>\n").encode())
+            target.root_start = len(head.encode())
             target.root_tag_end = target.root_start + len(root.encode())
             target.root_end = target.data.rindex(b"</resources>")
         data = target.data
@@ -338,6 +353,8 @@ class _Resources:
         self.root_start = self.root_tag_end = self.root_end = 0
         self.elements = {}
         self.indent = "    "
+        match = DOCTYPE_RE.search(data)
+        self.doctype = match.group() if match else b""
 
 
 def _read(path):

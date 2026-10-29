@@ -219,6 +219,20 @@ class TestTranslating:
         assert android_file.find_problem("A or B", "A < B") == "XML"
         assert android_file.find_problem("Tap <b>Save</b>", "Touchez <B>Enregistrer</B>") == "XML tags"
 
+    def test_entities_the_source_declares(self, tmp_path):
+        doctype = '<!DOCTYPE resources [\n    <!ENTITY appname "Notes">\n]>'
+        write(tmp_path / "res" / "values" / "strings.xml",
+              f'<?xml version="1.0" encoding="utf-8"?>\n{doctype}\n'
+              '<resources>\n    <string name="welcome">Welcome to &appname;</string>\n</resources>\n')
+        target = tmp_path / "res" / "values-fr" / "strings.xml"
+
+        translate_file(open_file(target), ScriptedClient([{"0": "Bienvenue dans &appname;"}]), "fr")
+
+        assert open_file(target).find_problem("Welcome to &appname;", "Bienvenue dans &unknown;") == "entities"
+        assert target.read_text(encoding="utf-8") == (
+            f'<?xml version="1.0" encoding="utf-8"?>\n{doctype}\n<resources>\n'
+            '    <string name="welcome">Bienvenue dans &appname;</string>\n</resources>\n')
+
     def test_invalid_target(self, res):
         write(res / "values-fr" / "strings.xml", "<resources><string>")
 
@@ -335,6 +349,15 @@ def test_text_in_cdata_is_translated_and_its_markup_kept(tmp_path):
 
     assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b>Bonjour</b>]]>") is None
     assert android.find_problem("<![CDATA[<b>Hello</b>]]>", "<![CDATA[<b onclick=x()>Bonjour</b>]]>") is not None
+
+
+def test_entities_and_unicode_escapes_are_checked(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<!DOCTYPE resources [<!ENTITY br "<br/>">]>'
+          '<resources><string name="a">Hello</string></resources>')
+    android = open_file(tmp_path / "res" / "values-fr" / "strings.xml")
+
+    assert android.find_problem("Hello", "Bonjour &br;") == "entities"
+    assert android.find_problem(r"Hello %s", "Bonjour") == "placeholders"
 
 
 def test_markup_escaped_for_html_from_html_is_checked(tmp_path):
