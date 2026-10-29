@@ -1,6 +1,8 @@
 """Django's ``makemessages``, optionally followed by ``llm_localize`` on the files it just updated.
 
-Opt in with ``--translate``.
+Opt in for one run with ``--translate``, or for the project with
+``LLM_LOCALIZE = {"AFTER_MAKEMESSAGES": True}`` (then ``--no-translate``
+skips it once).
 
 Translates the same locales (``--locale``, otherwise the configured
 languages), the same ``--domain`` and every locale directory
@@ -21,13 +23,16 @@ class Command(makemessages.Command):
         super().add_arguments(parser)
         parser.add_argument(
             '--translate', action=argparse.BooleanOptionalAction, default=None,
-            help="Translate untranslated messages with an LLM afterwards",
+            help="Translate untranslated messages with an LLM afterwards "
+                 "(default: LLM_LOCALIZE['AFTER_MAKEMESSAGES'], which is off)",
         )
 
     def handle(self, *args, **options):
         super().handle(*args, **options)
         config = get_config()
         translate = options['translate']
+        if translate is None:
+            translate = config['AFTER_MAKEMESSAGES']
         if not translate:
             return
 

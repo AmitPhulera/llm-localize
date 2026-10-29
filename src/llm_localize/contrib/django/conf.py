@@ -16,6 +16,7 @@ Every key is optional::
         "BATCH_SIZE": 50,
         "WORKERS": 10,
         "EXTRA_INSTRUCTIONS": "",      # e.g. "Use gender-neutral language."
+        "AFTER_MAKEMESSAGES": False,   # also run after ./manage.py makemessages
     }
 """
 from pathlib import Path
@@ -33,6 +34,7 @@ def get_config():
         'LANGUAGES': None,
         'LOCALE_PATHS': None,
         'DOMAINS': ['django', 'djangojs'],
+        'AFTER_MAKEMESSAGES': False,
         **getattr(settings, 'LLM_LOCALIZE', {}),
     }
     if not config['SOURCE_LANGUAGE']:
@@ -45,3 +47,4 @@ def get_config():
     if config['LOCALE_PATHS'] is None:
         config['LOCALE_PATHS'] = list(settings.LOCALE_PATHS) or [Path('locale')]
     return config
+

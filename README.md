@@ -110,6 +110,8 @@ This runs Django's `makemessages` unchanged, then `llm_localize` on exactly what
 
 If translation fails, the command exits with an error, but the extracted catalogs are already written, and rerunning translates what's left.
 
+It's off by default because `makemessages` often runs in pre-commit hooks and CI checks, where paid, network-dependent and non-deterministic output is unwelcome. To always translate, set `"AFTER_MAKEMESSAGES": True` in `LLM_LOCALIZE`; `--no-translate` then skips it for one run.
+
 The app provides `makemessages` by overriding Django's command. Django uses the first installed app that defines a command, so if another app in `INSTALLED_APPS` also overrides `makemessages`, list `llm_localize.contrib.django` before it.
 
 ### `llm_localize`
@@ -142,6 +144,7 @@ LLM_LOCALIZE = {
     "BATCH_SIZE": 50,              # messages per LLM request
     "WORKERS": 10,                 # LLM requests in flight at once
     "EXTRA_INSTRUCTIONS": "",      # e.g. "Use gender-neutral language."
+    "AFTER_MAKEMESSAGES": False,   # also run after ./manage.py makemessages
 }
 ```
 

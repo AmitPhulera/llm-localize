@@ -27,6 +27,42 @@ def test_overrides_django_command():
     assert get_commands()["makemessages"] == "llm_localize.contrib.django"
 
 
+def test_translates_after_makemessages(project):
+    makemessages("-l", "es", "-l", "fr")
+
+    assert msgstr(project / "locale", "es") == msgstr(project / "locale", "fr") == "T: Hello"
+
+
+def test_uses_configured_languages_with_all(project):
+    (project / "locale" / "es").mkdir()
+
+    makemessages("--all")
+
+    assert msgstr(project / "locale", "es") == "T: Hello"
+
+
+def test_locale_names_with_suffixes(project):
+    makemessages("-l", "nl_NL-x-informal")
+
+    assert msgstr(project / "locale", "nl_NL-x-informal") == "T: Hello"
+
+
+def test_app_locale_dirs(project):
+    app = project / "myapp"
+    (app / "locale").mkdir(parents=True)
+    (app / "models.py").write_text(SOURCE)
+
+    makemessages("-l", "es")
+
+    assert msgstr(app / "locale", "es") == "T: Hello"
+
+
+def test_no_translate_flag(project):
+    makemessages("-l", "es", "--no-translate")
+
+    assert msgstr(project / "locale", "es") == ""
+
+
 def test_off_by_default_and_flag_turns_it_on(project, settings):
     settings.LLM_LOCALIZE = {"PROVIDER": "tests.fakes.FakeClient", "API_KEY": "k"}
 
