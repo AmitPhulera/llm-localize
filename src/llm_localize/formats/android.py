@@ -87,3 +87,23 @@ def _encode(text, quoted):
 def _escape_quotes(text, quoted):
     text = UNESCAPED_QUOTE_RE.sub(r'\1\\"', text)
     return text if quoted else UNESCAPED_APOSTROPHE_RE.sub(r"\1\\'", text)
+
+
+class _Element:
+    def __init__(self, tag, name, start, start_tag, comment, translatable=True):
+        self.tag, self.name, self.start, self.start_tag, self.comment = tag, name, start, start_tag, comment
+        self.translatable = translatable
+        self.raw = ""
+        self.items = {}
+        self.end = start
+
+
+class _Resources:
+    """A parsed resources file: its bytes, root tag, translatable elements by key, and where to add more."""
+
+    def __init__(self, data=b""):
+        self.data = data
+        self.root_start_tag = '<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">'
+        self.root_start = self.root_tag_end = self.root_end = 0
+        self.elements = {}
+        self.indent = "    "
