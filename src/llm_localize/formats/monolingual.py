@@ -1,6 +1,63 @@
-"""Helpers for formats that keep each language's messages in a file of its own."""
+"""Base class for formats that keep each language's messages in a file of its own.
+
+JSON, Android and iOS projects write the source language in one file,
+like ``locales/en.json``, and each translation in another, like
+``locales/fr.json``. Translating ``fr.json`` reads the messages from
+``en.json`` and fills in those ``fr.json`` lacks, creating it if needed.
+"""
+import abc
+from dataclasses import dataclass
+from functools import cached_property
+
+from llm_localize.formats.base import TranslationFile
 from llm_localize.languages import LANGUAGE_NAMES
 from llm_localize.plurals import has_rules
+
+
+@dataclass
+class Message:
+    """A message in one language's file.
+
+    :param text: the text, for a message without plurals
+    :param context: a comment or key that helps translate it
+    """
+
+    text: str = ""
+    context: str = ""
+
+
+class MonolingualFile(TranslationFile):
+    """A target-language file, translated from the source-language file beside it.
+
+    Subclasses read a file into ``{key: Message}`` with ``read_messages``,
+    and implement ``apply`` and ``save`` to write the target file.
+    """
+
+    def __init__(self, path, language=None, source_language="en", source_path=None):
+        super().__init__(path)
+        self._language = language
+        self.source_language = source_language or "en"
+        self._source_path = source_path
+
+    @classmethod
+    def open(cls, path, language=None, source_language=None, source_path=None):
+        return cls(path, language=language, source_language=source_language, source_path=source_path)
+
+    @abc.abstractmethod
+    def read_messages(self, path):
+        """Return ``{key: Message}`` for the file at ``path``, in file order; ``{}`` if it doesn't exist."""
+
+    @cached_property
+    def language(self):
+        return self._language
+
+    @cached_property
+    def source_path(self):
+        if self._source_path:
+            return str(self._source_path)
+        raise ValueError(
+            f"Can't find the {self.source_language} file to translate {self.path} from; "
+            "pass it with --source")
 
 
 def _is_language_code(token, known=True):
