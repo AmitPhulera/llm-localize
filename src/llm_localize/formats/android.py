@@ -57,7 +57,7 @@ class AndroidFile(MonolingualFile):
         """
         messages = {}
         for key, element in _read(path).elements.items():
-            context = f"Key: {element.name}"
+            context = f"Key: {element.name}" + (f". Comment: {element.comment}" if element.comment else "")
             if element.tag == "plurals":
                 plurals = {quantity: _decode(raw)[0] for quantity, raw in element.items.items()}
                 messages[key] = Message(plurals=plurals, context=context, translatable=element.translatable)
@@ -224,6 +224,7 @@ def _read(path):
     resources = _Resources(data)
     parser = expat.ParserCreate("utf-8")
     stack = []
+    pending_comment = []
 
     def start(tag, attrs):
         start_index = parser.CurrentByteIndex
@@ -240,11 +241,14 @@ def _read(path):
             resources.root_start, resources.root_tag_end = start_index, inner_start
         elif len(stack) == 1 and tag in ("string", "plurals"):
             # Strings marked translatable="false" are kept too: in a target they mustn't be added again
+            comment = pending_comment.pop() if pending_comment else ""
             element = _Element(tag, attrs.get("name", ""), start_index, data[start_index:inner_start].decode(),
-                               "", translatable=attrs.get("translatable") != "false")
+                               comment, translatable=attrs.get("translatable") != "false")
             if not resources.elements and line_indent(data, start_index):
                 resources.indent = line_indent(data, start_index).decode()
             resources.elements[f"{tag}/{element.name}"] = element
+        if len(stack) == 1:
+            pending_comment.clear()
         stack.append((tag, attrs, inner_start))
 
     def end(tag):
@@ -268,8 +272,13 @@ def _read(path):
             if element:
                 element.items[attrs.get("quantity", "other")] = raw
 
+    def comment(text):
+        if len(stack) == 1:
+            pending_comment[:] = [" ".join(text.split())]
+
     parser.StartElementHandler = start
     parser.EndElementHandler = end
+    parser.CommentHandler = comment
     parser.Parse(data, True)
     # Only elements that were read in full count; resources without a name can't be matched
     resources.elements = {key: element for key, element in resources.elements.items() if element.name}

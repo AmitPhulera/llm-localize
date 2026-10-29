@@ -10,6 +10,7 @@ from .fakes import FakeClient, ScriptedClient
 
 SOURCE = r'''<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2" xmlns:tools="http://schemas.android.com/tools">
+    <!-- Shown on the home screen -->
     <string name="app_name">Notes</string>
     <string name="welcome">Don\'t forget, %1$s!</string>
     <string name="api_key" translatable="false">abc123</string>
@@ -66,7 +67,7 @@ class TestTranslating:
 
         assert list(units) == [
             "string/app_name", "string/welcome", "string/bold", "string/count", "plurals/notes", "string/quoted"]
-        assert units["string/app_name"].context == "Key: app_name"
+        assert units["string/app_name"].context == "Key: app_name. Comment: Shown on the home screen"
         assert units["string/welcome"].source == "Don't forget, %1$s!"
         assert units["string/bold"].source == "Tap <b>Save</b> &amp; go"
         assert units["string/quoted"].source == "  It's spaced  "

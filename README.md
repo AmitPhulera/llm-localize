@@ -82,7 +82,7 @@ llm-localize app/src/main/res/values-{fr,de,pt-rBR}/strings.xml
 
 The language comes from the `values-` directory's qualifiers (`values-fr`, `values-pt-rBR`, `values-b+sr+Latn`), and the source is the `values` directory with the same other qualifiers (`values-fr-land` translates `values-land`).
 
-- `<string>` and `<plurals>` are translated, each with its name as context. Strings marked `translatable="false"` and references like `@string/app_name` are skipped, and `<string-array>` is left alone.
+- `<string>` and `<plurals>` are translated, each with its name and any comment just above it as context. Strings marked `translatable="false"` and references like `@string/app_name` are skipped, and `<string-array>` is left alone.
 - The model sees apostrophes and quotes unescaped, and they are escaped again when saved (`\'`, `\"`, a leading `\@`), as are bare `&`. Inline tags like `<b>` and `<xliff:g>` must be kept.
 - New translations are added before `</resources>`, and empty elements are filled in place. Everything else in the file stays byte for byte, comments included. A new file gets the source's `<resources>` tag, with its namespaces.
 
