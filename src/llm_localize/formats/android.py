@@ -30,7 +30,7 @@ class AndroidFile(MonolingualFile):
         return match[1] if match else None
 
     def source_path_candidates(self):
-        match = _values_dir(self.path)
+        match = _values_dir(self.path, self._language)
         if match:
             part_index, _, other_qualifiers = match
             parts = list(Path(self.path).parts)
@@ -80,14 +80,17 @@ class AndroidFile(MonolingualFile):
         write_file(self.path, splice(data, replacements))
 
 
-def _values_dir(path):
+def _values_dir(path, language=None):
     """Return ``(part index, language, other qualifiers)`` for the ``values-`` directory naming a language.
+
+    A language the tables don't list, like rw, counts when it is ``language``.
 
     >>> _values_dir("res/values-pt-rBR/strings.xml"), _values_dir("res/values-b+sr+Latn-land/strings.xml")
     ((1, 'pt-BR', []), (1, 'sr-Latn', ['land']))
-    >>> _values_dir("res/values-night/strings.xml") is None
-    True
+    >>> _values_dir("res/values-night/strings.xml") is None, _values_dir("res/values-rw/strings.xml", "rw")
+    (True, (1, 'rw', []))
     """
+    given = language.lower().replace("_", "-").split("-")[0] if language else None
     parts = Path(path).parts
     for part_index in reversed(range(len(parts))):
         qualifiers = parts[part_index].split("-")
@@ -96,7 +99,7 @@ def _values_dir(path):
         for index, qualifier in enumerate(qualifiers[1:], start=1):
             if qualifier.startswith("b+"):
                 return part_index, "-".join(qualifier[2:].split("+")), qualifiers[1:index] + qualifiers[index + 1:]
-            if qualifier.islower() and _is_language_code(qualifier):
+            if qualifier.islower() and (_is_language_code(qualifier) or qualifier == given):
                 language, end = qualifier, index + 1
                 if end < len(qualifiers) and re.fullmatch(r"r[A-Z]{2}", qualifiers[end]):
                     language, end = f"{qualifier}-{qualifiers[end][1:]}", end + 1

@@ -109,6 +109,14 @@ class TestTranslating:
         assert capsys.readouterr().out == f"{path} (de): translated 5 of 5\n"
 
 
+def test_source_found_for_a_language_the_tables_dont_list(tmp_path):
+    write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hi</string></resources>')
+
+    android = open_file(tmp_path / "res" / "values-rw" / "strings.xml", language="rw")
+
+    assert android.source_path == str(tmp_path / "res" / "values" / "strings.xml")
+
+
 def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
     write(tmp_path / "res" / "values" / "strings.xml", "<resources/>")
     target = tmp_path / "res" / "values-fr" / "strings.xml"
