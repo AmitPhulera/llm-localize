@@ -19,6 +19,7 @@ from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
 from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, open_tag, tag_end
 
+NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
 # A CDATA section, whose & needn't be escaped, or a tag
 CDATA_OR_TAG_RE = re.compile(r"(<!\[CDATA\[.*?\]\]>|<[^>]*>)", re.S)
 # Not escaped: after no backslash, or after escaped ones, whose run is kept as group 1, as in "C:\\"
@@ -90,7 +91,8 @@ class AndroidFile(MonolingualFile):
             target.root_tag_end = target.root_start + len(root.encode())
             target.root_end = target.data.rindex(b"</resources>")
         data = target.data
-        indent = source.indent
+        # Match the target's indentation, or the source's for a new file
+        indent = target.indent if target.elements else source.indent
         replacements, additions = [], []
         for key, translation in self._applied.items():
             # An element the target has keeps its own start tag, and attributes like formatted="false"
@@ -102,8 +104,30 @@ class AndroidFile(MonolingualFile):
                 replacements.append((target.elements[key].start, target.elements[key].end, text))
             else:
                 additions.append(indent.encode() + text + b"\n")
+        # The source's namespaces, like xmlns:xliff, that the new elements use
+        written = b"".join(text for _, _, text in replacements) + b"".join(additions)
+        root_tag = _with_namespaces(data[target.root_start:target.root_tag_end].decode(), source.root_start_tag,
+                                    written.decode())
         replacements.append((target.root_end, target.root_end, b"".join(additions)))
+        replacements.append((target.root_start, target.root_tag_end, root_tag.encode()))
         write_file(self.path, splice(data, replacements))
+
+
+def _with_namespaces(root_tag, source_root_tag, text):
+    """Return ``root_tag`` with the source's namespace declarations that ``text`` uses and it lacks.
+
+    >>> _with_namespaces("<resources>", '<resources xmlns:xliff="urn:x" xmlns:t="urn:t">', '<xliff:g id="n"/>')
+    '<resources xmlns:xliff="urn:x">'
+    >>> _with_namespaces('<resources xmlns:xliff="urn:x"/>', '<resources xmlns:xliff="urn:x">', "<xliff:g/>")
+    '<resources xmlns:xliff="urn:x"/>'
+    """
+    declared = {name for name, _ in NAMESPACE_RE.findall(root_tag)}
+    missing = [f" {match.group().strip()}" for match in NAMESPACE_RE.finditer(source_root_tag)
+               if match.group(1) not in declared and re.search(rf"[<\s/]{re.escape(match.group(1))}:", text)]
+    if not missing:
+        return root_tag
+    end = len(root_tag) - (2 if root_tag.endswith("/>") else 1)
+    return root_tag[:end].rstrip() + "".join(missing) + root_tag[end:]
 
 
 def _values_dir(path, language=None):

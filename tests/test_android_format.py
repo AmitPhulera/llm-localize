@@ -1,4 +1,5 @@
 import time
+from xml.parsers import expat
 
 import pytest
 
@@ -96,6 +97,35 @@ class TestTranslating:
 </resources>
 '''
         assert open_file(path).untranslated_units() == []
+
+    def test_keeps_an_existing_file_and_fills_it_in(self, res):
+        existing = '''<?xml version="1.0" encoding="utf-8"?>
+<!-- Translated by hand -->
+<resources>
+  <string name="app_name"></string>
+  <string name="welcome">N\\'oublie pas, %1$s !</string>
+  <string name="bold"/>
+  <string name="old">Gardé</string>
+</resources>
+'''
+        path = write(res / "values-fr" / "strings.xml", existing)
+
+        translate_file(open_file(path), FakeClient(), "fr")
+
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith('''<?xml version="1.0" encoding="utf-8"?>
+<!-- Translated by hand -->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+  <string name="app_name">T: Notes</string>
+  <string name="welcome">N\\'oublie pas, %1$s !</string>
+  <string name="bold">T: Tap <b>Save</b> &amp; go</string>
+  <string name="old">Gardé</string>
+  <string name="count">''')
+        quoted = '<string name="quoted">"T:   It\'s spaced  "</string>'
+        assert text.endswith(f"</plurals>\n  {quoted}\n</resources>\n")
+        assert '\n  <plurals name="notes">\n    <item quantity="one">' in text
+        # With namespaces checked, so a prefix like xliff: must be declared
+        expat.ParserCreate(namespace_separator=" ").Parse(text.encode(), True)
 
     @pytest.mark.parametrize("tag", ["string", "plurals"])
     def test_strings_the_target_marks_untranslatable_are_left_alone(self, res, tag):
