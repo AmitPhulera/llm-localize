@@ -63,7 +63,18 @@ class TestFindProblem:
         # Exact cases may be negative or decimal
         ("{n, plural, =-1 {minus one} =1.5 {one and a half} other {# files}}",
          "{n, plural, =-1 {минус один} =1.5 {полтора} one {#} few {#} many {#} other {# файла}}"),
+        # Text outside a plural may keep its #
+        ("Order #{id}: {n, plural, one {# item} other {# items}}",
+         "Заказ #{id}: {n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}"),
         ("Hi <b>{name}</b>", "Привет <b>{name}</b>"),
+        # A case may add the number: Russian "one" covers 21 and 31 too
+        ("{n, plural, one {one file} other {# files}}",
+         "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}"),
+        # A quoted '#' is text, not the number
+        ("{n, plural, one {'#'1 file} other {'#'1 files}}",
+         "{n, plural, one {'#'1 файл} few {'#'1 файла} many {'#'1 файлов} other {'#'1 файла}}"),
+        ("{n, plural, one {<b>#</b> file} other {<b>#</b> files}}",
+         "{n, plural, one {<b>#</b> файл} few {<b>#</b> файла} many {<b>#</b> файлов} other {<b>#</b>}}"),
     ])
     def test_valid(self, source, translation):
         assert find_problem(source, translation, RUSSIAN) is None
@@ -90,6 +101,19 @@ class TestFindProblem:
          "ICU arguments"),
         ("{g, select, male {He} other {They}} said {g, select, male {his} other {their}}",
          "{g, select, bogus {Il} other {Ils}} a dit {g, select, male {son} other {leur}}", "ICU select cases"),
+        # A case that shows the number can't drop it
+        (FILES, "{count, plural, one {файл} few {файла} many {файлов} other {файла}}", "ICU arguments"),
+        # Outside a plural, # isn't the number, so a translation can't add one
+        ("{g, select, male {He} other {They}} replied", "{g, select, male {# Он} other {Они}} ответили",
+         "ICU arguments"),
+        ("{g, select, male {He} other {They}} has {n, plural, one {a file} other {# files}}",
+         "{g, select, male {Он} other {Они}} # {n, plural, one {# файл} few {# файла} many {# файлов} other {#}}",
+         "ICU arguments"),
+        ("{n, plural, one {'#'1 file} other {'#'1 files}}",
+         "{n, plural, one {'#'1 '#'файл} few {'#'1 файла} many {'#'1 файлов} other {'#'1 файла}}",
+         "ICU arguments"),
+        ("{n, plural, other {{g, select, male {# his} other {# their}}}}",
+         "{n, plural, one {{g, select, male {его} other {их}}} few {#} many {#} other {#}}", "ICU arguments"),
     ])
     def test_invalid(self, source, translation, reason):
         assert find_problem(source, translation, RUSSIAN) == reason

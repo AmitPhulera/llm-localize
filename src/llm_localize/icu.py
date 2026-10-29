@@ -254,6 +254,9 @@ def _compare(source_nodes, translation_nodes, categories):
     problem = find_text_problem(_render(source_nodes), _render(translation_nodes))
     if problem:
         return "ICU arguments" if problem == "placeholders" else problem
+    # Only a plural shows the number with #; anywhere else a # the translation adds is printed as is
+    if _text_hashes(translation_nodes) > _text_hashes(source_nodes):
+        return "ICU arguments"
     # The same argument may choose more than once; pair each use with the translation's use in the same position
     for name, choices in source_choices.items():
         for source_choice, translation_choice in zip(choices, translation_choices[name], strict=True):
@@ -272,6 +275,13 @@ def _compare_choice(source_choice, translation_choice, categories):
         return problem
     for key, translation_case in translation_choice.cases.items():
         source_case = source_choice.cases.get(key, source_choice.cases["other"])
+        # A case that shows the number must keep showing it (adding it is fine: Russian "one" covers 21
+        # too). Cases the translation adds that state their number (=0) or that its language never
+        # uses needn't show it.
+        shown = key in source_choice.cases or (not key.startswith("=") and key in (language_categories or [key]))
+        if (source_choice.type != "select" and shown and _shows_number(source_case)
+                and not _shows_number(translation_case)):
+            return "ICU arguments"
         problem = _compare(source_case, translation_case, categories)
         if problem:
             return problem
@@ -285,6 +295,20 @@ def _choices(nodes):
         if isinstance(node, Choice):
             choices.setdefault(node.name, []).append(node)
     return choices
+
+
+def _shows_number(nodes):
+    """True if a plural case has a ``#``, directly or in a select inside it, but not in a nested plural."""
+    return any(
+        node is NUMBER or (isinstance(node, Choice) and node.type == "select"
+                           and any(_shows_number(case) for case in node.cases.values()))
+        for node in nodes
+    )
+
+
+def _text_hashes(nodes):
+    """Count the ``#`` characters in a message level's text, which are printed as ``#``."""
+    return sum(node.count("#") for node in nodes if isinstance(node, str))
 
 
 def _case_keys_problem(source_choice, translation_choice, language_categories):
