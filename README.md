@@ -270,3 +270,4 @@ uv sync --group dev   # to put them back
 ## License
 
 MIT, see [LICENSE](LICENSE). The table of language names from Django is under the BSD 3-Clause license, in [licenses/Django-LICENSE.txt](licenses/Django-LICENSE.txt).
+Data from the Unicode CLDR, like plural rules, is under the Unicode License v3, in [licenses/Unicode-LICENSE.txt](licenses/Unicode-LICENSE.txt).

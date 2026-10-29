@@ -8,7 +8,7 @@ name = "llm-localize"
 dynamic = ["version"]
 description = "Translate gettext PO files, and other i18n formats, with LLMs, with validation that keeps placeholders, markup and plurals intact. Works standalone or as a Django app."
 readme = "README.md"
-license = "MIT AND BSD-3-Clause"
+license = "MIT AND BSD-3-Clause AND Unicode-3.0"
 license-files = ["LICENSE", "licenses/*"]
 authors = [{ name = "Amit Phulera" }]
 requires-python = ">=3.10"
