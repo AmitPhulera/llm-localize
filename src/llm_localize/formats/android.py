@@ -41,7 +41,11 @@ class AndroidFile(MonolingualFile):
         messages = {}
         for key, element in _read(path).elements.items():
             context = f"Key: {element.name}"
-            messages[key] = Message(text=_decode(element.raw)[0], context=context)
+            if element.tag == "plurals":
+                plurals = {quantity: _decode(raw)[0] for quantity, raw in element.items.items()}
+                messages[key] = Message(plurals=plurals, context=context)
+            else:
+                messages[key] = Message(text=_decode(element.raw)[0], context=context)
         return messages
 
     @cached_property
@@ -49,7 +53,7 @@ class AndroidFile(MonolingualFile):
         return {}
 
     def apply(self, key, translation):
-        self._applied[key] = translation
+        self._applied[key] = self.with_translated_forms(key, translation)
 
     def save(self):
         """Write the target file: its original bytes, with each translation replacing or added after the rest."""
@@ -159,7 +163,15 @@ def _escape_quotes(text, quoted):
 def _element_text(element, translation, categories, indent, start_tag=None):
     """Write a translated element, like the source's, with ``start_tag`` if the target has one of its own."""
     start_tag = start_tag or element.start_tag
-    return f"{start_tag}{_encode(translation, _decode(element.raw)[1])}</string>"
+    if element.tag != "plurals":
+        return f"{start_tag}{_encode(translation, _decode(element.raw)[1])}</string>"
+    # Quoted if any of the source's items is, as a translation may need its spaces kept in every form
+    quoted = any(_decode(raw)[1] for raw in element.items.values())
+    items = "".join(
+        f'{indent * 2}<item quantity="{category}">{_encode(translation[category], quoted)}</item>\n'
+        for category in categories if category in translation
+    )
+    return f"{start_tag}\n{items}{indent}</plurals>"
 
 
 class _Element:
@@ -193,9 +205,9 @@ def _read(path):
 
     def start(tag, attrs):
         start_index = parser.CurrentByteIndex
-        # Only the root and the resources are kept. Finding where every nested element's tag ends would
-        # be slow for those from an entity, each placed at its reference.
-        if len(stack) > 1:
+        # Only the root, the resources and their plural items are kept. Finding where every nested
+        # element's tag ends would be slow for those from an entity, each placed at its reference.
+        if len(stack) > 2 or (len(stack) == 2 and stack[1][0] != "plurals"):
             stack.append((tag, attrs, None))
             return
         if not data.startswith(b"<", start_index):
@@ -204,7 +216,7 @@ def _read(path):
         if not stack:
             resources.root_start_tag = data[start_index:inner_start].decode()
             resources.root_start, resources.root_tag_end = start_index, inner_start
-        elif len(stack) == 1 and tag == "string":
+        elif len(stack) == 1 and tag in ("string", "plurals"):
             element = _Element(tag, attrs.get("name", ""), start_index, data[start_index:inner_start].decode(), "")
             if not resources.elements and line_indent(data, start_index):
                 resources.indent = line_indent(data, start_index).decode()
@@ -222,10 +234,15 @@ def _read(path):
             return
         raw = "" if self_closing else data[inner_start:end_index].decode()
         element_end = inner_start if self_closing else data.index(b">", end_index) + 1
+        parent = stack[0][0] if len(stack) == 1 else stack[1][0]
         if len(stack) == 1:
             element = resources.elements.get(f"{tag}/{attrs.get('name', '')}")
             if element:
                 element.raw, element.end = raw, element_end
+        elif len(stack) == 2 and tag == "item" and parent == "plurals":
+            element = resources.elements.get(f"plurals/{stack[1][1].get('name', '')}")
+            if element:
+                element.items[attrs.get("quantity", "other")] = raw
 
     parser.StartElementHandler = start
     parser.EndElementHandler = end

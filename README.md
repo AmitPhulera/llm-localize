@@ -44,7 +44,7 @@ The format is chosen by file extension, or with `--format`.
 | --- | --- | --- | --- |
 | `po` | `.po` | source and translation, one file per language | `msgstr[N]`, from the `Plural-Forms` header |
 | `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`), or ICU messages |
-| `android` | `.xml` | one language per file | — |
+| `android` | `.xml` | one language per file | `<plurals>` items by CLDR category |
 
 ### One file per language
 
@@ -82,7 +82,7 @@ llm-localize app/src/main/res/values-{fr,de,pt-rBR}/strings.xml
 
 The language comes from the `values-` directory's qualifiers (`values-fr`, `values-pt-rBR`, `values-b+sr+Latn`), and the source is the `values` directory with the same other qualifiers (`values-fr-land` translates `values-land`).
 
-- `<string>` elements are translated, each with its name as context, and `<string-array>` is left alone.
+- `<string>` and `<plurals>` are translated, each with its name as context, and `<string-array>` is left alone.
 - The model sees apostrophes and quotes unescaped, and they are escaped again when saved (`\'`, `\"`, a leading `\@`), as are bare `&`. Inline tags like `<b>` and `<xliff:g>` must be kept.
 - New translations are added before `</resources>`, and empty elements are filled in place. Everything else in the file stays byte for byte, comments included. A new file gets the source's `<resources>` tag, with its namespaces.
 
