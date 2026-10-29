@@ -65,6 +65,11 @@ def ordinal_categories(language):
     return _lookup(_table("ordinals"), language)
 
 
+def has_rules(language):
+    """Return True if CLDR has plural rules for the language ``language`` (a bare code like ``"fr"``)."""
+    return language.lower() in _table()
+
+
 def plural_forms(language):
     """Return a ``PluralForm`` per CLDR category of ``language``, indexed by category name.
 
