@@ -24,8 +24,12 @@ class Command(BaseCommand):
         cli.add_translation_arguments(parser, config)
 
     def handle(self, *args, **options):
+        # The logger is put back as it was afterwards: the command may run in a larger program, by call_command()
+        with cli.logging_to(options['verbosity'], self.stdout, self.stderr):
+            self._handle(options)
+
+    def _handle(self, options):
         config = get_config()
-        cli.configure_logging(options['verbosity'], self.stdout, self.stderr)
         jobs = self._jobs(options, config)
         if not jobs:
             raise CommandError("No translation files found")

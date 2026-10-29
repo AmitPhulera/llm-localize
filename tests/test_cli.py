@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import urllib.error
 from collections import Counter
 from unittest.mock import patch
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import polib
 import pytest
 
-from llm_localize.cli import main
+from llm_localize.cli import logging_to, main
 from llm_localize.engine import FileResult
 from llm_localize.runner import summarize
 
@@ -56,6 +57,18 @@ def test_quiet_only_prints_summary(po_path, capsys):
 
     out, err = capsys.readouterr()
     assert (out, err) == (f"{po_path} (es): translated 1 of 1\n", "")
+
+
+def test_logging_is_put_back_after_a_run_inside_a_program():
+    logger, engine = logging.getLogger("llm_localize"), logging.getLogger("llm_localize.engine")
+    before = (logger.handlers[:], logger.level, logger.propagate)
+
+    with logging_to(2, io.StringIO(), io.StringIO()):
+        assert engine.isEnabledFor(logging.DEBUG)
+
+    assert (logger.handlers, logger.level, logger.propagate) == before
+    # Nor do the loggers under it stay as loud as they were in the run
+    assert engine.isEnabledFor(logging.DEBUG) == logger.isEnabledFor(logging.DEBUG)
 
 
 def test_fatal_error(po_path, capsys):

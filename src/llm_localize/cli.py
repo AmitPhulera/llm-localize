@@ -1,5 +1,6 @@
 """``llm-localize`` command line tool, usable without Django."""
 import argparse
+import contextlib
 import logging
 import sys
 
@@ -27,6 +28,20 @@ def configure_logging(verbosity, progress_stream, error_stream):
     logger.handlers = [progress, errors]
     logger.setLevel(VERBOSITY_LEVELS.get(verbosity, logging.DEBUG))
     logger.propagate = False
+
+
+@contextlib.contextmanager
+def logging_to(verbosity, progress_stream, error_stream):
+    """``configure_logging`` for a ``with`` block, then the logger as it was, for a run inside a larger program."""
+    logger = logging.getLogger('llm_localize')
+    saved = logger.handlers, logger.level, logger.propagate
+    configure_logging(verbosity, progress_stream, error_stream)
+    try:
+        yield
+    finally:
+        logger.handlers, logger.propagate = saved[0], saved[2]
+        # setLevel, not level =, so the loggers under it forget what they found enabled meanwhile
+        logger.setLevel(saved[1])
 
 
 def error_message(error):

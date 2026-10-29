@@ -1,3 +1,4 @@
+import logging
 import urllib.error
 from io import BytesIO
 from unittest.mock import patch
@@ -36,6 +37,16 @@ def test_translates_project_po_files(locale_dir):
     call_command("llm_localize", verbosity=0)
 
     assert msgstr(locale_dir, "es") == msgstr(locale_dir, "fr") == "T: Hello"
+
+
+def test_the_logger_is_left_as_it_was(locale_dir):
+    logger = logging.getLogger("llm_localize")
+    before = (logger.handlers[:], logger.level, logger.propagate)
+
+    call_command("llm_localize", verbosity=0)
+
+    # A program calling the command keeps its own logging
+    assert (logger.handlers, logger.level, logger.propagate) == before
 
 
 def test_langs_limits_languages(locale_dir):
