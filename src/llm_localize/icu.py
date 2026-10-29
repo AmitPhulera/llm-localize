@@ -250,8 +250,11 @@ def find_problem(source, translation, plural_categories=None, ordinal_categories
     return _compare(source_nodes, translation_nodes, categories)
 
 
-def _compare(source_nodes, translation_nodes, categories):
-    """``categories`` maps a choice type, like ``plural``, to the target language's categories for it, or None."""
+def _compare(source_nodes, translation_nodes, categories, place=None):
+    """``categories`` maps a choice type, like ``plural``, to the target language's categories for it, or None.
+
+    ``place`` is where in HTML the nodes are, as ``_places`` gives it.
+    """
     source_choices, translation_choices = _choices(source_nodes), _choices(translation_nodes)
     if ({name: [choice.type for choice in choices] for name, choices in source_choices.items()}
             != {name: [choice.type for choice in choices] for name, choices in translation_choices.items()}):
@@ -268,9 +271,16 @@ def _compare(source_nodes, translation_nodes, categories):
     if _text_hashes(translation_nodes) > _text_hashes(source_nodes):
         return "ICU arguments"
     # The same argument may choose more than once; pair each use with the translation's use in the same position
+    if not source_choices:
+        return None
+    source_places, places = _places(source_nodes, place), _places(translation_nodes, place)
     for name, choices in source_choices.items():
         for source_choice, translation_choice in zip(choices, translation_choices[name], strict=True):
-            problem = _compare_choice(source_choice, translation_choice, categories)
+            choice_place = places[id(translation_choice)]
+            # In the same attribute, so a link can't become a title's text or the other way round
+            if choice_place != source_places[id(source_choice)]:
+                return "HTML attributes"
+            problem = _compare_choice(source_choice, translation_choice, categories, choice_place)
             if problem:
                 return problem
     return None
@@ -323,7 +333,7 @@ class _Html:
         return None if self.state == "text" else ("attribute", "")
 
 
-def _compare_choice(source_choice, translation_choice, categories):
+def _compare_choice(source_choice, translation_choice, categories, place=None):
     if source_choice.offset != translation_choice.offset:
         return "ICU arguments"
     language_categories = categories.get(source_choice.type)
@@ -339,7 +349,10 @@ def _compare_choice(source_choice, translation_choice, categories):
         if (source_choice.type != "select" and shown and _shows_number(source_case)
                 and not _shows_number(translation_case)):
             return "ICU arguments"
-        problem = _compare(source_case, translation_case, categories)
+        # A link or a handler in a case stays as it is
+        if place and place[0] == "attribute" and _render(translation_case) != _render(source_case):
+            return "HTML attributes"
+        problem = _compare(source_case, translation_case, categories, place)
         if problem:
             return problem
     return None

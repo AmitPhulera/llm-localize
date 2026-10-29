@@ -117,12 +117,20 @@ class TestFindProblem:
          "ICU arguments"),
         ("{n, plural, other {{g, select, male {# his} other {# their}}}}",
          "{n, plural, one {{g, select, male {его} other {их}}} few {#} many {#} other {#}}", "ICU arguments"),
+        # A link, a handler or a script in a case stays as it is
+        ('<a href="{g, select, other {/safe}}">Go</a>',
+         '<a href="{g, select, other {javascript:alert(1)}}">Aller</a>', "HTML attributes"),
         # A tag named by a case
         ("{g, select, male {He replied} other {They replied}}",
          "<{g, select, male {img} other {img}} src=x onerror=alert(1)>Il a répondu", "HTML tags"),
     ])
     def test_invalid(self, source, translation, reason):
         assert find_problem(source, translation, RUSSIAN) == reason
+
+    def test_a_less_than_sign_isnt_a_tag(self):
+        source = "Under 5 < {n, plural, one {# item} other {# items}}"
+        translation = "Moins de 5 < {n, plural, one {# élément} many {# d'éléments} other {# d'éléments}}"
+        assert find_problem(source, translation, ["one", "many", "other"]) is None
 
     def test_selectordinal_needs_the_target_languages_ordinal_categories(self):
         source = "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"
