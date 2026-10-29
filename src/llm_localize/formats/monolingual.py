@@ -76,6 +76,18 @@ class MonolingualFile(TranslationFile):
             units.append(TranslationUnit(key=key, source=message.text, context=message.context))
         return units
 
+    def with_translated_forms(self, key, translation):
+        """Return a plural translation with the forms the target already translates kept, not replaced.
+
+        A partly translated plural, like one with ``one`` and ``other`` in
+        Russian but no ``few`` or ``many``, is translated again to fill in
+        the rest, and the forms someone already wrote stay.
+        """
+        target = self.target_messages.get(key)
+        if not isinstance(translation, dict) or not target:
+            return translation
+        return {**translation, **{category: text for category, text in target.plurals.items() if text.strip()}}
+
     def is_translated(self, message, target):
         """True if the target's ``target`` message translates the source's ``message``, or it needn't."""
         return not message.text.strip() or bool(target and target.text.strip())
