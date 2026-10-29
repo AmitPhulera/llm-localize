@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -240,6 +241,14 @@ class TestArrays:
         request = json.loads(client.calls[0][1])
         assert {"Key: faq[0].q", "Key: grid[0][0]"} <= {message["context"] for message in request.values()}
 
+    def test_a_large_array_takes_linear_time(self, locales):
+        source = locales("big/en.json", {"items": [f"Item {i}" for i in range(4000)]})
+
+        started = time.perf_counter()
+        translate_file(open_file(source.parent / "fr.json"), FakeClient(), "fr", batch_size=1000)
+        assert time.perf_counter() - started < 2
+        assert read(source.parent / "fr.json")["items"][3999] == "T: Item 3999"
+
     def test_an_array_is_written_only_once_every_string_is_translated(self, locales):
         source = locales("arrays/en.json", {"title": "Settings", "weekdays": ["Monday", "Tuesday", "Wednesday"]})
         target = source.parent / "fr.json"
@@ -263,6 +272,14 @@ class TestArrays:
 
         assert read(target) == {"weekdays": ["T: Monday", "T: Tuesday", "T: Wednesday"]}
 
+    def test_an_array_shaped_like_the_sources_gets_only_its_empty_strings(self, locales):
+        locales("arrays/en.json", {"weekdays": ["Monday", "Tuesday"]})
+        target = locales("arrays/fr.json", {"weekdays": ["Lundi", ""]})
+
+        translate(target)
+
+        assert read(target) == {"weekdays": ["Lundi", "T: Tuesday"]}
+
     def test_arrays_are_followed_only_so_deep(self, locales):
         deep = "deep"
         for _ in range(MAX_ARRAY_DEPTH):
@@ -273,6 +290,19 @@ class TestArrays:
 
         assert [unit.context for unit in units] == [
             "Key: ok" + "[0]" * MAX_ARRAY_DEPTH, "Key: deep" + "[0]" * MAX_ARRAY_DEPTH]
+
+    @pytest.mark.parametrize("language, keys", [
+        ("ru", ["items_one", "items_few", "items_many", "items_other"]),
+        ("ja", ["items_other"]),
+    ])
+    def test_plural_keys_in_an_array(self, locales, language, keys):
+        rows = [{"items_one": "{{count}} item", "items_other": "{{count}} items"}]
+        target = locales("arrays/en.json", {"rows": rows}).parent / f"{language}.json"
+
+        translate(target, language=language)
+
+        assert list(read(target)["rows"][0]) == keys
+        assert open_file(target).untranslated_units() == []
 
     def test_the_prompt_says_to_keep_codes_as_they_are(self, locales):
         assert "language or locale codes" in open_file(locales.dir / "fr.json").instructions

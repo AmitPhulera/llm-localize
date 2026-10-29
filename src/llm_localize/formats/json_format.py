@@ -7,10 +7,11 @@ are checked with the ICU rules.
 
 Strings in arrays are translated too, with keys like ``weekdays[0]``,
 through arrays and objects up to ``MAX_ARRAY_DEPTH`` levels inside one.
-An array is translated as a whole, and written only once every string
-in it is translated: until then the target lacks it, so the app falls
-back to the source language rather than showing a gap. Other values,
-like numbers, aren't translated, and a new target gets the source's.
+An array is translated as a whole when the target's differs in shape
+from the source's, and written only once every string in it is
+translated: until then the target lacks it, so the app falls back to
+the source language rather than showing a gap. Other values, like
+numbers, aren't translated, and a new target gets the source's.
 """
 import json
 import os
@@ -73,9 +74,13 @@ class JsonFile(MonolingualFile):
 
     @cached_property
     def target_messages(self):
-        """The target's messages, keyed like the source's, with plurals grouped as the source groups them."""
+        """The target's messages, keyed like the source's, with plurals grouped as the source groups them.
+
+        Strings in an array count only if the array has the source's shape,
+        since otherwise its elements may not line up with the source's.
+        """
         return self._messages_in({tuple(path): value for path, value in _strings(self.document)
-                                  if _array_root(path) is None})
+                                  if _array_root(path) is None or self._array_matches(_array_root(path))})
 
     def _messages_in(self, values):
         """Return the source's messages found in ``values``, ``{path: text}``, keyed and grouped like its own."""
@@ -117,6 +122,18 @@ class JsonFile(MonolingualFile):
                 keys.setdefault(root, set()).add(key)
         return keys
 
+    @cached_property
+    def _matching_arrays(self):
+        """``{array path: whether the target's array has the source's shape}``, worked out once per array."""
+        return {}
+
+    def _array_matches(self, root):
+        """True if the target's array at ``root`` has the source's shape, so its strings line up."""
+        if root not in self._matching_arrays:
+            self._matching_arrays[root] = (_shape(_get(self.document, root))
+                                           == _shape(_get(self.source_document, root)))
+        return self._matching_arrays[root]
+
     def find_problem(self, source, translation):
         if Counter(NESTING_RE.findall(source)) != Counter(NESTING_RE.findall(translation)):
             return "placeholders"
@@ -128,7 +145,7 @@ class JsonFile(MonolingualFile):
         translation = self.with_translated_forms(key, translation)
         path = _plural_path(json.loads(key))
         root = _array_root(path)
-        if root is None:
+        if root is None or self._array_matches(root):
             _set(self.document, path, translation)
             return
         # A whole array: filled in a copy of the source's, which goes in the target once it's done
@@ -140,6 +157,7 @@ class JsonFile(MonolingualFile):
         left.discard(key)
         if not left:
             _set(self.document, root, self._pending_arrays.pop(root)[0])
+            self._matching_arrays[root] = True
 
     @cached_property
     def _save_style(self):
