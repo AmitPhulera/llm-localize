@@ -23,6 +23,8 @@ from llm_localize.plurals import CATEGORIES, ordinal_categories
 PLURAL_KEY_RE = re.compile(rf"^(.+)_({'|'.join(CATEGORIES)})$")
 # An i18next reference to another key, like $t(common.save) or $t(key, {"count": 2})
 NESTING_RE = re.compile(r"\$t\((?:[^()]|\([^()]*\))*\)")
+# Levels of arrays and objects inside an array whose strings are translated; deeper ones are left alone
+MAX_ARRAY_DEPTH = 10
 # The most characters a file's keys may add up to, each string's key counted with those of the objects it's in
 MAX_KEYS_SIZE = 20_000_000
 
@@ -153,6 +155,72 @@ def _strings(document, path=()):
             yield [*path, name], value
         elif isinstance(value, dict):
             yield from _strings(value, (*path, name))
+
+
+def _array_strings(value, path, depth=1):
+    """Yield ``(path, text)`` for each string in an array, or an object in one, and those inside them.
+
+    An element's path ends with its index. Only ``MAX_ARRAY_DEPTH`` levels
+    are followed.
+
+    >>> list(_array_strings(["a", 1, {"b": ["c"]}], ("x",)))
+    [(['x', 0], 'a'), (['x', 2, 'b', 0], 'c')]
+    """
+    if depth > MAX_ARRAY_DEPTH:
+        return
+    for name, item in enumerate(value) if isinstance(value, list) else value.items():
+        if isinstance(item, str):
+            yield [*path, name], item
+        elif isinstance(item, (list, dict)):
+            yield from _array_strings(item, (*path, name), depth + 1)
+
+
+def _blank(value, depth=1):
+    """Return a copy of an array, or an object in one, without the strings ``_array_strings`` yields.
+
+    An array keeps an empty string in each one's place, so the rest keep
+    their indexes; an object leaves them out, as its plural keys depend
+    on the target language.
+
+    >>> _blank(["a", " ", 1, {"b": "c", "d": 2}])
+    ['', ' ', 1, {'d': 2}]
+    """
+    if depth > MAX_ARRAY_DEPTH:
+        return copy_of(value)
+    copy = {}
+    for name, item in enumerate(value) if isinstance(value, list) else value.items():
+        if isinstance(item, str) and item.strip():
+            if isinstance(value, list):
+                copy[name] = ""
+        else:
+            copy[name] = _blank(item, depth + 1) if isinstance(item, (list, dict)) else item
+    return list(copy.values()) if isinstance(value, list) else copy
+
+
+def _shape(value):
+    """Return a value's structure, to tell if two arrays line up: where arrays are, and their lengths.
+
+    Strings in objects are found by their keys, so they needn't line up,
+    and numbers and other values may differ.
+
+    >>> _shape(["a", {"b": 2, "c": "x"}]) == _shape(["x", {"b": 3}]), _shape(["a"]) == _shape(["a", "b"])
+    (True, False)
+    """
+    if isinstance(value, list):
+        return [_shape(item) for item in value]
+    if isinstance(value, dict):
+        return {name: _shape(item) for name, item in value.items() if not isinstance(item, str)}
+    return type(value).__name__
+
+
+def _array_root(path):
+    """Return the path of the outermost array a path is in, or None.
+
+    >>> _array_root(["faq", 0, "answer"]), _array_root(["home", "title"])
+    (('faq',), None)
+    """
+    index = next((index for index, name in enumerate(path) if isinstance(name, int)), None)
+    return None if index is None else tuple(path[:index])
 
 
 def _set(document, path, value):
