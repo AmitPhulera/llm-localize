@@ -2,10 +2,11 @@
 """
 import os
 import re
+from functools import cached_property
 from pathlib import Path
 from xml.parsers import expat
 
-from llm_localize.formats.monolingual import _is_language_code
+from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
 from llm_localize.formats.xml_utils import BARE_AMPERSAND_RE, line_indent, tag_end
 
 # A CDATA section, whose & needn't be escaped, or a tag
@@ -16,6 +17,37 @@ UNESCAPED_QUOTE_RE = re.compile(UNESCAPED + '"')
 UNESCAPED_APOSTROPHE_RE = re.compile(UNESCAPED + "'")
 # An escaped quote or apostrophe
 ESCAPED_QUOTE_RE = re.compile(UNESCAPED + r"\\(['\"])")
+
+
+class AndroidFile(MonolingualFile):
+    name = "android"
+    extensions = (".xml",)
+
+    def language_from_path(self):
+        match = _values_dir(self.path)
+        return match[1] if match else None
+
+    def source_path_candidates(self):
+        match = _values_dir(self.path)
+        if match:
+            part_index, _, other_qualifiers = match
+            parts = list(Path(self.path).parts)
+            parts[part_index] = "-".join(["values", *other_qualifiers])
+            yield Path(*parts)
+
+    def read_messages(self, path):
+        messages = {}
+        for key, element in _read(path).elements.items():
+            context = f"Key: {element.name}"
+            messages[key] = Message(text=_decode(element.raw)[0], context=context)
+        return messages
+
+    @cached_property
+    def _applied(self):
+        return {}
+
+    def apply(self, key, translation):
+        self._applied[key] = translation
 
 
 def _values_dir(path):
