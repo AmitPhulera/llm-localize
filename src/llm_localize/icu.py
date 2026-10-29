@@ -289,12 +289,11 @@ def _compare(source_nodes, translation_nodes, categories, place=None):
 def _places(nodes, place):
     """Return ``{id(choice): place}`` for a message level's choices, ``place`` if it's given, else where each is.
 
-    A place is None in text, and ``("attribute", "")`` in a tag, which
-    attribute not being read yet.
+    A place is None in text, and ``("attribute", name)`` in a tag.
 
     >>> nodes = parse('<img alt="{n, plural, other {x}}" src="{n, plural, other {y}}"> {m, select, other {z}}')
     >>> list(_places(nodes, None).values())
-    [('attribute', ''), ('attribute', ''), None]
+    [('attribute', 'alt'), ('attribute', 'src'), None]
     >>> list(_places(parse("Score < {n, plural, other {# points}}"), None).values())
     [None]
     """
@@ -312,10 +311,10 @@ def _places(nodes, place):
 
 
 class _Html:
-    """Where in HTML text read so far ends: in text, or inside a tag."""
+    """Where in HTML text read so far ends, tokenized as a browser does: a quote opens a value only after =."""
 
     def __init__(self):
-        self.state, self.seen = "text", ""
+        self.state, self.tag, self.name, self.quote, self.seen = "text", "", "", "", ""
 
     def feed(self, text):
         for char in text:
@@ -325,12 +324,36 @@ class _Html:
         state, previous, self.seen = self.state, self.seen, (self.seen + char.lower())[-9:]
         if state == "text":
             if previous.endswith("<") and char.isalpha():
-                self.state = "tag"
+                self.state, self.tag = "tag", char.lower()
+        elif state == "quoted":
+            if char == self.quote:
+                self.state = "attributes"
         elif char == ">":
             self.state = "text"
+        elif state == "tag":
+            if char.isspace() or char == "/":
+                self.state = "attributes"
+            else:
+                self.tag += char.lower()
+        elif state == "value":
+            if char in "\"'":
+                self.state, self.quote = "quoted", char
+            elif not char.isspace():
+                self.state = "unquoted"
+        elif state == "unquoted":
+            if char.isspace():
+                self.state = "attributes"
+        elif char == "=" and state in ("name", "after name"):
+            self.state = "value"
+        elif char.isspace() or char == "/":
+            self.state = "after name" if state == "name" else state
+        elif state == "name":
+            self.name += char.lower()
+        else:
+            self.state, self.name = "name", char.lower()
 
     def place(self):
-        return None if self.state == "text" else ("attribute", "")
+        return None if self.state == "text" else ("attribute", self.name)
 
 
 def _compare_choice(source_choice, translation_choice, categories, place=None):
