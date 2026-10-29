@@ -5,7 +5,7 @@ import pytest
 from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
-from llm_localize.formats.json_format import JsonFile
+from llm_localize.formats.json_format import MAX_ARRAY_DEPTH, JsonFile
 
 from .fakes import FakeClient, ScriptedClient
 
@@ -103,15 +103,15 @@ class TestTranslating:
 
         result = translate(path)
 
-        assert result.translated == 4
-        # The source's numbers and other values are copied
+        assert result.translated == 6
+        # The source's numbers are copied, and its arrays translated
         assert read(path) == {
             "home": {"title": "T: Welcome", "greeting": "T: Hi {{name}}"},
             "items_one": "T: {{count}} items",
             "items_many": "T: {{count}} items",
             "items_other": "T: {{count}} items",
             "count": 3,
-            "tags": ["a", "b"],
+            "tags": ["T: a", "T: b"],
             "show_other": "T: Show other",
         }
         assert path.read_text().startswith('{\n  "home": {\n    "title"')
@@ -124,7 +124,7 @@ class TestTranslating:
 
         document = read(path)
         assert document["home"] == {"title": "Bienvenue", "greeting": "T: Hi {{name}}"}
-        assert list(document) == ["home", "items_one", "items_many", "items_other", "show_other", "extra"]
+        assert list(document) == ["home", "items_one", "items_many", "items_other", "show_other", "tags", "extra"]
         assert path.read_text().startswith('{\n    "home"')
 
     def test_a_plain_key_beside_its_plural_keys(self, locales):
@@ -197,7 +197,7 @@ class TestTranslating:
 
         assert exit_code == 0
         assert read(locales.dir / "de.json")["home"]["title"] == "T: Welcome"
-        assert capsys.readouterr().out == f"{locales.dir / 'de.json'} (de): translated 4 of 4\n"
+        assert capsys.readouterr().out == f"{locales.dir / 'de.json'} (de): translated 6 of 6\n"
 
     def test_cli_with_source(self, locales):
         source = locales("base/strings.json", {"hello": "Hello"})
@@ -215,6 +215,50 @@ class TestTranslating:
 
 
 class TestArrays:
+    SOURCE = {
+        "title": "Settings",
+        "weekdays": ["Monday", "Tuesday"],
+        "faq": [{"q": "Why?", "a": "Because", "id": 7}, {"q": "How?", "a": ""}],
+        "grid": [["a", 1], []],
+        "sizes": [10, 20],
+    }
+
+    def test_strings_in_arrays_are_translated_and_the_rest_kept(self, locales):
+        source = locales("arrays/en.json", self.SOURCE)
+        client = FakeClient()
+
+        result = translate(source.parent / "fr.json", client)
+
+        assert result.translated == 7
+        assert read(source.parent / "fr.json") == {
+            "title": "T: Settings",
+            "weekdays": ["T: Monday", "T: Tuesday"],
+            "faq": [{"q": "T: Why?", "a": "T: Because", "id": 7}, {"q": "T: How?", "a": ""}],
+            "grid": [["T: a", 1], []],
+            "sizes": [10, 20],
+        }
+        request = json.loads(client.calls[0][1])
+        assert {"Key: faq[0].q", "Key: grid[0][0]"} <= {message["context"] for message in request.values()}
+
+    def test_an_array_shaped_differently_from_the_sources_is_translated_again(self, locales):
+        locales("arrays/en.json", {"weekdays": ["Monday", "Tuesday", "Wednesday"]})
+        target = locales("arrays/fr.json", {"weekdays": ["Mardi", "Mercredi"]})
+
+        translate(target)
+
+        assert read(target) == {"weekdays": ["T: Monday", "T: Tuesday", "T: Wednesday"]}
+
+    def test_arrays_are_followed_only_so_deep(self, locales):
+        deep = "deep"
+        for _ in range(MAX_ARRAY_DEPTH):
+            deep = [deep]
+        source = locales("arrays/en.json", {"ok": [deep[0]], "deep": deep, "deeper": [deep]})
+
+        units = open_file(source.parent / "fr.json").untranslated_units()
+
+        assert [unit.context for unit in units] == [
+            "Key: ok" + "[0]" * MAX_ARRAY_DEPTH, "Key: deep" + "[0]" * MAX_ARRAY_DEPTH]
+
     def test_the_prompt_says_to_keep_codes_as_they_are(self, locales):
         assert "language or locale codes" in open_file(locales.dir / "fr.json").instructions
 

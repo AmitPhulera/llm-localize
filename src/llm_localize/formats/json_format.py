@@ -5,8 +5,10 @@ i18next's style, a key per CLDR category (``items_one``, ``items_other``),
 and ICU messages like ``{count, plural, one {# item} other {# items}}``
 are checked with the ICU rules.
 
-Other values, like numbers, aren't translated, and a new target gets
-the source's.
+Strings in arrays are translated too, with keys like ``weekdays[0]``,
+through arrays and objects up to ``MAX_ARRAY_DEPTH`` levels inside one,
+each array as a whole. Other values, like numbers, aren't translated,
+and a new target gets the source's.
 """
 import json
 import os
@@ -70,7 +72,8 @@ class JsonFile(MonolingualFile):
     @cached_property
     def target_messages(self):
         """The target's messages, keyed like the source's, with plurals grouped as the source groups them."""
-        return self._messages_in({tuple(path): value for path, value in _strings(self.document)})
+        return self._messages_in({tuple(path): value for path, value in _strings(self.document)
+                                  if _array_root(path) is None})
 
     def _messages_in(self, values):
         """Return the source's messages found in ``values``, ``{path: text}``, keyed and grouped like its own."""
@@ -93,6 +96,11 @@ class JsonFile(MonolingualFile):
         """The target's JSON; a new one starts with the source's numbers and other values that aren't text."""
         return _load(self.path) or _without_strings(self.source_document)
 
+    @cached_property
+    def _pending_arrays(self):
+        """``{array path: copy}`` of arrays being translated as a whole, filled in from the source's."""
+        return {}
+
     def find_problem(self, source, translation):
         if Counter(NESTING_RE.findall(source)) != Counter(NESTING_RE.findall(translation)):
             return "placeholders"
@@ -103,7 +111,14 @@ class JsonFile(MonolingualFile):
     def apply(self, key, translation):
         translation = self.with_translated_forms(key, translation)
         path = _plural_path(json.loads(key))
-        _set(self.document, path, translation)
+        root = _array_root(path)
+        if root is None:
+            _set(self.document, path, translation)
+            return
+        # A whole array: filled in a copy of the source's, which goes in the target as it's filled
+        array = self._pending_arrays.setdefault(root, _blank(_get(self.source_document, root)))
+        _set(array, path[len(root):], translation)
+        _set(self.document, root, array)
 
     @cached_property
     def _save_style(self):
@@ -134,7 +149,9 @@ def _load(path):
 def _without_strings(document):
     """Return a copy of nested objects without the text to translate, or objects left with nothing.
 
-    >>> _without_strings({"a": "Hi", "c": {"d": "Bye", "e": 3}, "f": {"g": "Go"}, "h": [1, 2]})
+    Arrays with text are left out too: they're added once translated.
+
+    >>> _without_strings({"a": "Hi", "b": ["x"], "c": {"d": "Bye", "e": 3}, "f": {"g": "Go"}, "h": [1, 2]})
     {'c': {'e': 3}, 'h': [1, 2]}
     """
     copy = {}
@@ -143,18 +160,23 @@ def _without_strings(document):
             value = _without_strings(value)
             if value:
                 copy[name] = value
+        elif isinstance(value, list):
+            if not any(text.strip() for _, text in _array_strings(value, ())):
+                copy[name] = copy_of(value)
         elif not isinstance(value, str):
             copy[name] = copy_of(value)
     return copy
 
 
 def _strings(document, path=()):
-    """Yield ``(path, text)`` for each string in nested objects, in file order."""
+    """Yield ``(path, text)`` for each string in nested objects and their arrays, in file order."""
     for name, value in document.items():
         if isinstance(value, str):
             yield [*path, name], value
         elif isinstance(value, dict):
             yield from _strings(value, (*path, name))
+        elif isinstance(value, list):
+            yield from _array_strings(value, (*path, name))
 
 
 def _array_strings(value, path, depth=1):
@@ -223,10 +245,24 @@ def _array_root(path):
     return None if index is None else tuple(path[:index])
 
 
+def _get(document, path):
+    """Return the value at ``path``, or None if there's none."""
+    value = document
+    for name in path:
+        if isinstance(name, int) and isinstance(value, list) and name < len(value):
+            value = value[name]
+        elif isinstance(name, str) and isinstance(value, dict) and name in value:
+            value = value[name]
+        else:
+            return None
+    return value
+
+
 def _set(document, path, value):
     """Set the value at ``path``, adding objects on the way; a dict of plural forms sets a key per category."""
     parent = document
     for index, name in enumerate(path[:-1]):
+        # Arrays are always there already, as the source's copy or the target's own
         if isinstance(name, str) and not isinstance(parent.get(name), list if isinstance(path[index + 1], int)
                                                     else dict):
             parent[name] = {}
@@ -254,7 +290,7 @@ def _zero_base(path):
 
 
 def _context(path):
-    """Return a message's context: its key, like ``home.title``."""
+    """Return a message's context: its key, like ``home.title`` or ``faq[0].answer``."""
     key = ""
     for name in path:
         key += f"[{name}]" if isinstance(name, int) else f".{name}" if key else name
@@ -308,6 +344,9 @@ def _group_plurals(messages):
 
 def _ordered_like(value, source):
     """Return ``value`` with its objects' keys in the source's order, and keys only it has at the end."""
+    if isinstance(value, list) and isinstance(source, list):
+        return [_ordered_like(item, source[index]) if index < len(source) else item
+                for index, item in enumerate(value)]
     if not (isinstance(value, dict) and isinstance(source, dict)):
         return value
     order = {name: index for index, name in enumerate(source)}
