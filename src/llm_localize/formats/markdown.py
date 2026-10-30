@@ -7,6 +7,7 @@ matter (except ``title`` and ``description``) and comments are copied as
 they are. Every run translates the whole document, since a changed
 source can't be matched to the old translation block by block.
 """
+import bisect
 import re
 from collections import Counter
 from functools import cached_property
@@ -252,18 +253,34 @@ def _link_targets(text):
     if "](" not in text:
         return []
     ends = _closing_parentheses(text)
+    # Where each whitespace and each character that can end a destination or title is, found by bisecting,
+    # so no link is scanned again from each one inside it
+    spaces = [match.start() for match in re.finditer(r"\s", text)]
+    closers = {char: [match.start() for match in re.finditer(re.escape(char), text)] for char in "\"')>"}
+
+    def first(positions, start, stop):
+        found = bisect.bisect_left(positions, start)
+        return positions[found] if found < len(positions) and positions[found] < stop else None
+
+    def skip_spaces(index, stop):
+        while index < stop and text[index].isspace():
+            index += 1
+        return index
+
     targets = []
     for match in re.finditer(r"\]\(", text):
         close = ends[match.end()]
         if close >= len(text):
             # Never closed, so not a link
             continue
-        inside = text[match.end():close].strip()
-        # The destination, without a title after it
-        if inside.startswith("<"):
-            targets.append(inside[:inside.find(">") + 1] or inside)
+        start = skip_spaces(match.end(), close)
+        if text.startswith("<", start):
+            bracket = first(closers[">"], start, close)
+            end = bracket + 1 if bracket is not None else close
         else:
-            targets.append(inside.split()[0] if inside else "")
+            space = first(spaces, start, close)
+            end = space if space is not None else close
+        targets.append(text[start:end])
     return targets
 
 
