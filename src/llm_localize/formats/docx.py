@@ -22,7 +22,7 @@ from xml.parsers import expat
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.formats.xml_utils import from_utf8, open_tag, set_attribute, tag_end, to_utf8
-from llm_localize.units import section_context
+from llm_localize.units import TranslationUnit, section_context
 
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
 GROUP_RE = re.compile(r"<g(\d+)>(.*?)</g\1>", re.S)
@@ -74,6 +74,12 @@ class DocxFile(MonolingualFile):
     name = "docx"
     extensions = (".docx",)
 
+    def source_path_candidates(self):
+        yield from super().source_path_candidates()
+        # Also without the language: fr/report.docx and report.fr.docx from report.docx
+        if self.path_without_language():
+            yield self.path_without_language()
+
     @cached_property
     def _source(self):
         return _read(self.source_path)
@@ -81,6 +87,14 @@ class DocxFile(MonolingualFile):
     def read_messages(self, path):
         return {key: Message(text=paragraph.message, context=context)
                 for key, (paragraph, context) in _messages(_read(path)[1]).items()}
+
+    def untranslated_units(self):
+        # The source itself has nothing to translate, and writing a copy over it would destroy it
+        if self.is_source:
+            return []
+        # Every paragraph, every run, as for Markdown: the copy can't be matched to a changed source
+        return [TranslationUnit(key=key, source=paragraph.message, context=context)
+                for key, (paragraph, context) in _messages(self._source[1]).items()]
 
     @cached_property
     def _applied(self):

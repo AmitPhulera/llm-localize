@@ -7,6 +7,7 @@ from xml.parsers import expat
 
 import pytest
 
+from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 from llm_localize.formats.docx import _read
@@ -58,7 +59,7 @@ def parts(path):
 
 
 def test_paragraphs(report):
-    units = open_file(report.parent / "fr" / "report.docx", source_path=report).untranslated_units()
+    units = open_file(report.parent / "fr" / "report.docx").untranslated_units()
 
     assert [(unit.source, unit.context) for unit in units] == [
         ("Install", ""),
@@ -74,7 +75,7 @@ def test_paragraphs(report):
 def test_unchanged_translations_keep_the_text(report):
     path = report.parent / "fr" / "report.docx"
 
-    translate_file(open_file(path, source_path=report), FakeClient(prefix=""), "fr")
+    translate_file(open_file(path), FakeClient(prefix=""), "fr")
 
     assert list(parts(path)) == list(PARTS)
     assert [paragraph.message for paragraph in _read(path)[1]] == [
@@ -94,7 +95,7 @@ def test_translations_go_into_their_runs(report):
         "6": "Confidentiel & privé",
     }])
 
-    result = translate_file(open_file(path, source_path=report), client, "fr")
+    result = translate_file(open_file(path), client, "fr")
 
     assert result.translated == 7
     document = parts(path)["word/document.xml"]
@@ -114,7 +115,15 @@ def test_not_a_docx(tmp_path):
     (tmp_path / "report.docx").write_bytes(b"not a zip")
 
     with pytest.raises(ValueError, match="not a .docx file"):
-        open_file(tmp_path / "fr" / "report.docx", source_path=tmp_path / "report.docx").untranslated_units()
+        open_file(tmp_path / "fr" / "report.docx").untranslated_units()
+
+
+def test_cli(report, capsys):
+    path = report.parent / "de" / "report.docx"
+
+    assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+    assert capsys.readouterr().out == f"{path} (de): translated 7 of 7\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
@@ -131,7 +140,7 @@ def test_the_source_itself_is_left_alone(tmp_path):
 
 def test_a_failed_save_leaves_no_partial_file(report, monkeypatch):
     path = report.parent / "fr" / "report.docx"
-    docx_file = open_file(path, source_path=report)
+    docx_file = open_file(path)
     docx_file.apply(docx_file.untranslated_units()[0].key, "Installation")
 
     def fail(*args):
@@ -170,9 +179,9 @@ def test_saves_keep_a_symlinked_targets_link_and_mode(report, tmp_path):
     link = tmp_path / "fr" / "report.docx"
     link.symlink_to(real)
 
-    open_file(link, source_path=report).save()
+    translate_file(open_file(link, source_path=report), FakeClient(), "fr")
 
-    assert link.is_symlink()
+    assert link.is_symlink() and "T: Install" in parts(real)["word/document.xml"]
     assert real.stat().st_mode & 0o777 == 0o640
 
 
