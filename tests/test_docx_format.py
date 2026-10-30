@@ -1,3 +1,4 @@
+import codecs
 import time
 import warnings
 import zipfile
@@ -224,6 +225,20 @@ def test_a_package_with_parts_it_cant_copy_is_refused(tmp_path, flag_bits, compr
 
     with pytest.raises(ValueError, match="word/media/image1.png is encrypted or compressed"):
         open_file(tmp_path / "fr" / "odd.docx", source_path=path).untranslated_units()
+
+
+def test_parts_in_utf16_are_written_back_in_utf16(tmp_path):
+    source = tmp_path / "wide.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        wide = DOCUMENT.replace('encoding="UTF-8"', 'encoding="UTF-16"').encode("utf-16")
+        package.writestr("word/document.xml", wide)
+    target = tmp_path / "fr" / "wide.docx"
+
+    translate_file(open_file(target, source_path=source), FakeClient(), "fr")
+
+    saved = zipfile.ZipFile(target).read("word/document.xml")
+    assert saved.startswith(codecs.BOM_UTF16_LE) and "T: Install" in saved.decode("utf-16")
+    expat.ParserCreate().Parse(saved, True)
 
 
 def test_text_full_of_entities_takes_linear_time(tmp_path):

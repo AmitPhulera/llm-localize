@@ -21,7 +21,7 @@ from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
-from llm_localize.formats.xml_utils import open_tag, set_attribute, tag_end
+from llm_localize.formats.xml_utils import from_utf8, open_tag, set_attribute, tag_end, to_utf8
 from llm_localize.units import section_context
 
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
@@ -110,7 +110,9 @@ class DocxFile(MonolingualFile):
             for info in source.infolist():
                 data = source.read(info)
                 if info.filename in replacements:
-                    data = splice(data, replacements[info.filename])
+                    # Offsets are in the part as UTF-8, as it was read; it's written back in its own encoding
+                    data, encoding, bom = to_utf8(data, info.filename)
+                    data = from_utf8(splice(data, replacements[info.filename]), encoding, bom)
                 target.writestr(info, data)
         write_file(self.path, package.getbuffer())
 
@@ -177,8 +179,13 @@ def _preserving_space(element):
 
 
 def _paragraphs(part, data):
-    """Return a part's paragraphs, with the position of each ``<w:t>`` and how its run is formatted."""
-    parser = expat.ParserCreate()
+    """Return a part's paragraphs, with the position of each ``<w:t>`` and how its run is formatted.
+
+    A part in another encoding, like UTF-16, is read as UTF-8, and the
+    positions are in that.
+    """
+    data = to_utf8(data, part)[0]
+    parser = expat.ParserCreate("UTF-8")
     # Text in one call, not one per entity like &amp;, which adding up one at a time would make quadratic
     parser.buffer_text = True
     paragraphs, open_paragraphs, stack = [], [], []
