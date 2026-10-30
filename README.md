@@ -287,6 +287,26 @@ translator = get_translator(workers=4)
 
 Create one translator and reuse it; it's safe to share between threads. LLM calls take seconds, so call it from a background task (Celery, RQ, a management command) rather than while handling a request. It doesn't cache translations, so store the results if you'll need them again.
 
+## Translating files in your app
+
+`FileTranslator` translates a file's content at runtime, such as a file a user uploads. It takes the same options as `StringTranslator`.
+
+```python
+from llm_localize import FileTranslator
+
+translator = FileTranslator(provider="anthropic", api_key="...")
+
+result = translator.translate(upload.read(), upload.name, "fr")
+result.content     # the translated file's bytes
+result.complete    # False if some messages couldn't be translated
+result.rejected    # why, e.g. Counter({"placeholders": 1})
+```
+
+- A file that holds its translations (PO, XLIFF, `.xcstrings`) comes back filled in.
+- The format comes from the name's extension, or `format="json"`. Only the extension is used: the content goes in a temporary directory under a fixed name.
+
+As with strings, call it from a background task: a document can take a minute.
+
 ## Python API
 
 The command line flow is available from Python:
