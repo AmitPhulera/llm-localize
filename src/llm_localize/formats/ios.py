@@ -166,7 +166,12 @@ class XcstringsFile(TranslationFile):
     def apply(self, key, translation):
         localizations = self.document["strings"][key].setdefault("localizations", {})
         if isinstance(translation, dict):
-            plural = {category: {"stringUnit": {"state": "translated", "value": translation[category]}}
+            # Forms already translated stay as they are; the rest are filled in
+            existing = (localizations.get(self.language, {}).get("variations") or {}).get("plural") or {}
+            done = {category for category, variation in existing.items()
+                    if _is_translated(variation.get("stringUnit", {}))}
+            plural = {category: existing[category] if category in done
+                      else {"stringUnit": {"state": "translated", "value": translation[category]}}
                       for category in plural_categories(self.language) if category in translation}
             localizations[self.language] = {"variations": {"plural": plural}}
         else:

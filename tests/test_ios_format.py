@@ -195,6 +195,20 @@ class TestXcstrings:
 
         assert [unit.key for unit in open_file(path, language="fr").untranslated_units()] == ["%lld files"]
 
+    def test_plural_forms_already_translated_are_kept(self, tmp_path):
+        mine = {"variations": {"plural": {"one": string_unit("%lld файл"), "other": string_unit("%lld файла")}}}
+        source = {"variations": {"plural": {"one": string_unit("%lld file"), "other": string_unit("%lld files")}}}
+        path = tmp_path / "L.xcstrings"
+        path.write_text(json.dumps({"sourceLanguage": "en", "strings": {
+            "%lld files": {"localizations": {"en": source, "ru": mine}}}}))
+
+        translate_file(open_file(path, language="ru"), FakeClient(), "ru")
+
+        localizations = json.loads(path.read_text())["strings"]["%lld files"]["localizations"]
+        plural = localizations["ru"]["variations"]["plural"]
+        assert {category: unit["stringUnit"]["value"] for category, unit in plural.items()} == {
+            "one": "%lld файл", "few": "T: %lld files", "many": "T: %lld files", "other": "%lld файла"}
+
     def test_languages_stay_in_alphabetical_order(self, catalog):
         translate_file(open_file(catalog, language="de"), FakeClient(), "de")
 
