@@ -17,6 +17,7 @@ from xml.parsers import expat
 from xml.sax.saxutils import quoteattr
 
 from llm_localize.formats.base import TranslationFile, splice, write_file
+from llm_localize.formats.monolingual import _is_language_code
 from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
     from_utf8,
@@ -30,6 +31,16 @@ from llm_localize.plurals import compatible_languages, plural_categories
 from llm_localize.units import TranslationUnit
 
 UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
+
+
+def _language_in_name(path):
+    """Return the language code in a file's name, like fr in messages.fr.xlf, or None.
+
+    >>> _language_in_name("src/locale/messages.pt-BR.xlf"), _language_in_name("messages.xlf")
+    ('pt-BR', None)
+    """
+    *parts, _ = os.path.basename(path).split(".")
+    return next((part for part in reversed(parts) if _is_language_code(part)), None)
 
 
 class XliffFile(TranslationFile):
@@ -46,7 +57,8 @@ class XliffFile(TranslationFile):
 
     @property
     def language(self):
-        return self._language or self._parsed.target_language
+        # Angular's extract-i18n writes no target language: its copy for French is named messages.fr.xlf
+        return self._language or self._parsed.target_language or _language_in_name(self.path)
 
     @property
     def instructions(self):

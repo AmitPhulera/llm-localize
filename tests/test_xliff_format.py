@@ -70,8 +70,15 @@ class TestXliff1:
         with pytest.raises(ValueError, match="declares its target language as fr, not de"):
             open_file(path, language="de").untranslated_units()
 
+    def test_a_language_from_the_file_name(self, xliff):
+        # As Angular names a copy of the messages.xlf extract-i18n writes, which declares no target language
+        path = xliff(XLIFF_1.replace(' target-language="fr"', ""), name="messages.de.xlf")
+
+        assert open_file(path).language == "de"
+        assert [unit.key for unit in open_file(path).untranslated_units()][:1] == ["welcome"]
+
     def test_needs_a_language(self, xliff):
-        path = xliff(XLIFF_1.replace(' target-language="fr"', ""))
+        path = xliff(XLIFF_1.replace(' target-language="fr"', ""), name="messages.xlf")
 
         with pytest.raises(ValueError, match="pass it with --lang"):
             open_file(path).untranslated_units()
