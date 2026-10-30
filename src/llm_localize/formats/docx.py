@@ -74,6 +74,12 @@ class _Paragraph:
 class DocxFile(MonolingualFile):
     name = "docx"
     extensions = (".docx",)
+    instructions = (
+        "Messages are paragraphs of a Word document, with the headings above them as context. In a "
+        "paragraph with tags like <g1>...</g1><g2>...</g2>, each tag is a run of differently formatted "
+        "text (bold, italic, a link): keep every tag, in the same order, and put the translation of each "
+        "run's text inside its own tag, keeping spaces at the edges of tags."
+    )
 
     def source_path_candidates(self):
         yield from super().source_path_candidates()
@@ -96,6 +102,17 @@ class DocxFile(MonolingualFile):
         # Every paragraph, every run, as for Markdown: the copy can't be matched to a changed source
         return [TranslationUnit(key=key, source=paragraph.message, context=context)
                 for key, (paragraph, context) in _messages(self._source[1]).items()]
+
+    def find_problem(self, source, translation):
+        problem = super().find_problem(source, translation)
+        if problem:
+            return problem
+        if "<g1>" in source:
+            # Text outside the tags has no run to go in
+            if len(GROUP_RE.findall(translation)) != len(GROUP_RE.findall(source)) \
+                    or GROUP_RE.sub("", translation).strip():
+                return "HTML tags"
+        return None
 
     @cached_property
     def _applied(self):

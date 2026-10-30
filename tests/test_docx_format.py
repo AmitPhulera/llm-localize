@@ -111,6 +111,18 @@ def test_translations_go_into_their_runs(report):
     assert parts(report) == PARTS
 
 
+@pytest.mark.parametrize("translation, reason", [
+    ("<g1>Cliquez sur le</g1><g2> bouton</g2><g3> et attendez.</g3>", None),
+    ("<g1>Cliquez sur le</g1><g3> et attendez.</g3><g2> bouton</g2>", "HTML tags"),
+    ("<g1>Cliquez sur le bouton</g1><g3> et attendez.</g3>", "HTML tags"),
+    ("Voici : <g1>Cliquez sur le</g1><g2> bouton</g2><g3> et attendez.</g3>", "HTML tags"),
+])
+def test_find_problem(report, translation, reason):
+    source = "<g1>Click the</g1><g2> Save</g2><g3> button & wait.</g3>"
+
+    assert open_file(report.parent / "fr" / "report.docx").find_problem(source, translation) == reason
+
+
 def test_not_a_docx(tmp_path):
     (tmp_path / "report.docx").write_bytes(b"not a zip")
 
@@ -123,7 +135,8 @@ def test_cli(report, capsys):
 
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
-    assert capsys.readouterr().out == f"{path} (de): translated 7 of 7\n"
+    # The fake puts "T: " before the tags, so paragraphs with several runs are rejected
+    assert capsys.readouterr().out == f"{path} (de): translated 5 of 7\n  rejected 2: HTML tags 2\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
