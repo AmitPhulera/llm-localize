@@ -10,7 +10,7 @@ import re
 from functools import cached_property
 from pathlib import Path
 
-from llm_localize.formats.base import splice, write_file
+from llm_localize.formats.base import TranslationFile, load_json, splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 
 INSTRUCTIONS = (
@@ -91,6 +91,38 @@ class StringsFile(MonolingualFile):
             addition = "\n" + addition
         replacements.append((len(text), len(text), addition))
         write_file(self.path, _encode_file(splice(text, replacements), encoding))
+
+
+class XcstringsFile(TranslationFile):
+    """An Xcode string catalog, translated for one language at a time."""
+
+    name = "xcstrings"
+    extensions = (".xcstrings",)
+    instructions = INSTRUCTIONS
+
+    def __init__(self, path, language=None):
+        super().__init__(path)
+        self._language = language
+
+    @classmethod
+    def open(cls, path, language=None, source_language=None, source_path=None):
+        return cls(path, language=language)
+
+    @property
+    def language(self):
+        return self._language
+
+    @cached_property
+    def document(self):
+        with open(self.path, encoding="utf-8") as f:
+            text = f.read()
+        self._ending = "\n" if text.endswith("\n") else ""
+        document = load_json(text, self.path)
+        return document
+
+    @property
+    def source_language(self):
+        return self.document.get("sourceLanguage", "en")
 
 
 def _starts_line(text, index):
