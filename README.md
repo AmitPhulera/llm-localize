@@ -14,7 +14,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO, JSON, Android, iOS and XLIFF files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic: it ships with gettext PO, JSON, Android, iOS, XLIFF and Markdown formats (see [Formats](#formats)), and others plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
@@ -48,10 +48,11 @@ The format is chosen by file extension, or with `--format`.
 | `strings` | `.strings` | one language per file | none (`.stringsdict` isn't supported) |
 | `xcstrings` | `.xcstrings` | every language, one at a time with `--lang` | plural variations by CLDR category |
 | `xliff` | `.xlf`, `.xliff` | source and translation, one file per language | ICU messages |
+| `markdown` | `.md`, `.markdown` | a translated copy of a document per language | — |
 
 ### One file per language
 
-JSON, Android and `.strings` files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
+JSON, Android, `.strings` and Markdown files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
 
 ```bash
 llm-localize locales/fr.json locales/de.json        # from locales/en.json
@@ -110,6 +111,21 @@ Each unit holds its source and translation, so like a PO file, one file is one l
 - Inline elements like `<x id="INTERPOLATION"/>`, `<ph/>`, `<g>` and `<pc>` must be kept with their attributes, though placeholders may change places as word order needs, and translations that aren't well-formed XML are rejected.
 - Angular's ICU plurals and selects are checked with the ICU rules, with a plural case for each category of the target language.
 - The file is edited in place: a new `<target>` goes right after its `<source>`, and the rest of the file is kept byte for byte.
+
+### Markdown
+
+```bash
+llm-localize docs/fr/guide.md                      # from docs/en/guide.md
+llm-localize docs/guide.fr.md                      # from docs/guide.en.md
+llm-localize translated/guide.md --lang fr --source docs/guide.md
+```
+
+The target path names the language, as for JSON, and the source is the same path with the source language.
+
+- The document is split into blocks: headings and paragraphs. Each is sent with the headings above it as context.
+- Translating the source file itself, as a glob might, does nothing.
+- A block that fails keeps its source text in the copy, and is counted as rejected.
+- Every run translates the whole document, since a changed source can't be matched to the old copy block by block.
 
 ## LLM providers
 

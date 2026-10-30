@@ -1,11 +1,14 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/en/guide.md``.
 
 The document is split into blocks: headings and paragraphs. Each block
-is one message, sent with the headings above it as context.
+is one message, sent with the headings above it as context. Every run
+translates the whole document, since a changed source can't be matched
+to the old translation block by block.
 """
 import re
 from functools import cached_property
 
+from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.units import TranslationUnit
 
@@ -22,7 +25,9 @@ class _Unit:
 
     def render(self, translation):
         lines = translation.split("\n")
-        return self.first_prefix + "\n".join(
+        # Lines end as the block's last one does, so a document with \r\n line endings keeps them
+        newline = "\r\n" if self.suffix.endswith("\r\n") else "\n"
+        return self.first_prefix + newline.join(
             lines[:1] + [self.prefix + line if line else self.prefix.rstrip() for line in lines[1:]]
         ) + self.suffix
 
@@ -51,9 +56,25 @@ class MarkdownFile(MonolingualFile):
         return [TranslationUnit(key=key, source=message.text, context=message.context)
                 for key, message in self.source_messages.items()]
 
+    @cached_property
+    def _applied(self):
+        return {}
+
+    def apply(self, key, translation):
+        self._applied[key] = translation
+
+    def save(self):
+        """Write the translated copy: every block's translation, or its source text if it has none yet."""
+        text = "".join(
+            piece if isinstance(piece, str) else piece.render(self._applied.get(piece.key, piece.text))
+            for piece in self._document
+        )
+        write_file(self.path, text.encode())
+
 
 def _read(path):
-    with open(path, encoding="utf-8") as f:
+    # newline="" keeps \r\n line endings, so a translation keeps them too
+    with open(path, encoding="utf-8", newline="") as f:
         parser = _Parser(f.read())
     parser.parse()
     return parser
@@ -86,7 +107,8 @@ def _parse(text):
 
 class _Parser:
     def __init__(self, text):
-        self.lines = text.splitlines(keepends=True)
+        # Only at line endings: splitlines() would also split at characters like U+2028 inside a line
+        self.lines = [line for line in re.split(r"(?<=\n)|(?<=\r)(?!\n)", text) if line]
         self.pieces = []
         self.headings = []
         self.index = 0
