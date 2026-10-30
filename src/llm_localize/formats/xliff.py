@@ -151,6 +151,7 @@ def _read(path):
     parser = expat.ParserCreate("UTF-8")
     stack = []  # (local name, attrs, start index, inner start)
     open_elements = Counter()  # how many of each element are open, so ancestors needn't be listed per tag
+    untranslatable = []  # for each open element, whether it's marked translate="no", itself or by a parent
     unit = {}
 
     def local(tag):
@@ -161,13 +162,16 @@ def _read(path):
         start_index = parser.CurrentByteIndex
         inner_start = tag_end(data, start_index)
         parent = stack[-1][0] if stack else ""
+        # translate="no" holds for the element's children too, unless one says translate="yes"
+        inherited = bool(untranslatable) and untranslatable[-1]
+        untranslatable.append(attrs.get("translate", "no" if inherited else "yes") == "no")
         if name == "xliff":
             parsed.version = "2" if attrs.get("version", "").startswith("2") else "1"
         elif name == "file" and attrs.get("target-language"):
             parsed.target_language = parsed.target_language or attrs["target-language"]
         elif name in ("trans-unit", "unit"):
             unit.clear()
-            unit.update(id=attrs.get("id", ""), skip=attrs.get("translate") == "no", notes=[], segments=0,
+            unit.update(id=attrs.get("id", ""), skip=untranslatable[-1], notes=[], segments=0,
                         state=None, segment_tag=None, read=[])
         elif name in ("source", "target") and _in_segment(parent):
             if name == "source":
@@ -190,6 +194,7 @@ def _read(path):
 
     def end(tag):
         name, attrs, start_index, inner_start = stack.pop()
+        untranslatable.pop()
         end_index = parser.CurrentByteIndex
         self_closing = data[inner_start - 2:inner_start] == b"/>"
         inner_end = inner_start if self_closing else end_index

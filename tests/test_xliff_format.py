@@ -140,6 +140,15 @@ def test_the_state_attribute_is_set_not_text_in_another(xliff):
     assert '<target note=\' state="new"\' state="translated">T: Hi</target>' in path.read_text()
 
 
+def test_translate_no_holds_for_the_units_inside(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body>'
+                 '<group translate="no"><trans-unit id="logo"><source>ACME</source></trans-unit>'
+                 '<trans-unit id="tagline" translate="yes"><source>Tagline</source></trans-unit></group>'
+                 '<trans-unit id="hello"><source>Hello</source></trans-unit></body></file></xliff>')
+
+    assert [unit.key for unit in open_file(path).untranslated_units()] == ["tagline", "hello"]
+
+
 def test_deep_nesting_takes_linear_time(xliff):
     depth = 20000
     path = xliff('<xliff version="1.2"><file target-language="fr"><body>' + "<group>" * depth
