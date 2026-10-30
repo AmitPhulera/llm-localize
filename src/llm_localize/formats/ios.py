@@ -1,5 +1,6 @@
 """iOS and macOS strings: ``.strings`` files, one per language."""
 import codecs
+import os
 import re
 
 TOKEN_RE = re.compile(r"""
@@ -13,6 +14,40 @@ TOKEN_RE = re.compile(r"""
 BOMS = {"utf-8-sig": codecs.BOM_UTF8, "utf-16-le": codecs.BOM_UTF16_LE, "utf-16-be": codecs.BOM_UTF16_BE}
 
 ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "'": "'", "0": "\0"}
+
+
+def _read_strings(path):
+    """Return a ``.strings`` file's text, its entries and its encoding.
+
+    Each entry is a dict of ``key``, ``value``, ``comment`` (the comment
+    just before it) and ``value_span``, the value's quoted text's position.
+    """
+    if not os.path.exists(path):
+        return "", [], "utf-8"
+    with open(path, "rb") as f:
+        data = f.read()
+    encoding = _encoding(data)
+    text = data[len(BOMS.get(encoding, b"")):].decode(encoding.replace("-sig", ""))
+    tokens = [(match.lastgroup, match.group(), match.span()) for match in TOKEN_RE.finditer(text)
+              if match.lastgroup != "space"]
+    if sum(len(match.group()) for match in TOKEN_RE.finditer(text)) != len(text):
+        raise ValueError(f"{path} is not a valid .strings file")
+    entries, comment, index = [], "", 0
+    while index < len(tokens):
+        kind, value, _ = tokens[index]
+        if kind == "comment":
+            comment = " ".join(value.strip("/*").split())
+            index += 1
+            continue
+        parts = tokens[index:index + 4]
+        if (len(parts) < 4 or parts[0][0] not in ("string", "word") or parts[1][1] != "="
+                or parts[2][0] != "string" or parts[3][1] != ";"):
+            raise ValueError(f"{path} is not a valid .strings file near {value[:40]!r}")
+        key = _unquote(parts[0][1]) if parts[0][0] == "string" else parts[0][1]
+        entries.append({"key": key, "value": _unquote(parts[2][1]), "comment": comment, "value_span": parts[2][2]})
+        comment = ""
+        index += 4
+    return text, entries, encoding
 
 
 def _unquote(quoted):
