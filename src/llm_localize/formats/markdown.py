@@ -1,10 +1,10 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/guide.md``.
 
-The document is split into blocks: headings, paragraphs, list items, and
-blockquotes. Each block is one message, sent with the headings above it
-as context. Code blocks are copied as they are. Every run translates the
-whole document, since a changed source can't be matched to the old
-translation block by block.
+The document is split into blocks: headings, paragraphs, list items,
+blockquotes, and HTML blocks with text. Each block is one message, sent
+with the headings above it as context. Code blocks and comments are
+copied as they are. Every run translates the whole document, since a
+changed source can't be matched to the old translation block by block.
 """
 import re
 from functools import cached_property
@@ -22,6 +22,10 @@ SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 LIST_RE = re.compile(r"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?")
 QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
+HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
+COMMENT_RE = re.compile(r"^ {0,3}<!--")
+
+TAG_RE = re.compile(r"<[^<>]+>")
 
 
 class _Unit:
@@ -165,17 +169,28 @@ class _Parser:
                 self.literal()
             elif FENCE_RE.match(line) or self.is_list_fence(line):
                 self.fence()
+            elif COMMENT_RE.match(line):
+                self.comment()
             elif HEADING_RE.match(line):
                 self.atx_heading()
             elif QUOTE_RE.match(line):
                 self.blockquote()
             elif LIST_RE.match(line) and not RULE_RE.match(line):
                 self.list_item()
+            elif HTML_BLOCK_RE.match(line):
+                self.html_block()
             elif line.startswith(("    ", "\t")) and self.is_indented_code(line):
                 self.indented_code()
             else:
                 self.paragraph()
         return self.pieces
+
+    def comment(self):
+        start = self.index
+        while self.index < len(self.lines) and "-->" not in self.line():
+            self.index += 1
+        self.index = min(self.index + 1, len(self.lines))
+        self.pieces.append("".join(self.lines[start:self.index]))
 
     def indented_code(self):
         start = self.index
@@ -313,6 +328,18 @@ class _Parser:
             return None
         return indent
 
+    def html_block(self):
+        start = self.index
+        while self.index < len(self.lines) and self.line().strip():
+            self.index += 1
+        block = "".join(self.lines[start:self.index])
+        if TAG_RE.sub("", block).strip():
+            body = block.rstrip("\r\n")
+            # Line endings within it go back as the block's last one, as for other blocks
+            self.unit(body.replace("\r\n", "\n"), suffix=block[len(body):])
+        else:
+            self.pieces.append(block)
+
     def paragraph(self):
         indent = re.match(r"[ \t]*", self.line()).group()
         lines = []
@@ -320,6 +347,7 @@ class _Parser:
             current = self.line()
             if (not current.strip() or (lines and (FENCE_RE.match(current) or HEADING_RE.match(current)
                                                     or QUOTE_RE.match(current) or LIST_RE.match(current)
+                                                    or HTML_BLOCK_RE.match(current)
                                                     or self.is_list_fence(current)))):
                 break
             if lines and SETEXT_RE.match(current):
