@@ -8,6 +8,9 @@ paragraph with more than one is sent with each run's text in a tag,
 supported: convert them first, e.g. with LibreOffice's ``soffice
 --headless --convert-to docx``.
 """
+from xml.parsers import expat
+
+from llm_localize.formats.xml_utils import tag_end
 
 
 class _Text:
@@ -46,3 +49,32 @@ class _Paragraph:
         if len(texts) == 1:
             return texts[0]
         return "".join(f"<g{index}>{text}</g{index}>" for index, text in enumerate(texts, start=1))
+
+
+def _paragraphs(part, data):
+    """Return a part's paragraphs, with the position of each ``<w:t>`` and how its run is formatted."""
+    parser = expat.ParserCreate()
+    paragraphs, open_paragraphs, stack = [], [], []
+    runs = []  # (format key) of each open run
+    current_text = []
+
+    def local(tag):
+        return tag.rpartition(":")[2]
+
+    def start(tag, attrs):
+        name = local(tag)
+        start_index = parser.CurrentByteIndex
+        inner_start = tag_end(data, start_index)
+        stack.append((name, start_index, inner_start))
+        if name == "p":
+            paragraph = _Paragraph(part)
+            open_paragraphs.append(paragraph)
+            paragraphs.append(paragraph)
+        elif not open_paragraphs:
+            return
+        elif name == "r":
+            runs.append(b"")
+        elif name == "t" and runs:
+            text = _Text(start_index, inner_start)
+            open_paragraphs[-1].add(text, runs[-1])
+            current_text.append(text)
