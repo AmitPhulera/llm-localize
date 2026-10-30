@@ -21,7 +21,7 @@ from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
-from llm_localize.formats.xml_utils import tag_end
+from llm_localize.formats.xml_utils import open_tag, set_attribute, tag_end
 from llm_localize.units import section_context
 
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
@@ -30,10 +30,13 @@ GROUP_TAG_RE = re.compile(r"</?g\d+>")
 
 
 class _Text:
-    """One ``<w:t>``: where its start tag and content are, and its text."""
+    """One ``<w:t>``: its name as written, where its start tag and content are, and its text."""
 
-    def __init__(self, start, inner_start):
+    def __init__(self, start, inner_start, start_tag):
         self.start, self.inner_start, self.inner_end = start, inner_start, inner_start
+        self.start_tag = start_tag
+        # Like w:t, or t in a document that makes WordprocessingML the default namespace
+        self.name = re.match(rb"<([^\s/>]+)", start_tag).group(1)
         self.self_closing = False
         self.text = ""
 
@@ -98,9 +101,9 @@ class DocxFile(MonolingualFile):
             for group, text in zip(paragraph.groups, texts, strict=True):
                 for index, element in enumerate(group):
                     # The whole group's text goes in its first <w:t>, keeping that run's formatting
-                    new = b'<w:t xml:space="preserve">' + (_escape(text) if index == 0 else "").encode()
+                    new = _preserving_space(element) + (_escape(text) if index == 0 else "").encode()
                     if element.self_closing:
-                        new += b"</w:t>"
+                        new += b"</" + element.name + b">"
                     replacements.setdefault(paragraph.part, []).append((element.start, element.inner_end, new))
         package = io.BytesIO()
         with zipfile.ZipFile(self.source_path) as source, zipfile.ZipFile(package, "w") as target:
@@ -164,6 +167,15 @@ def _read(path):
     return names, paragraphs
 
 
+def _preserving_space(element):
+    """Return a text element's start tag, opened if it closes itself, with xml:space="preserve".
+
+    >>> _preserving_space(_Text(0, 0, b'<w:t xmlns:w="urn:w" xml:space="default"/>'))
+    b'<w:t xmlns:w="urn:w" xml:space="preserve">'
+    """
+    return set_attribute(open_tag(element.start_tag), b"xml:space", b"preserve")
+
+
 def _paragraphs(part, data):
     """Return a part's paragraphs, with the position of each ``<w:t>`` and how its run is formatted."""
     parser = expat.ParserCreate()
@@ -190,7 +202,7 @@ def _paragraphs(part, data):
         elif name == "r":
             runs.append(b"")
         elif name == "t" and runs:
-            text = _Text(start_index, inner_start)
+            text = _Text(start_index, inner_start, data[start_index:inner_start])
             open_paragraphs[-1].add(text, runs[-1])
             current_text.append(text)
 

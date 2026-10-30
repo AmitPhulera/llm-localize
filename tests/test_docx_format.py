@@ -1,6 +1,8 @@
 import time
 import warnings
 import zipfile
+from xml.dom import minidom
+from xml.parsers import expat
 
 import pytest
 
@@ -140,6 +142,25 @@ def test_a_failed_save_leaves_no_partial_file(report, monkeypatch):
     assert not path.parent.exists() or list(path.parent.iterdir()) == []
 
 
+@pytest.mark.parametrize("document", [
+    '<document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    '<body><p><r><t>Hello world</t></r></p></body></document>',
+    '<word:document xmlns:word="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    '<word:body><word:p><word:r><word:t>Hello world</word:t></word:r></word:p></word:body></word:document>',
+])
+def test_text_keeps_the_documents_own_element_names(tmp_path, document):
+    source = tmp_path / "plain.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", document)
+    target = tmp_path / "fr" / "plain.docx"
+
+    translate_file(open_file(target, source_path=source), FakeClient(), "fr")
+
+    saved = parts(target)["word/document.xml"]
+    assert "T: Hello world" in saved
+    minidom.parseString(saved)
+
+
 def test_saves_keep_a_symlinked_targets_link_and_mode(report, tmp_path):
     real = tmp_path / "shared.docx"
     real.write_bytes(report.read_bytes())
@@ -248,3 +269,20 @@ def test_a_save_takes_linear_time_in_the_number_of_text_runs(tmp_path):
     started = time.perf_counter()
     docx_file.save()
     assert time.perf_counter() - started < 1
+
+
+def test_a_text_element_keeps_the_namespaces_it_declares(tmp_path):
+    source = tmp_path / "ns.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", '<a:document xmlns:a="http://schemas.openxmlformats.org/wordprocessingml/'
+                         '2006/main"><a:body><a:p><a:r><w:t xmlns:w="http://schemas.openxmlformats.org/'
+                         'wordprocessingml/2006/main">Hello</w:t></a:r></a:p></a:body></a:document>')
+    target = tmp_path / "fr" / "ns.docx"
+
+    translate_file(open_file(target, source_path=source), FakeClient(), "fr")
+
+    with zipfile.ZipFile(target) as package:
+        part = package.read("word/document.xml")
+    assert b'<w:t xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xml:space="preserve">' \
+           b"T: Hello</w:t>" in part
+    expat.ParserCreate(namespace_separator=" ").Parse(part, True)
