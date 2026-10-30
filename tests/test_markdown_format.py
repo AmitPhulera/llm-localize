@@ -15,6 +15,11 @@ Welcome to **Acme**. Read the [guide](https://example.com/guide "Guide") or the 
 This line wraps.
 
 ## Install
+
+Setext heading
+--------------
+
+---
 '''
 
 
@@ -41,6 +46,7 @@ def test_blocks(docs):
         ('Welcome to **Acme**. Read the [guide](https://example.com/guide "Guide") or the [FAQ][faq].\n'
          "This line wraps.", "Section: Getting started"),
         ("Install", "Section: Getting started"),
+        ("Setext heading", "Section: Getting started"),
     ]
 
 
@@ -49,9 +55,9 @@ def test_translations_keep_the_structure(docs):
 
     result = translate_file(open_file(path), FakeClient(), "fr")
 
-    assert result.translated == 3
+    assert result.translated == 4
     text = path.read_text(encoding="utf-8")
-    assert "# T: Getting started\n\nT: Welcome to **Acme**." in text
+    assert "T: Setext heading\n--------------\n" in text
 
 
 @pytest.mark.parametrize("target, source", [
@@ -78,7 +84,7 @@ def test_cli(docs, capsys):
 
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
-    assert capsys.readouterr().out == f"{path} (de): translated 3 of 3\n"
+    assert capsys.readouterr().out == f"{path} (de): translated 4 of 4\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):

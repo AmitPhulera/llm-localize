@@ -14,6 +14,8 @@ from llm_localize.units import TranslationUnit
 
 # A heading line; its closing #s, if any, are split off by _heading_parts, which a regex would do in quadratic time
 HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
+SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 
 
 class _Unit:
@@ -152,7 +154,7 @@ class _Parser:
     def parse(self):
         while self.index < len(self.lines):
             line = self.line()
-            if not line.strip():
+            if not line.strip() or RULE_RE.match(line):
                 self.literal()
             elif HEADING_RE.match(line):
                 self.atx_heading()
@@ -174,6 +176,14 @@ class _Parser:
             current = self.line()
             if not current.strip() or (lines and HEADING_RE.match(current)):
                 break
+            if lines and SETEXT_RE.match(current):
+                # The paragraph was a heading, underlined
+                text = "\n".join(lines)
+                context = self.heading(1 if current.strip().startswith("=") else 2, text)
+                self.unit(text, first_prefix=indent, prefix=indent, suffix=self.ending(self.index - 1),
+                          context=context)
+                self.literal()
+                return
             lines.append(current[len(indent):] if current.startswith(indent) else current.strip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=indent, prefix=indent, suffix=self.ending(self.index - 1))
