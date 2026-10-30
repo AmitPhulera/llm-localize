@@ -3,6 +3,8 @@ import codecs
 import re
 from collections import Counter
 
+# An attribute, its value in quotes, so text in one isn't taken for another
+ATTRIBUTE_RE = re.compile(rb'''\s([^\s=/>]+)\s*=\s*("[^"]*"|'[^']*')''')
 # A character reference, like &#37; or &#x25;
 CHARACTER_REFERENCE_RE = re.compile(r"&#(\d{1,8}|[xX][0-9A-Fa-f]{1,8});")
 
@@ -24,6 +26,24 @@ def open_tag(start_tag):
     """
     slash, end = ("/", ">") if isinstance(start_tag, str) else (b"/", b">")
     return start_tag[:-2].rstrip() + end if start_tag.endswith(slash + end) else start_tag
+
+
+def set_attribute(start_tag, name, value):
+    """Return a start tag with attribute ``name`` set to ``value``, added if it isn't there.
+
+    Attributes are read in turn, so text in another's quoted value isn't taken for one.
+
+    >>> set_attribute(b"<t note=' state=x' state='new'/>", b"state", b"translated")
+    b"<t note=' state=x' state='translated'/>"
+    >>> set_attribute(b"<t>", b"state", b"translated")
+    b'<t state="translated">'
+    """
+    found = next((match for match in ATTRIBUTE_RE.finditer(start_tag) if match.group(1) == name), None)
+    if found:
+        start, end = found.span(2)
+        return start_tag[:start + 1] + value + start_tag[end - 1:]
+    end = -2 if start_tag.endswith(b"/>") else -1
+    return start_tag[:end] + b" " + name + b'="' + value + b'"' + start_tag[end:]
 
 
 def changes_tags(source, translation, counted=True):
