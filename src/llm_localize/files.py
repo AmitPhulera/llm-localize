@@ -3,7 +3,9 @@
 ``FileTranslator`` takes a file's bytes and name and returns the
 translated file's bytes, using the same formats, checks and report as
 the command line tool. For a file that holds its source and translation
-together (PO, XLIFF, .xcstrings), the upload is filled in.
+together (PO, XLIFF, .xcstrings), the upload is filled in. For one that
+holds a single language (JSON, Android, .strings, Markdown, Word), the
+upload is the source and the result is the new language's file.
 
 Uploads are untrusted: the content only ever goes in a temporary
 directory under a fixed name, and only the extension of the given name
@@ -16,6 +18,7 @@ from pathlib import Path
 
 from llm_localize.engine import translate_file
 from llm_localize.formats import format_class_for_path, get_format_class
+from llm_localize.formats.monolingual import MonolingualFile
 from llm_localize.strings import BaseTranslator
 
 
@@ -90,12 +93,19 @@ class FileTranslator(BaseTranslator):
         upload_name = Path(filename).name
         suffix = Path(upload_name).suffix.lower()
         format_class = get_format_class(format) if format else format_class_for_path(upload_name or "upload")
+        if not suffix and format_class.extensions:
+            suffix = format_class.extensions[0]
         source_language = source_language or self.source_language
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / f"source{suffix}"
             source.write_bytes(content)
-            output = source
-            translation_file = format_class.open(source, language=language, source_language=source_language)
+            if issubclass(format_class, MonolingualFile):
+                output = Path(directory) / f"translation{suffix}"
+                translation_file = format_class.open(output, language=language, source_language=source_language,
+                                                     source_path=source)
+            else:
+                output = source
+                translation_file = format_class.open(source, language=language, source_language=source_language)
             result = translate_file(
                 translation_file, self.client, language,
                 source_language=source_language,
@@ -103,6 +113,10 @@ class FileTranslator(BaseTranslator):
                 workers=self.workers,
                 extra_instructions=self.instructions if instructions is None else instructions,
             )
+            # A translation is saved as it's made; with nothing translated, a new file is saved now, so
+            # there's always one to return
+            if not output.exists():
+                translation_file.save()
             return FileTranslation(
                 content=output.read_bytes(),
                 untranslated=result.untranslated,

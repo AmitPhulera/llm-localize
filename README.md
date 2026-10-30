@@ -289,7 +289,7 @@ Create one translator and reuse it; it's safe to share between threads. LLM call
 
 ## Translating files in your app
 
-`FileTranslator` translates a file's content at runtime, such as a file a user uploads. It takes the same options as `StringTranslator`.
+`FileTranslator` translates a file's content at runtime, such as a file a user uploads, in any of the [formats](#formats). It takes the same options as `StringTranslator`.
 
 ```python
 from llm_localize import FileTranslator
@@ -302,7 +302,7 @@ result.complete    # False if some messages couldn't be translated
 result.rejected    # why, e.g. Counter({"placeholders": 1})
 ```
 
-- A file that holds its translations (PO, XLIFF, `.xcstrings`) comes back filled in.
+- A file that holds its translations (PO, XLIFF, `.xcstrings`) comes back filled in. For a file of one language (JSON, Android, `.strings`, Markdown, Word), the upload is the source, and the result is the new language's file.
 - The format comes from the name's extension, or `format="json"`. Only the extension is used: the content goes in a temporary directory under a fixed name.
 
 As with strings, call it from a background task: a document can take a minute.
