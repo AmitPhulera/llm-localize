@@ -78,3 +78,31 @@ def _paragraphs(part, data):
             text = _Text(start_index, inner_start)
             open_paragraphs[-1].add(text, runs[-1])
             current_text.append(text)
+
+    def end(tag):
+        name, start_index, inner_start = stack.pop()
+        end_index = parser.CurrentByteIndex
+        self_closing = data[inner_start - 2:inner_start] == b"/>"
+        if name == "p":
+            open_paragraphs.pop()
+        elif name == "rPr" and stack and stack[-1][0] == "r" and runs:
+            runs[-1] = data[start_index:end_index]
+        elif name == "r" and runs:
+            runs.pop()
+        elif name == "t" and current_text:
+            text = current_text.pop()
+            text.inner_end = inner_start if self_closing else end_index
+            text.self_closing = self_closing
+
+    def characters(content):
+        if current_text:
+            current_text[-1].text += content
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.CharacterDataHandler = characters
+    try:
+        parser.Parse(data, True)
+    except expat.ExpatError as e:
+        raise ValueError(f"{part} is not valid XML: {e}") from e
+    return [paragraph for paragraph in paragraphs if paragraph.groups]
