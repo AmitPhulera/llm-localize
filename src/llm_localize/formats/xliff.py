@@ -173,8 +173,10 @@ def _read(path):
             if name == "source":
                 unit["segments"] += 1
                 key = f"{unit['id']}#{unit['segments']}" if parsed.version == "2" else unit["id"]
-                if key in parsed.segments:
-                    key = f"{key}#{len(parsed.segments)}"
+                # A repeated id gets a number, one no other unit's id has taken
+                number, base = len(parsed.segments), key
+                while key in parsed.segments:
+                    key, number = f"{base}#{number}", number + 1
                 segment = _Segment(context="")
                 segment.indent = line_indent(data, start_index)
                 segment.segment_tag = unit["segment_tag"]

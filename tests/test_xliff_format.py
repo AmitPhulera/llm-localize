@@ -122,6 +122,15 @@ def test_targets_declare_the_namespaces_their_source_does(xliff):
     expat.ParserCreate(namespace_separator=" ").Parse(text, True)
 
 
+def test_a_repeated_id_never_takes_another_units_key(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body>'
+                 + "".join(f'<trans-unit id="{id}"><source>{text}</source></trans-unit>'
+                           for id, text in [("a#2", "First"), ("a", "Second"), ("a", "Third")])
+                 + "</body></file></xliff>")
+
+    assert [unit.source for unit in open_file(path).untranslated_units()] == ["First", "Second", "Third"]
+
+
 def test_the_state_attribute_is_set_not_text_in_another(xliff):
     path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a"><source>Hi</source>'
                  '<target note=\' state="new"\' state="new"></target></trans-unit></body></file></xliff>')
