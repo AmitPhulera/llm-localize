@@ -401,6 +401,16 @@ def test_a_link_inside_another_keeps_the_outer_one_text(docs):
         is None
 
 
+def test_a_link_holding_a_link_to_a_definition_keeps_the_outer_one_text(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    # [faq] links to its definition, so the outer brackets are text and /evil isn't a link
+    assert markdown.find_problem("[outer [faq]](/evil)", "[extérieur](/evil) [faq]") == "links"
+    assert markdown.find_problem("[outer [x][faq]](/evil)", "[extérieur](/evil) [x][faq]") == "links"
+    # An image can be in a link's text
+    assert markdown.find_problem("[outer ![faq]](/ok)", "[extérieur ![faq]](/ok)") is None
+
+
 def test_a_link_ends_where_commonmark_ends_it(docs):
     markdown = open_file(docs / "fr" / "guide.md")
 

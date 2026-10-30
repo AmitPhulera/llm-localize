@@ -73,6 +73,7 @@ YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?
 LINK_LABEL_RE = re.compile(r"\]\[([^\]]*)\]|\[\^([^\]]+)\]")
 TAG_RE = re.compile(r"<[^<>]+>")
 NON_SPACE_RE = re.compile(r"\S")
+BRACKET_RE = re.compile(r"[\[\]]")
 # A backslash-escaped bracket or <, after any escaped backslashes; a < with the tag name after it, so an
 # escape can't move from one tag to another
 ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\([\[\]]|<[/!?]?[A-Za-z][\w:.-]*|<)")
@@ -145,7 +146,8 @@ class MarkdownFile(MonolingualFile):
         # Without its backslash, an escaped \[ or \< would start a link or a tag
         if Counter(ESCAPE_RE.findall(source_text)) != Counter(ESCAPE_RE.findall(translation_text)):
             return "escapes"
-        if Counter(_link_targets(source_text)) != Counter(_link_targets(translation_text)):
+        labels = self._parser.labels
+        if Counter(_link_targets(source_text, labels)) != Counter(_link_targets(translation_text, labels)):
             return "links"
         # In order, so [one][a] and [two][b] can't become [un][b] and [deux][a]
         if LINK_LABEL_RE.findall(source_text) != LINK_LABEL_RE.findall(translation_text):
@@ -285,7 +287,7 @@ def _yaml_control_escape(match):
         f"\\x{ord(character):02x}" if ord(character) < 0x100 else f"\\u{ord(character):04x}")
 
 
-def _link_targets(text):
+def _link_targets(text, labels=frozenset()):
     r"""Return the destination of each inline link and image, allowing balanced parentheses in it.
 
     One inside a link's destination or title isn't a link of its own, but one
@@ -303,6 +305,11 @@ def _link_targets(text):
     (['\x00b'], ['b'])
     >>> _link_targets('[a [b](c)](d)'), _link_targets('![a [b](c)](d)')
     (['c', '\x00d'], ['c', 'd'])
+
+    So is one whose text holds a link to a definition, from ``labels``.
+
+    >>> _link_targets('[a [b]](c)', {"b"}), _link_targets('[a [b]](c)')
+    (['\x00c'], ['c'])
     """
     if "](" not in text:
         return []
@@ -342,11 +349,16 @@ def _link_targets(text):
 
     # Where each real link's ]( is: a link can't hold another in its text, though an image can
     links = []
+    # Where each link to a definition starts, like [label], [label][] or [text][label]
+    references = sorted(_reference_starts(text, closing, labels)) if labels else []
 
     def holds_a_link(bracket):
         opener = closing[bracket]
-        image = opener and text[opener - 1] == "!" and not _backslashes_before(text, opener - 1) % 2
-        return not image and bisect.bisect_left(links, opener) < len(links)
+        if _is_image(text, opener):
+            return False
+        reference = bisect.bisect_right(references, opener)
+        return (bisect.bisect_left(links, opener) < len(links)
+                or reference < len(references) and references[reference] < bracket)
 
     # Where each real link's destination starts and its ")" is: a [ there opens no link text
     destinations = []
@@ -401,6 +413,29 @@ def _link_targets(text):
             # Not a link, but counted the same way in both texts, at a bounded cost
             targets.append("\0" + text[start:min(end, start + 2048)])
     return targets
+
+
+def _is_image(text, opener):
+    """True if the ``[`` at ``opener`` starts an image's alt text: it has an unescaped ``!`` before it."""
+    return opener > 0 and text[opener - 1] == "!" and not _backslashes_before(text, opener - 1) % 2
+
+
+def _reference_starts(text, closing, labels):
+    """Yield where each bracket pair that links to one of ``labels`` opens: [label], [label][] or [text][label].
+
+    ``closing`` maps each ``]`` to the ``[`` it closes.
+    """
+    for bracket, opener in closing.items():
+        # Brackets after brackets are a label, not a link; [text](...) is an inline link, and ![label] an image
+        if text[opener - 1:opener] == "]" or text.startswith("(", bracket + 1) or _is_image(text, opener):
+            continue
+        start, end = opener + 1, bracket
+        after = text.find("]", bracket + 2) if text.startswith("[", bracket + 1) else -1
+        if closing.get(after) == bracket + 1 and after > bracket + 2:
+            start, end = bracket + 2, after
+        # A label holds no brackets and is at most 999 characters, as CommonMark has it
+        if end - start < 1000 and not BRACKET_RE.search(text, start, end) and _label(text[start:end]) in labels:
+            yield opener
 
 
 def _closing_parentheses(text):
