@@ -367,6 +367,8 @@ def test_an_escaped_tag_cant_lose_its_backslash(docs):
         == "escapes"
     assert markdown.find_problem(r"Write \[click](javascript:alert(1))", "Écrivez [click](javascript:alert(1))") \
         == "escapes"
+    # Moved elsewhere, the escape would still be there, but the link text wouldn't be text any more
+    assert markdown.find_problem(r"\[click](//evil.example) [note]", r"[click](//evil.example) \[note]") == "links"
 
 
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
@@ -531,3 +533,10 @@ def test_an_escape_naming_no_character_is_left_as_written(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert units[0].source == "Bad \\UFFFFFFFF"
+
+
+def test_a_link_cant_hide_behind_brackets_that_only_look_like_one(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("See [the guide](guide.md).",
+                                 "Voir [le guide](guide.md [connexion](//evil.example) ici.") == "links"

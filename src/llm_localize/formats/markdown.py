@@ -245,13 +245,34 @@ def _yaml_control_escape(match):
 
 
 def _link_targets(text):
-    """Return the destination of each inline link and image, allowing balanced parentheses in it.
+    r"""Return the destination of each inline link and image, allowing balanced parentheses in it.
+
+    One inside a link's destination or title isn't a link of its own, but one
+    after brackets that only look like a link, as in ``[a](b [c](d))``, is.
 
     >>> _link_targets('[a](docs/a_(b).md "Title") and ![x](<my img.png>)')
     ['docs/a_(b).md', '<my img.png>']
+    >>> _link_targets('[a](b [c](//evil.example))'), _link_targets('[a](b "[c](d)")')
+    (['\x00b', '//evil.example'], ['b'])
+
+    Text that only looks like one, as after an escaped ``\[``, is counted
+    too, marked, so a translation can't make it a link by moving the escape.
+
+    >>> _link_targets(r'\[a](b) [c]'), _link_targets(r'[a](b) \[c]')
+    (['\x00b'], ['b'])
     """
     if "](" not in text:
         return []
+    # The brackets each ] closes; an escaped one is text, and a ] with no [ before it doesn't end link text
+    opened, closing = [], set()
+    for bracket in re.finditer(r"[\[\]]", text):
+        if _backslashes_before(text, bracket.start()) % 2:
+            continue
+        if bracket.group() == "[":
+            opened.append(bracket.start())
+        elif opened:
+            opened.pop()
+            closing.add(bracket.start())
     ends = _closing_parentheses(text)
     # Where each whitespace and each character that can end a destination or title is, found by bisecting,
     # so no link is scanned again from each one inside it
@@ -267,8 +288,10 @@ def _link_targets(text):
             index += 1
         return index
 
-    targets = []
+    targets, covered = [], 0
     for match in re.finditer(r"\]\(", text):
+        if match.start() < covered:
+            continue
         close = ends[match.end()]
         if close >= len(text):
             # Never closed, so not a link
@@ -280,7 +303,18 @@ def _link_targets(text):
         else:
             space = first(spaces, start, close)
             end = space if space is not None else close
-        targets.append(text[start:end])
+        # A link if only a title, in quotes or parentheses, comes between its destination and its ")"
+        after = skip_spaces(end, close)
+        real = after == close and match.start() in closing
+        if not real and match.start() in closing and after > end and text[after] in "\"'(":
+            title_end = first(closers[")" if text[after] == "(" else text[after]], after + 1, close)
+            real = title_end is not None and skip_spaces(title_end + 1, close) == close
+        if real:
+            covered = close
+            targets.append(text[start:end])
+        else:
+            # Not a link, but counted the same way in both texts, at a bounded cost
+            targets.append("\0" + text[start:min(end, start + 2048)])
     return targets
 
 
