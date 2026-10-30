@@ -1,10 +1,14 @@
-"""iOS and macOS strings: ``.strings`` files, one per language.
+"""iOS and macOS strings: ``.strings`` files, one per language, and Xcode's ``.xcstrings`` string catalogs.
 
 ``fr.lproj/Localizable.strings`` is translated from ``en.lproj`` (or
 ``Base.lproj``) beside it; new entries are added at its end and empty
-ones filled in place, keeping the rest of the file and its encoding.
+ones filled in place, keeping the rest of the file and its encoding. An
+``.xcstrings`` catalog holds every language, so it's translated for one
+``--lang`` at a time, like a PO file. Entries with variations or
+substitutions, and ``.stringsdict`` files, are left alone.
 """
 import codecs
+import json
 import os
 import re
 from functools import cached_property
@@ -12,6 +16,7 @@ from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile, load_json, splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
+from llm_localize.units import TranslationUnit
 
 INSTRUCTIONS = (
     "Messages are Apple strings, and each one's context gives its key or comment. Keep format "
@@ -123,6 +128,40 @@ class XcstringsFile(TranslationFile):
     @property
     def source_language(self):
         return self.document.get("sourceLanguage", "en")
+
+    def untranslated_units(self):
+        if not self.language:
+            raise ValueError(f"{self.path} holds every language; pass the one to translate to with --lang")
+        units = []
+        for key, entry in self.document.get("strings", {}).items():
+            if entry.get("shouldTranslate") is False:
+                continue
+            source = entry.get("localizations", {}).get(self.source_language, {})
+            target = entry.get("localizations", {}).get(self.language, {})
+            context = "; ".join(filter(None, [entry.get("comment", ""), f"Key: {key}"]))
+            # A target in a shape this can't write back, like variations, would be lost
+            if "substitutions" in target or "variations" in target:
+                continue
+            if "substitutions" not in source and "variations" not in source:
+                text = source.get("stringUnit", {}).get("value", key)
+                if text.strip() and not _is_translated(target.get("stringUnit", {})):
+                    units.append(TranslationUnit(key=key, source=text, context=context))
+        return units
+
+    def apply(self, key, translation):
+        localizations = self.document["strings"][key].setdefault("localizations", {})
+        localizations[self.language] = {"stringUnit": {"state": "translated", "value": translation}}
+        # Xcode keeps languages in alphabetical order
+        self.document["strings"][key]["localizations"] = dict(sorted(localizations.items()))
+
+    def save(self):
+        text = json.dumps(self.document, ensure_ascii=False, indent=2, separators=(",", " : "))
+        write_file(self.path, (text + self._ending).encode())
+
+
+def _is_translated(string_unit):
+    """True for a stringUnit with a value that isn't in the ``new`` state."""
+    return bool(string_unit.get("value", "").strip()) and string_unit.get("state") != "new"
 
 
 def _starts_line(text, index):

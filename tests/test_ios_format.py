@@ -1,4 +1,5 @@
 import codecs
+import json
 import time
 
 import pytest
@@ -113,6 +114,55 @@ class TestStrings:
 
         with pytest.raises(ValueError, match=r"not a valid .strings file near .*: \\u is not followed by four"):
             open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
+
+
+def string_unit(value, state="translated"):
+    return {"stringUnit": {"state": state, "value": value}}
+
+
+CATALOG = {
+    "sourceLanguage": "en",
+    "strings": {
+        "Hello %@": {"comment": "Greeting", "localizations": {"fr": string_unit("Bonjour %@")}},
+        "Save": {},
+        "%lld files": {"localizations": {"en": {"variations": {"plural": {
+            "one": string_unit("%lld file"), "other": string_unit("%lld files")}}}}},
+        "Device": {"localizations": {"en": {"variations": {"device": {"iphone": string_unit("Phone")}}}}},
+        "API": {"shouldTranslate": False},
+        "Stale": {"localizations": {"de": string_unit("Alt", state="new")}},
+    },
+    "version": "1.0",
+}
+
+
+@pytest.fixture
+def catalog(tmp_path):
+    path = tmp_path / "Localizable.xcstrings"
+    path.write_text(json.dumps(CATALOG, indent=2, separators=(",", " : ")) + "\n", encoding="utf-8")
+    return path
+
+
+class TestXcstrings:
+
+    def test_needs_a_language(self, catalog):
+        with pytest.raises(ValueError, match="pass the one to translate to with --lang"):
+            open_file(catalog).untranslated_units()
+
+    def test_targets_it_cant_write_back_are_left_alone(self, tmp_path):
+        catalog = {"sourceLanguage": "en", "strings": {
+            "Device": {"localizations": {"fr": {"variations": {"device": {"iphone": string_unit("Tél")}}}}},
+            "Sub": {"localizations": {"fr": {"substitutions": {"n": {}}, **string_unit("")}}},
+            "Plain": {"localizations": {"fr": {"variations": {"plural": {"other": string_unit("")}}}}},
+        }}
+        path = tmp_path / "L.xcstrings"
+        path.write_text(json.dumps(catalog))
+
+        assert open_file(path, language="fr").untranslated_units() == []
+
+    def test_languages_stay_in_alphabetical_order(self, catalog):
+        translate_file(open_file(catalog, language="de"), FakeClient(), "de")
+
+        assert list(json.loads(catalog.read_text())["strings"]["Hello %@"]["localizations"]) == ["de", "fr"]
 
 
 def test_unfinished_comments_are_refused_in_linear_time(tmp_path):

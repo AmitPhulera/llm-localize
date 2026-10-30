@@ -13,6 +13,7 @@ FORMATS = {
     'json': 'llm_localize.formats.json_format.JsonFile',
     'android': 'llm_localize.formats.android.AndroidFile',
     'strings': 'llm_localize.formats.ios.StringsFile',
+    'xcstrings': 'llm_localize.formats.ios.XcstringsFile',
 }
 
 
