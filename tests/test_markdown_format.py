@@ -7,7 +7,7 @@ from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 from llm_localize.formats.markdown import MarkdownFile
 
-from .fakes import FakeClient
+from .fakes import FakeClient, ScriptedClient
 
 GUIDE = '''# Getting started
 
@@ -219,6 +219,16 @@ def test_code_in_containers_round_trips(tmp_path):
     assert target.read_text(encoding="utf-8") == CODE_IN_CONTAINERS
 
 
+def test_translated_table_cells_stay_one_cell(tmp_path):
+    (tmp_path / "t.md").write_text("| A | B |\n|---|---|\n| c | `x|y` |\n", encoding="utf-8")
+    target = tmp_path / "fr" / "t.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "t.md"),
+                   ScriptedClient([{"0": "A", "1": "B", "2": "x | y\nz", "3": "`x|y`"}]), "fr")
+
+    assert target.read_text(encoding="utf-8").splitlines()[2] == r"| x \| y z | `x|y` |"
+
+
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_only_line_endings_end_lines(tmp_path, newline):
     source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", "- item one",
@@ -287,6 +297,27 @@ def test_a_fence_in_a_quote_in_a_quote_is_copied(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Text"]
+
+
+def test_a_first_cell_without_a_pipe_before_it_cant_start_a_block(tmp_path):
+    (tmp_path / "s.md").write_text("Place | Name\n--- | ---\n1st | Alice\n", encoding="utf-8")
+    target = tmp_path / "de" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                   ScriptedClient([{"0": "Platz", "1": "Name", "2": "1.", "3": "Alice"}]), "de")
+
+    assert target.read_text(encoding="utf-8") == "Platz | Name\n--- | ---\n1\\. | Alice\n"
+
+
+def test_inline_syntax_starting_a_first_cell_is_kept(tmp_path):
+    source = ("Option | Meaning\n--- | ---\n`--force` | Overwrite\n**Bold** | Strong\n~~old~~ | Removed\n"
+              "```` ```js ```` | Fence\n")
+    (tmp_path / "s.md").write_text(source, encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(prefix=""), "fr")
+
+    assert target.read_text(encoding="utf-8") == source
 
 
 def test_a_rule_after_a_list_stays_a_rule(tmp_path):

@@ -411,11 +411,15 @@ class _Parser:
             if TABLE_SEPARATOR_RE.match(line):
                 self.literal()
                 continue
+            # A row's first cell starts its line when the row has no leading pipe
+            starts_line = not line.lstrip().startswith("|")
             for cell in _split_row(line):
                 if isinstance(cell, str):
                     self.pieces.append(cell)
                 else:
-                    self.unit(cell[1], first_prefix=cell[0], suffix=cell[2])
+                    self.unit(cell[1], first_prefix=cell[0], suffix=cell[2],
+                              encode=_first_table_cell if starts_line else _table_cell)
+                    starts_line = False
             self.pieces.append(self.ending(self.index))
             self.index += 1
 
@@ -461,6 +465,36 @@ class _Parser:
             lines.append(current[len(indent):] if current.startswith(indent) else current.strip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=indent, prefix=indent, suffix=self.ending(self.index - 1))
+
+
+def _one_line(text):
+    """Join a translation's lines, for a block that must stay on one line, like a heading."""
+    return text.replace("\r\n", " ").replace("\n", " ")
+
+
+def _first_table_cell(text):
+    r"""Write a translated cell that starts its line so it can't start a block, like a list or a fence, either.
+
+    >>> print(_first_table_cell("1."), _first_table_cell("# of users"), _first_table_cell("```"))
+    1\. \# of users \```
+    >>> print(_first_table_cell("`--force`"), _first_table_cell("**Bold**"), _first_table_cell("1st"))
+    `--force` **Bold** 1st
+    """
+    text = _table_cell(text)
+    # Only what would start a block: inline code, emphasis or ~~strike~~ at the start stays as it is. A
+    # backtick fence can't have a backtick after it, so ```` ```js ```` is a code span.
+    text = re.sub(r"^(\s*)(?=#{1,6}(?:[ \t]|$)|>|[-+*](?:[ \t]|$)|`{3,}(?![^`]*`)|~{3,})", r"\1\\", text)
+    return re.sub(r"^(\s*)(\d{1,9})([.)])(?=[ \t]|$)", r"\1\2\\\3", text)
+
+
+def _table_cell(text):
+    r"""Write a translated table cell so it stays one cell: pipes escaped, except in code, and on one line.
+
+    >>> print(_table_cell("x | y `a|b` c\\|d\nnext"))
+    x \| y `a|b` c\|d next
+    """
+    parts = re.split(r"(`+.+?`+)", _one_line(text))
+    return "".join(part if index % 2 else re.sub(r"(?<!\\)\|", r"\\|", part) for index, part in enumerate(parts))
 
 
 def _split_row(line):
