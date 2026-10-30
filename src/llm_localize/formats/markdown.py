@@ -14,6 +14,8 @@ from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.units import TranslationUnit
 
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# The > markers of quotes inside a quote
+NESTED_QUOTES_RE = re.compile(r"^(?: {0,3}>[ \t]?)*")
 # A heading line; its closing #s, if any, are split off by _heading_parts, which a regex would do in quadratic time
 HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
 SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
@@ -200,10 +202,28 @@ class _Parser:
         self.index += 1
 
     def blockquote(self):
-        text = []  # the indexes of the quoted lines
+        """A blockquote: its text as messages, and code inside it, fenced or indented, copied as it is."""
+        text, fence = [], None  # the indexes of quoted text lines not yet added, and an open code fence
         while self.index < len(self.lines) and QUOTE_RE.match(self.line() or ""):
-            text.append(self.index)
-            self.index += 1
+            content = self.quoted(self.index)
+            # In a quote inside this one too
+            innermost = NESTED_QUOTES_RE.sub("", content)
+            paragraph_ended = not text or not self.quoted(text[-1]).strip()
+            if fence is None and (FENCE_RE.match(innermost)
+                                  or (content.startswith(("    ", "\t")) and paragraph_ended)):
+                self.quote_text(text)
+                text = []
+                if FENCE_RE.match(innermost):
+                    fence = FENCE_RE.match(innermost).group(1)
+                self.literal()
+            elif fence is not None:
+                closing = innermost.strip()
+                if closing.startswith(fence[0] * len(fence)) and not closing.strip(fence[0]):
+                    fence = None
+                self.literal()
+            else:
+                text.append(self.index)
+                self.index += 1
         self.quote_text(text)
 
     def quoted(self, index):

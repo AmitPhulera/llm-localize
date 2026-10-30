@@ -148,10 +148,23 @@ CODE_IN_CONTAINERS = """1. Install:
   ~~~
   y = 2
   ~~~
+
+> Quoted text
+> on two lines.
+>
+> ~~~python
+> x = 1
+>
+> print(x)
+> ~~~
+>
+>     z = 3
+>
+> More quoted text.
 """
 
 
-def test_code_in_list_items_is_not_translated(tmp_path):
+def test_code_in_list_items_and_blockquotes_is_not_translated(tmp_path):
     (tmp_path / "code.md").write_text(CODE_IN_CONTAINERS, encoding="utf-8")
     target = tmp_path / "fr" / "code.md"
 
@@ -159,10 +172,11 @@ def test_code_in_list_items_is_not_translated(tmp_path):
     translate_file(open_file(target, source_path=tmp_path / "code.md"), FakeClient(), "fr")
 
     assert [unit.source for unit in units] == [
-        "Install:", "Run it", "Item"]
+        "Install:", "Run it", "Item", "Quoted text\non two lines.", "More quoted text."]
     assert target.read_text(encoding="utf-8") == (
         CODE_IN_CONTAINERS.replace("Install:", "T: Install:").replace("Run it", "T: Run it")
-        .replace("- Item", "- T: Item"))
+        .replace("- Item", "- T: Item").replace("> Quoted text", "> T: Quoted text")
+        .replace("> More", "> T: More"))
 
 
 def test_code_in_containers_round_trips(tmp_path):
@@ -210,6 +224,13 @@ def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Item"]
+
+
+def test_a_fence_in_a_quote_in_a_quote_is_copied(tmp_path):
+    (tmp_path / "s.md").write_text("> > ```\n> > code\n> > ```\n> Text\n", encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Text"]
 
 
 def test_a_rule_after_a_list_stays_a_rule(tmp_path):
