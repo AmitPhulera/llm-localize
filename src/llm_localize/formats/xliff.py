@@ -34,6 +34,9 @@ from llm_localize.plurals import compatible_languages, ordinal_categories, plura
 from llm_localize.units import TranslationUnit
 
 UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
+# The halves of a pair written as two placeholders, as the start and end tags they stand for
+PAIR_HALVES = {"sc": "<sc>", "ec": "</sc>", "bx": "<bx>", "ex": "</bx>", "sm": "<sm>", "em": "</sm>"}
+ELEMENT_ID_RE = re.compile(r"""\sid\s*=\s*["']([^"']*)["']""")
 # An inline element's tag: <x .../>, <g ...>, </g>
 ELEMENT_RE = re.compile(r"<[^<>]+>")
 
@@ -178,6 +181,14 @@ def _mask_elements(text):
         tag = match.group()
         name = re.match(r"</?([^\s/>]+)", tag).group(1)
         if tag.endswith("/>"):
+            # Half of a pair, which must stay in order: 2.0's <sc/> and <ec/> and <sm/> and <em/>, 1.2's
+            # <bx/> and <ex/>, and Angular's <x id="START_BOLD_TEXT"/> and <x id="CLOSE_BOLD_TEXT"/>
+            local, element_id = name.rpartition(":")[2].lower(), ELEMENT_ID_RE.search(tag)
+            pair = re.fullmatch(r"(START|CLOSE)_(\w+)", element_id.group(1)) if element_id else None
+            if local in PAIR_HALVES:
+                return PAIR_HALVES[local]
+            if pair:
+                return f"<{'/' if pair.group(1) == 'CLOSE' else ''}x-{pair.group(2).lower()}>"
             # A placeholder, like <x/> or <ph/>: a named placeholder, which may move past markup too, written
             # without braces, so an apostrophe before it, as in l'<x/>, isn't ICU quoting, and after a space, so
             # a % before it, as in Turkish's %<x/>, isn't taken for part of it

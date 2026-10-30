@@ -257,6 +257,14 @@ def test_inline_placeholders_may_move_past_each_other(xliff):
     # A % before one is text, as Turkish writes %50
     pct = '<x id="INTERPOLATION" equiv-text="{{ pct }}"/>'
     assert xliff_file.find_problem(f"{pct}% off", f"%{pct} indirim") is None
+    # A pair's halves keep their order
+    start = '<x id="START_BOLD_TEXT" ctype="x-b"/>'
+    close = '<x id="CLOSE_BOLD_TEXT" ctype="x-b"/>'
+    assert xliff_file.find_problem(f"Click {start}here{close}", f"Cliquez {close}ici{start}") == "HTML tags"
+    assert xliff_file.find_problem('Click <bx id="1"/>here<ex id="1"/>', 'Cliquez <ex id="1"/>ici<bx id="1"/>') \
+        == "HTML tags"
+    marked, swapped = 'Click <sm id="m"/>here<em startRef="m"/>', 'Cliquez <em startRef="m"/>ici<sm id="m"/>'
+    assert xliff_file.find_problem(marked, swapped) == "HTML tags"
     # An apostrophe before a placeholder isn't ICU quoting
     icu = "{VAR_PLURAL, plural, =1 {Open %s once} other {Open %s # times}}"
     elided = "{VAR_PLURAL, plural, =1 {Ouvrir l'%s une fois} one {Ouvrir l'%s # fois} many {Ouvrir l'%s # fois} " \
