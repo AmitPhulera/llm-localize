@@ -25,6 +25,11 @@ This line wraps.
 >
 > It's in `~/.acme`.
 
+| Option | Meaning |
+| ------ | ------- |
+| `--fast` | Skips `checks` |
+| `a\\|b` | Pipe |
+
 ```bash
 acme --help
 ```
@@ -76,6 +81,12 @@ def test_blocks(docs):
         ("Open the app\nand sign in.", "Section: Getting started > Install"),
         ("Nested item with [the docs].", "Section: Getting started > Install"),
         ("**Note:** keep your key secret.\n\nIt's in `~/.acme`.", "Section: Getting started > Install"),
+        ("Option", "Section: Getting started > Install"),
+        ("Meaning", "Section: Getting started > Install"),
+        ("`--fast`", "Section: Getting started > Install"),
+        ("Skips `checks`", "Section: Getting started > Install"),
+        ("`a\\|b`", "Section: Getting started > Install"),
+        ("Pipe", "Section: Getting started > Install"),
         ("<p>Some <b>HTML</b> text</p>", "Section: Getting started > Install"),
         ("Setext heading", "Section: Getting started"),
         ("Todo item", "Section: Getting started > Setext heading"),
@@ -87,10 +98,11 @@ def test_translations_keep_the_structure(docs):
 
     result = translate_file(open_file(path), FakeClient(), "fr")
 
-    assert result.translated == 10
+    assert result.translated == 16
     text = path.read_text(encoding="utf-8")
     assert "2. T: Open the app\n   and sign in.\n   - T: Nested item with [the docs].\n" in text
     assert "> T: **Note:** keep your key secret.\n>\n> It's in `~/.acme`.\n" in text
+    assert "| T: `--fast` | T: Skips `checks` |\n" in text
     assert "```bash\nacme --help\n```\n" in text
     assert "T: Setext heading\n--------------\n" in text
     assert "- [ ] T: Todo item\n" in text
@@ -120,7 +132,7 @@ def test_cli(docs, capsys):
 
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
-    assert capsys.readouterr().out == f"{path} (de): translated 10 of 10\n"
+    assert capsys.readouterr().out == f"{path} (de): translated 16 of 16\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
@@ -139,6 +151,15 @@ def test_code_inside_a_list_item_is_not_translated(tmp_path):
     units = open_file(tmp_path / "fr" / "guide.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Example", "More about it."]
+
+
+def test_table_cells_keep_code_spans_of_several_backticks(tmp_path):
+    path = tmp_path / "fr" / "table.md"
+    (tmp_path / "table.md").write_text("| a | b |\n|---|---|\n| x | ``y| z`` |\n", encoding="utf-8")
+
+    translate_file(open_file(path, source_path=tmp_path / "table.md"), FakeClient(), "fr")
+
+    assert path.read_text(encoding="utf-8").splitlines()[2] == "| T: x | T: ``y| z`` |"
 
 
 CODE_IN_CONTAINERS = """1. Install:
@@ -286,6 +307,14 @@ def test_unclosed_tags_take_linear_time(tmp_path):
 
 def test_a_heading_with_a_long_run_of_spaces_takes_linear_time(tmp_path):
     (tmp_path / "s.md").write_text("# x" + " " * 200000 + "y\n", encoding="utf-8")
+
+    started = time.perf_counter()
+    open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+    assert time.perf_counter() - started < 1
+
+
+def test_a_long_line_of_spaces_after_a_table_candidate_takes_linear_time(tmp_path):
+    (tmp_path / "s.md").write_text("| heading |\n" + " " * 200000 + "\n", encoding="utf-8")
 
     started = time.perf_counter()
     open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()

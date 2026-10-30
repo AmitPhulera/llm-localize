@@ -1,10 +1,11 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/guide.md``.
 
 The document is split into blocks: headings, paragraphs, list items,
-blockquotes, and HTML blocks with text. Each block is one message, sent
-with the headings above it as context. Code blocks and comments are
-copied as they are. Every run translates the whole document, since a
-changed source can't be matched to the old translation block by block.
+blockquotes, table cells, and HTML blocks with text. Each block is one
+message, sent with the headings above it as context. Code blocks and
+comments are copied as they are. Every run translates the whole
+document, since a changed source can't be matched to the old translation
+block by block.
 """
 import re
 from functools import cached_property
@@ -22,6 +23,9 @@ SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 LIST_RE = re.compile(r"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?")
 QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
+# Written so spaces can be matched only one way: optional runs of them side by side make a long line of
+# spaces quadratic to rule out
+TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
 # HTML blocks holding code rather than text, copied up to their closing tag
 RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.IGNORECASE)
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
@@ -179,6 +183,8 @@ class _Parser:
                 self.blockquote()
             elif LIST_RE.match(line) and not RULE_RE.match(line):
                 self.list_item()
+            elif self.line(1) is not None and "|" in line and TABLE_SEPARATOR_RE.match(self.line(1)):
+                self.table()
             elif HTML_BLOCK_RE.match(line):
                 self.html_block()
             elif line.startswith(("    ", "\t")) and self.is_indented_code(line):
@@ -330,6 +336,20 @@ class _Parser:
             return None
         return indent
 
+    def table(self):
+        while self.index < len(self.lines) and self.line() is not None and "|" in self.line():
+            line = self.line()
+            if TABLE_SEPARATOR_RE.match(line):
+                self.literal()
+                continue
+            for cell in _split_row(line):
+                if isinstance(cell, str):
+                    self.pieces.append(cell)
+                else:
+                    self.unit(cell[1], first_prefix=cell[0], suffix=cell[2])
+            self.pieces.append(self.ending(self.index))
+            self.index += 1
+
     def html_block(self):
         start = self.index
         raw = RAW_HTML_RE.match(self.line())
@@ -377,10 +397,14 @@ class _Parser:
 def _split_row(line):
     r"""Split a table row into literal pipes and ``(leading space, cell text, trailing space)`` cells.
 
-    Pipes escaped with a backslash don't split cells.
+    Pipes inside code spans or escaped with a backslash don't split cells.
+    A code span ends at a run of as many backticks as it starts with, and
+    a run nothing closes is plain text.
 
-    >>> _split_row("| a | b\\|c |")
-    ['|', (' ', 'a', ' '), '|', (' ', 'b\\|c', ' '), '|']
+    >>> _split_row("| a | `x|y` | b\\|c |")
+    ['|', (' ', 'a', ' '), '|', (' ', '`x|y`', ' '), '|', (' ', 'b\\|c', ' '), '|']
+    >>> _split_row("| ``y|`z`` | ` | b |")
+    ['|', (' ', '``y|`z``', ' '), '|', (' ', '`', ' '), '|', (' ', 'b', ' '), '|']
     """
     pieces, cell, code_run, index = [], "", "", 0
     while index < len(line):
@@ -388,6 +412,15 @@ def _split_row(line):
         if char == "\\" and index + 1 < len(line) and not code_run:
             cell += line[index:index + 2]
             index += 2
+            continue
+        if char == "`":
+            run = re.match(r"`+", line[index:]).group()
+            if run == code_run:
+                code_run = ""
+            elif not code_run and re.search(rf"(?<!`){run}(?!`)", line[index + len(run):]):
+                code_run = run
+            cell += run
+            index += len(run)
             continue
         if char == "|" and not code_run:
             pieces.append(cell)
