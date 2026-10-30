@@ -4,8 +4,9 @@
 ``Base.lproj``) beside it; new entries are added at its end and empty
 ones filled in place, keeping the rest of the file and its encoding. An
 ``.xcstrings`` catalog holds every language, so it's translated for one
-``--lang`` at a time, like a PO file. Entries with variations or
-substitutions, and ``.stringsdict`` files, are left alone.
+``--lang`` at a time, like a PO file. Plural variations are translated
+by CLDR category; entries with device variations or substitutions, and
+``.stringsdict`` files, are left alone.
 """
 import codecs
 import json
@@ -16,6 +17,7 @@ from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile, load_json, splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
+from llm_localize.plurals import plural_categories, plural_forms
 from llm_localize.units import TranslationUnit
 
 INSTRUCTIONS = (
@@ -132,6 +134,7 @@ class XcstringsFile(TranslationFile):
     def untranslated_units(self):
         if not self.language:
             raise ValueError(f"{self.path} holds every language; pass the one to translate to with --lang")
+        forms = plural_forms(self.language)
         units = []
         for key, entry in self.document.get("strings", {}).items():
             if entry.get("shouldTranslate") is False:
@@ -139,10 +142,22 @@ class XcstringsFile(TranslationFile):
             source = entry.get("localizations", {}).get(self.source_language, {})
             target = entry.get("localizations", {}).get(self.language, {})
             context = "; ".join(filter(None, [entry.get("comment", ""), f"Key: {key}"]))
-            # A target in a shape this can't write back, like variations, would be lost
-            if "substitutions" in target or "variations" in target:
+            # A target in a shape this can't write back, like device variations, would be lost
+            if "substitutions" in target or ("variations" in target and _plural_units(target) is None):
                 continue
-            if "substitutions" not in source and "variations" not in source:
+            if "variations" in source:
+                # Only plural variations; device variations nest theirs inside
+                plurals = _plural_units(source)
+                if plurals is None:
+                    continue
+                translated = _plural_units(target) or {}
+                if all(_is_translated(translated.get(form.index, {})) for form in forms):
+                    continue
+                plurals = {category: unit.get("value", "") for category, unit in plurals.items()}
+                other = plurals.get("other", key)
+                units.append(TranslationUnit(key=key, source=plurals.get("one", other), plural_source=other,
+                                             plural_forms=forms, context=context))
+            elif "substitutions" not in source and "variations" not in target:
                 text = source.get("stringUnit", {}).get("value", key)
                 if text.strip() and not _is_translated(target.get("stringUnit", {})):
                     units.append(TranslationUnit(key=key, source=text, context=context))
@@ -150,13 +165,31 @@ class XcstringsFile(TranslationFile):
 
     def apply(self, key, translation):
         localizations = self.document["strings"][key].setdefault("localizations", {})
-        localizations[self.language] = {"stringUnit": {"state": "translated", "value": translation}}
+        if isinstance(translation, dict):
+            plural = {category: {"stringUnit": {"state": "translated", "value": translation[category]}}
+                      for category in plural_categories(self.language) if category in translation}
+            localizations[self.language] = {"variations": {"plural": plural}}
+        else:
+            localizations[self.language] = {"stringUnit": {"state": "translated", "value": translation}}
         # Xcode keeps languages in alphabetical order
         self.document["strings"][key]["localizations"] = dict(sorted(localizations.items()))
 
     def save(self):
         text = json.dumps(self.document, ensure_ascii=False, indent=2, separators=(",", " : "))
         write_file(self.path, (text + self._ending).encode())
+
+
+def _plural_units(localization):
+    """Return ``{category: stringUnit}`` for a localization's plural variations, or None if it has none.
+
+    None too for plural variations that vary again inside, by device for instance.
+    """
+    plural = localization.get("variations", {}).get("plural")
+    if not isinstance(plural, dict):
+        return None
+    if any(not isinstance(variation, dict) or variation.keys() - {"stringUnit"} for variation in plural.values()):
+        return None
+    return {category: variation.get("stringUnit", {}) for category, variation in plural.items()}
 
 
 def _is_translated(string_unit):

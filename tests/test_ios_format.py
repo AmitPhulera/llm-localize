@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 
@@ -148,21 +149,61 @@ class TestXcstrings:
         with pytest.raises(ValueError, match="pass the one to translate to with --lang"):
             open_file(catalog).untranslated_units()
 
+    @pytest.mark.parametrize("language, keys", [
+        ("fr", ["Save", "%lld files", "Stale"]),
+        ("de", ["Hello %@", "Save", "%lld files", "Stale"]),
+    ])
+    def test_units(self, catalog, language, keys):
+        units = open_file(catalog, language=language).untranslated_units()
+
+        assert [unit.key for unit in units] == keys
+
+    def test_translates(self, catalog):
+        result = translate_file(open_file(catalog, language="fr"), FakeClient(), "fr")
+
+        assert result.translated == 3
+        text = catalog.read_text(encoding="utf-8")
+        assert text.endswith("}\n") and '"sourceLanguage" : "en"' in text
+        strings = json.loads(text)["strings"]
+        assert strings["Save"] == {"localizations": {"fr": string_unit("T: Save")}}
+        assert strings["%lld files"]["localizations"]["fr"] == {"variations": {"plural": {
+            "one": string_unit("T: %lld files"), "many": string_unit("T: %lld files"),
+            "other": string_unit("T: %lld files")}}}
+        assert list(strings["Stale"]["localizations"]) == ["de", "fr"]
+        assert strings["Hello %@"]["localizations"]["fr"] == string_unit("Bonjour %@")
+
     def test_targets_it_cant_write_back_are_left_alone(self, tmp_path):
+        plural = {"variations": {"plural": {"one": string_unit("%lld file"), "other": string_unit("%lld files")}}}
+        by_device = {"variations": {"plural": {"other": {"variations": {"device": {"iphone": string_unit("x")}}}}}}
         catalog = {"sourceLanguage": "en", "strings": {
             "Device": {"localizations": {"fr": {"variations": {"device": {"iphone": string_unit("Tél")}}}}},
             "Sub": {"localizations": {"fr": {"substitutions": {"n": {}}, **string_unit("")}}},
             "Plain": {"localizations": {"fr": {"variations": {"plural": {"other": string_unit("")}}}}},
+            "%lld files": {"localizations": {"en": plural, "fr": by_device}},
         }}
         path = tmp_path / "L.xcstrings"
         path.write_text(json.dumps(catalog))
 
         assert open_file(path, language="fr").untranslated_units() == []
 
+    def test_plurals_in_the_new_state_are_translated(self, tmp_path):
+        new = {"variations": {"plural": {c: string_unit("x", state="new") for c in ("one", "many", "other")}}}
+        source = {"variations": {"plural": {"one": string_unit("%lld file"), "other": string_unit("%lld files")}}}
+        path = tmp_path / "L.xcstrings"
+        path.write_text(json.dumps({"sourceLanguage": "en", "strings": {
+            "%lld files": {"localizations": {"en": source, "fr": new}}}}))
+
+        assert [unit.key for unit in open_file(path, language="fr").untranslated_units()] == ["%lld files"]
+
     def test_languages_stay_in_alphabetical_order(self, catalog):
         translate_file(open_file(catalog, language="de"), FakeClient(), "de")
 
         assert list(json.loads(catalog.read_text())["strings"]["Hello %@"]["localizations"]) == ["de", "fr"]
+
+    def test_cli(self, catalog, capsys):
+        assert main([str(catalog), "--lang", "es", "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+        assert capsys.readouterr().out == f"{catalog} (es): translated 4 of 4\n"
 
 
 def test_unfinished_comments_are_refused_in_linear_time(tmp_path):

@@ -46,7 +46,7 @@ The format is chosen by file extension, or with `--format`.
 | `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`), or ICU messages |
 | `android` | `.xml` | one language per file | `<plurals>` items by CLDR category |
 | `strings` | `.strings` | one language per file | none (`.stringsdict` isn't supported) |
-| `xcstrings` | `.xcstrings` | every language, one at a time with `--lang` | — |
+| `xcstrings` | `.xcstrings` | every language, one at a time with `--lang` | plural variations by CLDR category |
 
 ### One file per language
 
@@ -96,7 +96,7 @@ llm-localize MyApp/Localizable.xcstrings --lang fr     # a string catalog, one l
 ```
 
 - **`.strings`** files are translated from the same file in `en.lproj` (with `--source-lang`'s code), or `Base.lproj` if there's none. Each entry is sent with the comment above it, and its key when that differs from the text. New entries are added at the end with their comments, empty values are filled in place, and the file keeps its encoding, UTF-8 or UTF-16.
-- **`.xcstrings`** catalogs hold every language, so pass the target with `--lang`. An entry is translated when the language has no value, an empty one, or one in the `new` state, and the translation is marked `translated`. Entries marked `shouldTranslate: false`, and those with variations or substitutions, are skipped. Set `--source-lang` to the catalog's `sourceLanguage` if it isn't English, since the prompt names it.
+- **`.xcstrings`** catalogs hold every language, so pass the target with `--lang`. An entry is translated when the language has no value, an empty one, or one in the `new` state, and the translation is marked `translated`. Plural variations get one form per CLDR category of the language. Entries marked `shouldTranslate: false`, and those with device variations or substitutions, are skipped. Set `--source-lang` to the catalog's `sourceLanguage` if it isn't English, since the prompt names it.
 
 ## LLM providers
 
