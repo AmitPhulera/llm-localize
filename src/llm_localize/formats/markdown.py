@@ -28,6 +28,8 @@ QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 # Written so spaces can be matched only one way: optional runs of them side by side make a long line of
 # spaces quadratic to rule out
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
+# A block scalar's indicator, like | or >-, whose value is on the indented lines below
+YAML_BLOCK_RE = re.compile(r"[|>][+-]?\d?[+-]?")
 # A plain YAML value that needs quoting: one starting with an indicator, or holding ": " or " #"
 YAML_UNSAFE_RE = re.compile(r"^[-?:,\[\]{}#&*!|>'\"%@`\s]|: |\s#|:$|\s$")
 # HTML blocks holding code rather than text, copied up to their closing tag
@@ -143,6 +145,9 @@ def _front_matter_line(line):
                     return key.group(1), key.group(2), quote, rest[1:index], rest[index + 1:]
                 break
             index += 1
+        else:
+            # Not closed on this line: the value goes on, so it isn't one to translate here
+            return None
     # Before the spaces that end it, or that come before a #
     # One space and #, not FRONT_MATTER_COMMENT_RE: a search for a run of them rescans a long run of spaces
     comment = re.search(r"[ \t]#", rest)
@@ -318,8 +323,12 @@ class _Parser:
         self.literal()
         while self.index < end:
             match = _front_matter_line(self.line())
+            # A block scalar (title: |) or a value going on over indented lines is copied: its text
+            # isn't all on this line
+            continued = self.index + 1 < end and self.line(1)[:1] in (" ", "\t") and self.line(1).strip()
             key, separator, quote, value, comment = match or (None,) * 5
-            if match and value.strip():
+            block_scalar = not quote and YAML_BLOCK_RE.fullmatch((value or "").strip())
+            if match and value.strip() and not continued and not block_scalar:
                 self.unit(_yaml_decode(value, quote), first_prefix=key + separator,
                           suffix=comment + self.ending(self.index), context=f"Front matter: {key}",
                           encode=lambda text, quote=quote: _yaml_encode(text, quote))

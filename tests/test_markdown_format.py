@@ -283,6 +283,7 @@ def test_unchanged_translations_keep_the_document(tmp_path, source):
 
 
 @pytest.mark.parametrize("source, messages", [
+    ("---\ntitle: |\n  A title\n---\n\nText.\n", ["Text."]),
     ("\ufeff---\nlayout: post\ntitle: Guide\n---\n\nText.\n", ["Guide", "Text."]),
     ('<script>\nvar msg = "hello";\n\nfetch(url);\n</script>\n\n<PRE>\ncode\n</pre>\n\n'
      '<style>p {}</style>\n\nText.\n', ["Text."]),
@@ -327,6 +328,13 @@ def test_a_fence_in_a_quote_in_a_quote_is_copied(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Text"]
+
+
+def test_a_quoted_front_matter_value_over_two_lines_is_copied(tmp_path):
+    (tmp_path / "s.md").write_text('---\ntitle: "A title\ncontinued"\n---\n\nText.\n', encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Text."]
 
 
 def test_a_first_cell_without_a_pipe_before_it_cant_start_a_block(tmp_path):
