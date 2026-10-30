@@ -126,8 +126,12 @@ def _read_strings(path):
         if (len(parts) < 4 or parts[0][0] not in ("string", "word") or parts[1][1] != "="
                 or parts[2][0] != "string" or parts[3][1] != ";"):
             raise ValueError(f"{path} is not a valid .strings file near {value[:40]!r}")
-        key = _unquote(parts[0][1]) if parts[0][0] == "string" else parts[0][1]
-        entries.append({"key": key, "value": _unquote(parts[2][1]), "comment": comment, "value_span": parts[2][2]})
+        try:
+            key = _unquote(parts[0][1]) if parts[0][0] == "string" else parts[0][1]
+            entries.append({"key": key, "value": _unquote(parts[2][1]), "comment": comment,
+                            "value_span": parts[2][2]})
+        except ValueError as e:
+            raise ValueError(f"{path} is not a valid .strings file near {value[:40]!r}: {e}") from e
         comment = ""
         index += 4
     return text, entries, encoding
@@ -147,6 +151,8 @@ def _unquote(quoted):
     def replace(match):
         escape = match.group(1)
         if escape[0] in "uU":
+            if len(escape) == 1:
+                raise ValueError(f"\\{escape} is not followed by four hex digits")
             return chr(int(escape[1:], 16))
         # Octal, as in \101 for "A"
         if escape[0] in "01234567":

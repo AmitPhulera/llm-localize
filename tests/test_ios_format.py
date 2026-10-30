@@ -99,6 +99,12 @@ class TestStrings:
         with pytest.raises(ValueError, match="not a valid .strings file"):
             open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
 
+    def test_a_unicode_escape_without_its_digits_is_invalid(self, lproj):
+        write(lproj / "fr.lproj" / "Localizable.strings", '"Cancel\\uZZZZ" = "Annuler";\n')
+
+        with pytest.raises(ValueError, match=r"not a valid .strings file near .*: \\u is not followed by four"):
+            open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
+
 
 def test_unfinished_comments_are_refused_in_linear_time(tmp_path):
     write(tmp_path / "en.lproj" / "Localizable.strings", "/*x " * 200000)
