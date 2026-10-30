@@ -3,6 +3,7 @@ from django.core.management.base import BaseCommand, CommandError
 from llm_localize import cli
 from llm_localize.contrib.django.conf import get_config
 from llm_localize.formats.po import find_po_files
+from llm_localize.languages import language_code
 from llm_localize.providers.base import LLMError
 from llm_localize.runner import summarize
 
@@ -17,11 +18,11 @@ class Command(BaseCommand):
         config = get_config()
         parser.add_argument('paths', nargs='*',
                             help="Translation files to translate instead of the project's PO files")
-        parser.add_argument('--langs', nargs='+',
-                            help="Languages to translate to (default: settings.LANGUAGES minus the "
-                                 "source language). With paths, give at most one, for files that "
-                                 "don't declare theirs; a PO file declaring another language is "
-                                 "refused.")
+        parser.add_argument('--langs', nargs='+', type=language_code,
+                            help="Languages to translate to, as codes or English names (default: "
+                                 "settings.LANGUAGES minus the source language). With paths, give at most "
+                                 "one, for files that don't declare theirs; a PO file declaring another "
+                                 "language is refused.")
         parser.add_argument('--domains', nargs='+', default=config['DOMAINS'],
                             help="gettext domains to look for (default: %(default)s)")
         parser.add_argument('--locale-dirs', nargs='+', default=config['LOCALE_PATHS'],

@@ -55,6 +55,12 @@ def test_langs_limits_languages(locale_dir):
     assert (msgstr(locale_dir, "es"), msgstr(locale_dir, "fr")) == ("", "T: Hello")
 
 
+def test_langs_take_english_names(locale_dir):
+    call_command("llm_localize", "--langs", "French", verbosity=0)
+
+    assert (msgstr(locale_dir, "es"), msgstr(locale_dir, "fr")) == ("", "T: Hello")
+
+
 def test_explicit_path(locale_dir):
     call_command("llm_localize", str(locale_dir / "es" / "LC_MESSAGES" / "django.po"), verbosity=0)
 
