@@ -222,6 +222,18 @@ def test_unchanged_translations_keep_the_document(tmp_path, source):
     assert target.read_bytes().decode() == source
 
 
+@pytest.mark.parametrize("source, messages", [
+    ('<script>\nvar msg = "hello";\n\nfetch(url);\n</script>\n\n<PRE>\ncode\n</pre>\n\n'
+     '<style>p {}</style>\n\nText.\n', ["Text."]),
+])
+def test_only_text_is_sent(tmp_path, source, messages):
+    (tmp_path / "s.md").write_text(source, encoding="utf-8")
+
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == messages
+
+
 @pytest.mark.parametrize("text", [
     "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
     ">\n" * 20000 + "> text\n" + ">\n" * 20000,  # a blockquote's blank lines

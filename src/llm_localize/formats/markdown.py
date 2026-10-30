@@ -22,6 +22,8 @@ SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 LIST_RE = re.compile(r"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?")
 QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
+# HTML blocks holding code rather than text, copied up to their closing tag
+RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.IGNORECASE)
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
 COMMENT_RE = re.compile(r"^ {0,3}<!--")
 
@@ -330,6 +332,15 @@ class _Parser:
 
     def html_block(self):
         start = self.index
+        raw = RAW_HTML_RE.match(self.line())
+        if raw:
+            # Code, like <script> or <pre>, copied up to its closing tag, blank lines and all
+            closing = f"</{raw.group(1).lower()}>"
+            while self.index < len(self.lines) and closing not in self.line().lower():
+                self.index += 1
+            self.index = min(self.index + 1, len(self.lines))
+            self.pieces.append("".join(self.lines[start:self.index]))
+            return
         while self.index < len(self.lines) and self.line().strip():
             self.index += 1
         block = "".join(self.lines[start:self.index])
