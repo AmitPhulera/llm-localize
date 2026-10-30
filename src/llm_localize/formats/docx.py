@@ -4,9 +4,11 @@ A .docx file is a ZIP of XML parts. Each paragraph of the body, headers,
 footers, footnotes and endnotes is one message. Word splits a paragraph
 into runs of differently formatted text (bold, italic, a link), so a
 paragraph with more than one is sent with each run's text in a tag,
-``<g1>Click </g1><g2>here</g2>``. Old binary ``.doc`` files aren't
-supported: convert them first, e.g. with LibreOffice's ``soffice
---headless --convert-to docx``.
+``<g1>Click </g1><g2>here</g2>``, and each run gets its translated text
+back. Only the text inside ``<w:t>`` elements is changed, by byte
+offset, so the rest of the document is kept exactly. Old binary ``.doc``
+files aren't supported: convert them first, e.g. with LibreOffice's
+``soffice --headless --convert-to docx``.
 """
 import io
 import os
@@ -17,12 +19,14 @@ from collections import Counter
 from functools import cached_property
 from xml.parsers import expat
 
-from llm_localize.formats.base import write_file
+from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.formats.xml_utils import tag_end
 from llm_localize.units import section_context
 
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
+GROUP_RE = re.compile(r"<g(\d+)>(.*?)</g\1>", re.S)
+GROUP_TAG_RE = re.compile(r"</?g\d+>")
 
 
 class _Text:
@@ -67,6 +71,10 @@ class DocxFile(MonolingualFile):
     name = "docx"
     extensions = (".docx",)
 
+    @cached_property
+    def _source(self):
+        return _read(self.source_path)
+
     def read_messages(self, path):
         return {key: Message(text=paragraph.message, context=context)
                 for key, (paragraph, context) in _messages(_read(path)[1]).items()}
@@ -79,13 +87,33 @@ class DocxFile(MonolingualFile):
         self._applied[key] = translation
 
     def save(self):
-        """Write the copy: the source's ZIP, part by part."""
+        """Write the copy: the source's ZIP, with each translated paragraph's text replaced in its part."""
+        parts, paragraphs = self._source
+        messages = _messages(paragraphs)
+        replacements = {}
+        for key, translation in self._applied.items():
+            paragraph = messages[key][0]
+            texts = [text for _, text in GROUP_RE.findall(translation)] if len(paragraph.groups) > 1 \
+                else [translation]
+            for group, text in zip(paragraph.groups, texts, strict=True):
+                for index, element in enumerate(group):
+                    # The whole group's text goes in its first <w:t>, keeping that run's formatting
+                    new = b'<w:t xml:space="preserve">' + (_escape(text) if index == 0 else "").encode()
+                    if element.self_closing:
+                        new += b"</w:t>"
+                    replacements.setdefault(paragraph.part, []).append((element.start, element.inner_end, new))
         package = io.BytesIO()
         with zipfile.ZipFile(self.source_path) as source, zipfile.ZipFile(package, "w") as target:
             for info in source.infolist():
                 data = source.read(info)
+                if info.filename in replacements:
+                    data = splice(data, replacements[info.filename])
                 target.writestr(info, data)
         write_file(self.path, package.getbuffer())
+
+
+def _escape(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _messages(paragraphs):
@@ -93,7 +121,9 @@ def _messages(paragraphs):
     messages, headings = {}, []
     for index, paragraph in enumerate(paragraphs):
         text = "".join(paragraph.texts)
-        if not text.strip():
+        # Text that itself reads like a group tag would split the translation wrongly between runs, or
+        # fail the check of them, so a paragraph with such text is left as it is
+        if not text.strip() or GROUP_TAG_RE.search(text):
             continue
         context = section_context([title for _, title in headings])
         messages[f"{paragraph.part}:{index}"] = (paragraph, context)

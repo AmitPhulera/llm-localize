@@ -14,7 +14,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic: it ships with gettext PO, JSON, Android, iOS, XLIFF and Markdown formats (see [Formats](#formats)), and others plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic: it ships with gettext PO, JSON, Android, iOS, XLIFF, Markdown and Word formats (see [Formats](#formats)), and others plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
@@ -49,10 +49,11 @@ The format is chosen by file extension, or with `--format`.
 | `xcstrings` | `.xcstrings` | every language, one at a time with `--lang` | plural variations by CLDR category |
 | `xliff` | `.xlf`, `.xliff` | source and translation, one file per language | ICU messages |
 | `markdown` | `.md`, `.markdown` | a translated copy of a document per language | — |
+| `docx` | `.docx` | a translated copy of a Word document per language | — |
 
 ### One file per language
 
-JSON, Android, `.strings` and Markdown files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
+JSON, Android, `.strings`, Markdown and Word files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
 
 ```bash
 llm-localize locales/fr.json locales/de.json        # from locales/en.json
@@ -126,6 +127,19 @@ The target path names the language, as for JSON, and the source is the same path
 - Code blocks (including those indented inside list items), the rest of the front matter, link reference definitions and HTML comments are copied as they are. Translating the source file itself, as a glob might, does nothing.
 - Each translation must keep its `inline code`, link and image targets, reference labels like `[text][label]` and `[^1]`, shortcut references to defined links, backslash escapes like `\[` and `\<`, and HTML tags, and can't add a link definition, a heading or a code fence. A heading's translation is written on one line. A block that fails keeps its source text in the copy, and is counted as rejected.
 - Every run translates the whole document, since a changed source can't be matched to the old copy block by block.
+
+### Word
+
+```bash
+llm-localize fr/report.docx         # a French copy of en/report.docx
+llm-localize report.fr.docx
+```
+
+A `.docx` file is a ZIP of XML, read with the standard library. Each paragraph of the body, tables, headers, footers, footnotes and endnotes is one message. Word stores a paragraph as runs of differently formatted text, so a paragraph with several is sent with each run in a tag, `<g1>Click </g1><g2>Save</g2>`, and must come back with the same tags. Each run then gets its own translated text, so bold, italics and links stay on the right words.
+
+Only the text inside each run changes; styles, images and everything else are copied exactly.
+
+Older binary `.doc` files aren't supported. Convert them first, e.g. with `soffice --headless --convert-to docx report.doc`.
 
 ## LLM providers
 

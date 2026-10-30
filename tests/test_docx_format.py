@@ -6,8 +6,9 @@ import pytest
 
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
+from llm_localize.formats.docx import _read
 
-from .fakes import FakeClient
+from .fakes import FakeClient, ScriptedClient
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
@@ -65,6 +66,45 @@ def test_paragraphs(report):
         ("Cell", ""),
         ("Confidential", ""),
     ]
+
+
+def test_unchanged_translations_keep_the_text(report):
+    path = report.parent / "fr" / "report.docx"
+
+    translate_file(open_file(path, source_path=report), FakeClient(prefix=""), "fr")
+
+    assert list(parts(path)) == list(PARTS)
+    assert [paragraph.message for paragraph in _read(path)[1]] == [
+        paragraph.message for paragraph in _read(report)[1]]
+    assert parts(path)["word/styles.xml"] == PARTS["word/styles.xml"]
+
+
+def test_translations_go_into_their_runs(report):
+    path = report.parent / "report.fr.docx"
+    client = ScriptedClient([{
+        "0": "Installation",
+        "1": "<g1>Cliquez sur le</g1><g2> bouton Enregistrer</g2><g3> et attendez.</g3>",
+        "2": "Nom :Valeur",
+        "3": "<g1>notre site</g1><g2> en dit plus.</g2>",
+        "4": "aujourd'hui est la date",
+        "5": "Cellule",
+        "6": "Confidentiel & privé",
+    }])
+
+    result = translate_file(open_file(path, source_path=report), client, "fr")
+
+    assert result.translated == 7
+    document = parts(path)["word/document.xml"]
+    assert ('<w:r w:rsidR="00A1"><w:t xml:space="preserve">Cliquez sur le</w:t></w:r>'
+            '<w:r w:rsidR="00B2"><w:t xml:space="preserve"></w:t></w:r>') in document
+    assert ('<w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> bouton Enregistrer</w:t></w:r>'
+            '<w:r w:rsidR="00D4"><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"></w:t>') in document
+    assert '<w:hyperlink r:id="rId5"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>' \
+           '<w:t xml:space="preserve">notre site</w:t>' in document
+    assert '<w:t xml:space="preserve">Cellule</w:t></w:r><w:r><w:t xml:space="preserve"></w:t></w:r>' in document
+    assert parts(path)["word/header1.xml"].endswith(
+        '<w:t xml:space="preserve">Confidentiel &amp; privé</w:t></w:r></w:p></w:hdr>')
+    assert parts(report) == PARTS
 
 
 def test_not_a_docx(tmp_path):
@@ -173,3 +213,38 @@ def test_text_full_of_entities_takes_linear_time(tmp_path):
     started = time.perf_counter()
     open_file(tmp_path / "fr" / "amp.docx", source_path=source).untranslated_units()
     assert time.perf_counter() - started < 2
+
+
+def test_a_paragraph_whose_text_reads_like_group_tags_is_left_alone(tmp_path):
+    document = DOCUMENT.replace("<w:t>the</w:t>", "<w:t>a&lt;/g1&gt;&lt;g2&gt;b</w:t>")
+    source = tmp_path / "tags.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", document)
+
+    units = open_file(tmp_path / "fr" / "tags.docx", source_path=source).untranslated_units()
+
+    assert not any("g2&gt;b" in unit.source or "</g1><g2>b" in unit.source for unit in units)
+    assert "Install" in [unit.source for unit in units]
+
+
+def test_a_one_run_paragraph_whose_text_reads_like_a_group_tag_is_left_alone(tmp_path):
+    source = tmp_path / "tag.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", f'<w:document {W}><w:body><w:p><w:r><w:t>Type &lt;g1&gt; to start'
+                                              "</w:t></w:r></w:p></w:body></w:document>")
+
+    assert open_file(tmp_path / "fr" / "tag.docx", source_path=source).untranslated_units() == []
+
+
+def test_a_save_takes_linear_time_in_the_number_of_text_runs(tmp_path):
+    source = tmp_path / "runs.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", f"<w:document {W}><w:body><w:p><w:r>" + "<w:t>x</w:t>" * 40000
+                         + "</w:r></w:p></w:body></w:document>")
+    docx_file = open_file(tmp_path / "fr" / "runs.docx", source_path=source)
+    [unit] = docx_file.untranslated_units()
+    docx_file.apply(unit.key, "y")
+
+    started = time.perf_counter()
+    docx_file.save()
+    assert time.perf_counter() - started < 1
