@@ -4,7 +4,7 @@ Fill in missing translations in your i18n files with an LLM, without breaking th
 
 LLMs translate well but are careless with the parts of a message that aren't prose. `llm-localize` sends only untranslated messages, then checks each translation before it is written:
 
-- **Placeholders** (`%s`, `%(name)s`, `{name}`, Android's `%1$s`) must match the source exactly. Named and numbered ones may move; unnamed ones (`%s`, `{}`) must stay in order.
+- **Placeholders** (`%s`, `%(name)s`, `{name}`, Android's `%1$s`, iOS's `%@`) must match the source exactly. Named and numbered ones may move; unnamed ones (`%s`, `{}`) must stay in order.
 - **HTML tags** must keep the same names, order and attributes. Only text attributes (`title`, `alt`, `placeholder`, `aria-label`, `aria-description`, and `value` on an `<input>` button) may change value, and the content of `<script>` and `<style>` must stay as it is. Numbered tags, like react-i18next's `<1>…</1>`, must all be kept, in any order.
 - **URLs** (`http`, `https`, `ftp`, `mailto:`, `tel:`, `www.`) and email addresses must be unchanged, and none may be added.
 - **Control characters** that the model invented (e.g. `—` corrupted into `\x14`) are rejected.
@@ -14,7 +14,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO, JSON and Android files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO, JSON, Android and iOS files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
@@ -45,10 +45,11 @@ The format is chosen by file extension, or with `--format`.
 | `po` | `.po` | source and translation, one file per language | `msgstr[N]`, from the `Plural-Forms` header |
 | `json` | `.json` | one language per file | i18next keys (`items_one`, `items_other`), or ICU messages |
 | `android` | `.xml` | one language per file | `<plurals>` items by CLDR category |
+| `strings` | `.strings` | one language per file | none (`.stringsdict` isn't supported) |
 
 ### One file per language
 
-JSON and Android files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
+JSON, Android and `.strings` files hold one language each, so the source text comes from another file. Translating `locales/fr.json` reads `locales/en.json` and writes the messages `fr.json` lacks, creating the file if needed:
 
 ```bash
 llm-localize locales/fr.json locales/de.json        # from locales/en.json
@@ -85,6 +86,14 @@ The language comes from the `values-` directory's qualifiers (`values-fr`, `valu
 - `<string>` and `<plurals>` are translated, each with its name and any comment just above it as context. Strings marked `translatable="false"` and references like `@string/app_name` are skipped, and `<string-array>` is left alone.
 - The model sees apostrophes and quotes unescaped, and they are escaped again when saved (`\'`, `\"`, a leading `\@`), as are bare `&`. Translations that aren't well-formed XML are rejected. Inline tags like `<b>` and `<xliff:g>` must be kept, and so must escapes like `\n` and `\\`; `<xliff:g>` placeholders may change places.
 - New translations are added before `</resources>`, with the file's indentation, and empty elements are filled in place. Everything else in the file stays byte for byte, comments included. A new file gets the source's `<resources>` tag, with its namespaces.
+
+### iOS and macOS
+
+```bash
+llm-localize MyApp/fr.lproj/Localizable.strings       # from en.lproj
+```
+
+- **`.strings`** files are translated from the same file in `en.lproj` (with `--source-lang`'s code). Each entry is sent with the comment above it, and its key when that differs from the text. New entries are added at the end with their comments, empty values are filled in place, and the file keeps its encoding, UTF-8 or UTF-16.
 
 ## LLM providers
 

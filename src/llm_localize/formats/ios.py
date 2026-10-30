@@ -1,9 +1,15 @@
-"""iOS and macOS strings: ``.strings`` files, one per language."""
+"""iOS and macOS strings: ``.strings`` files, one per language.
+
+``fr.lproj/Localizable.strings`` is translated from ``en.lproj`` beside
+it; new entries are added at its end and empty ones filled in place,
+keeping the rest of the file and its encoding.
+"""
 import codecs
 import os
 import re
 from functools import cached_property
 
+from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 
 INSTRUCTIONS = (
@@ -43,6 +49,34 @@ class StringsFile(MonolingualFile):
 
     def apply(self, key, translation):
         self._applied[key] = translation
+
+    @cached_property
+    def _source_strings(self):
+        """The source file's text, entries and encoding, read once rather than at every save."""
+        return _read_strings(self.source_path)
+
+    def save(self):
+        """Write the target file: its original text, with empty values filled and new entries added at the end."""
+        text, entries, encoding = _read_strings(self.path)
+        _, source_entries, source_encoding = self._source_strings
+        if not os.path.exists(self.path):
+            encoding = source_encoding
+        existing = {entry["key"]: entry for entry in entries}
+        comments = {entry["key"]: entry["comment"] for entry in source_entries}
+        replacements, additions = [], []
+        for key, translation in self._applied.items():
+            if key in existing:
+                replacements.append((*existing[key]["value_span"], _quote(translation)))
+            else:
+                comment = f"/* {comments[key]} */\n" if comments.get(key) else ""
+                additions.append(f"\n{comment}{_quote(key)} = {_quote(translation)};\n")
+        addition = "".join(additions)
+        if not text:
+            addition = addition.lstrip("\n")
+        elif addition and not text.endswith("\n"):
+            addition = "\n" + addition
+        replacements.append((len(text), len(text), addition))
+        write_file(self.path, _encode_file(splice(text, replacements), encoding))
 
 
 def _starts_line(text, index):

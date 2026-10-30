@@ -1,0 +1,127 @@
+import codecs
+import time
+
+import pytest
+
+from llm_localize.engine import translate_file
+from llm_localize.formats import open_file
+
+from .fakes import FakeClient
+
+STRINGS = r'''/* Greeting on the home screen */
+"welcome" = "Welcome, %@!";
+
+"Cancel" = "Cancel";
+
+// Shown in a dialog
+unquoted_key = "Say \"hi\"\nnow";
+"empty" = "";
+'''
+
+
+def write(path, text, encoding="utf-8"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(text.encode(encoding))
+    return path
+
+
+@pytest.fixture
+def lproj(tmp_path):
+    write(tmp_path / "en.lproj" / "Localizable.strings", STRINGS)
+    return tmp_path
+
+
+class TestStrings:
+
+    def test_units(self, lproj):
+        units = open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
+
+        assert [(unit.key, unit.source, unit.context) for unit in units] == [
+            ("welcome", "Welcome, %@!", "Greeting on the home screen; Key: welcome"),
+            ("Cancel", "Cancel", ""),
+            ("unquoted_key", 'Say "hi"\nnow', "Shown in a dialog; Key: unquoted_key"),
+        ]
+
+    def test_creates_the_target_file(self, lproj):
+        path = lproj / "fr.lproj" / "Localizable.strings"
+
+        assert translate_file(open_file(path), FakeClient(), "fr").translated == 3
+
+        assert path.read_text(encoding="utf-8") == r'''/* Greeting on the home screen */
+"welcome" = "T: Welcome, %@!";
+
+"Cancel" = "T: Cancel";
+
+/* Shown in a dialog */
+"unquoted_key" = "T: Say \"hi\"\nnow";
+'''
+        assert open_file(path).untranslated_units() == []
+
+    def test_fills_in_an_existing_utf16_file(self, lproj):
+        existing = '/* Mine */\n"Cancel" = "Annuler";\n"welcome" = "";'
+        path = write(lproj / "fr.lproj" / "Localizable.strings", existing, "utf-16")
+
+        translate_file(open_file(path), FakeClient(), "fr")
+
+        data = path.read_bytes()
+        assert data.startswith(codecs.BOM_UTF16)
+        assert data.decode("utf-16") == (
+            '/* Mine */\n"Cancel" = "Annuler";\n"welcome" = "T: Welcome, %@!";\n'
+            '\n/* Shown in a dialog */\n"unquoted_key" = "T: Say \\"hi\\"\\nnow";\n'
+        )
+
+    def test_characters_beyond_utf16_written_as_escape_pairs(self, tmp_path):
+        write(tmp_path / "en.lproj" / "Localizable.strings",
+              '"\\UD83D\\UDE00 smile" = "Smile";\n"party" = "Party \\UD83C\\UDF89";\n"lone" = "\\UD83D";\n')
+        target = write(tmp_path / "fr.lproj" / "Localizable.strings", '"greeting" = "Bonjour";\n')
+        units = open_file(target).untranslated_units()
+
+        result = translate_file(open_file(target), FakeClient(), "fr")
+
+        assert [unit.source for unit in units] == ["Smile", "Party 🎉", "\ud83d"]
+        # A lone surrogate can't be written as text, so its translation is rejected, and the rest saved
+        assert (result.failed_batches, dict(result.rejected)) == (0, {"encoding": 1})
+        assert target.read_text() == ('"greeting" = "Bonjour";\n\n"😀 smile" = "T: Smile";\n\n'
+                                      '"party" = "T: Party 🎉";\n')
+
+    def test_octal_escapes_are_read(self, tmp_path):
+        write(tmp_path / "en.lproj" / "Localizable.strings", '"\\101pple" = "Apple\\012pie";\n')
+        target = tmp_path / "fr.lproj" / "Localizable.strings"
+
+        translate_file(open_file(target), FakeClient(), "fr")
+
+        # The key is the one the app looks up, "Apple"
+        assert target.read_text() == '"Apple" = "T: Apple\\npie";\n'
+
+    def test_invalid_file(self, lproj):
+        write(lproj / "fr.lproj" / "Localizable.strings", '"Cancel" = "Annuler"')
+
+        with pytest.raises(ValueError, match="not a valid .strings file"):
+            open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
+
+
+def test_unfinished_comments_are_refused_in_linear_time(tmp_path):
+    write(tmp_path / "en.lproj" / "Localizable.strings", "/*x " * 200000)
+
+    started = time.perf_counter()
+    with pytest.raises(ValueError, match="not a valid .strings file"):
+        open_file(tmp_path / "fr.lproj" / "Localizable.strings").untranslated_units()
+    assert time.perf_counter() - started < 1
+
+
+def test_lines_of_line_comments_are_one_comment(tmp_path):
+    write(tmp_path / "en.lproj" / "Localizable.strings",
+          '/* File */\n// Submit button\n// on the form\n"a" = "Submit";\n')
+
+    [unit] = open_file(tmp_path / "fr.lproj" / "Localizable.strings").untranslated_units()
+
+    assert unit.context == "Submit button on the form; Key: a"
+
+
+def test_a_trailing_comment_belongs_to_its_entry(tmp_path):
+    write(tmp_path / "en.lproj" / "Localizable.strings",
+          '"save" = "Save"; // toolbar button\n// Shown when the upload fails\n"error" = "Upload failed";\n')
+
+    units = open_file(tmp_path / "fr.lproj" / "Localizable.strings").untranslated_units()
+
+    assert [unit.context for unit in units] == ["Key: save", "Shown when the upload fails; Key: error"]
