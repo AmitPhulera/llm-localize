@@ -33,6 +33,15 @@ def lproj(tmp_path):
 
 class TestStrings:
 
+    @pytest.mark.parametrize("source", ["en.lproj", "Base.lproj"])
+    def test_source_from_path(self, tmp_path, source):
+        write(tmp_path / source / "Localizable.strings", STRINGS)
+
+        strings_file = open_file(tmp_path / "pt-BR.lproj" / "Localizable.strings", source_language="en")
+
+        assert strings_file.language == "pt-BR"
+        assert strings_file.source_path == str(tmp_path / source / "Localizable.strings")
+
     def test_units(self, lproj):
         units = open_file(lproj / "fr.lproj" / "Localizable.strings").untranslated_units()
 

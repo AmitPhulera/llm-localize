@@ -90,10 +90,10 @@ The language comes from the `values-` directory's qualifiers (`values-fr`, `valu
 ### iOS and macOS
 
 ```bash
-llm-localize MyApp/fr.lproj/Localizable.strings       # from en.lproj
+llm-localize MyApp/fr.lproj/Localizable.strings       # from en.lproj, or Base.lproj
 ```
 
-- **`.strings`** files are translated from the same file in `en.lproj` (with `--source-lang`'s code). Each entry is sent with the comment above it, and its key when that differs from the text. New entries are added at the end with their comments, empty values are filled in place, and the file keeps its encoding, UTF-8 or UTF-16.
+- **`.strings`** files are translated from the same file in `en.lproj` (with `--source-lang`'s code), or `Base.lproj` if there's none. Each entry is sent with the comment above it, and its key when that differs from the text. New entries are added at the end with their comments, empty values are filled in place, and the file keeps its encoding, UTF-8 or UTF-16.
 
 ## LLM providers
 

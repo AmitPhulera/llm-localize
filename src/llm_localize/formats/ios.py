@@ -1,13 +1,14 @@
 """iOS and macOS strings: ``.strings`` files, one per language.
 
-``fr.lproj/Localizable.strings`` is translated from ``en.lproj`` beside
-it; new entries are added at its end and empty ones filled in place,
-keeping the rest of the file and its encoding.
+``fr.lproj/Localizable.strings`` is translated from ``en.lproj`` (or
+``Base.lproj``) beside it; new entries are added at its end and empty
+ones filled in place, keeping the rest of the file and its encoding.
 """
 import codecs
 import os
 import re
 from functools import cached_property
+from pathlib import Path
 
 from llm_localize.formats.base import splice, write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
@@ -34,6 +35,17 @@ class StringsFile(MonolingualFile):
     name = "strings"
     extensions = (".strings",)
     instructions = INSTRUCTIONS
+
+    def source_path_candidates(self):
+        candidates = list(super().source_path_candidates())
+        yield from candidates
+        # Base.lproj, beside the language's .lproj directory
+        for candidate in candidates[:1]:
+            parts = list(candidate.parts)
+            for index, part in enumerate(parts):
+                if part.endswith(".lproj"):
+                    parts[index] = "Base.lproj"
+                    yield Path(*parts)
 
     def read_messages(self, path):
         messages = {}
