@@ -371,6 +371,16 @@ def test_an_escaped_tag_cant_lose_its_backslash(docs):
     assert markdown.find_problem(r"\[click](//evil.example) [note]", r"[click](//evil.example) \[note]") == "links"
 
 
+def test_a_link_inside_another_keeps_the_outer_one_text(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    # A link's text can't hold a link, so the outer brackets are text and //evil.example isn't a link
+    assert markdown.find_problem("[outer [inner](/safe)](//evil.example)",
+                                 "[extérieur](//evil.example) [intérieur](/safe)") == "links"
+    assert markdown.find_problem("![outer [inner](/safe)](cat.png)", "![extérieur [intérieur](/safe)](cat.png)") \
+        is None
+
+
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()

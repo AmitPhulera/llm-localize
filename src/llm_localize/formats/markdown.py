@@ -260,19 +260,20 @@ def _link_targets(text):
 
     >>> _link_targets(r'\[a](b) [c]'), _link_targets(r'[a](b) \[c]')
     (['\x00b'], ['b'])
+    >>> _link_targets('[a [b](c)](d)'), _link_targets('![a [b](c)](d)')
+    (['c', '\x00d'], ['c', 'd'])
     """
     if "](" not in text:
         return []
-    # The brackets each ] closes; an escaped one is text, and a ] with no [ before it doesn't end link text
-    opened, closing = [], set()
+    # The [ each ] closes; an escaped one is text, and a ] with no [ before it doesn't end link text
+    opened, closing = [], {}
     for bracket in re.finditer(r"[\[\]]", text):
         if _backslashes_before(text, bracket.start()) % 2:
             continue
         if bracket.group() == "[":
             opened.append(bracket.start())
         elif opened:
-            opened.pop()
-            closing.add(bracket.start())
+            closing[bracket.start()] = opened.pop()
     ends = _closing_parentheses(text)
     # Where each whitespace and each character that can end a destination or title is, found by bisecting,
     # so no link is scanned again from each one inside it
@@ -287,6 +288,14 @@ def _link_targets(text):
         while index < stop and text[index].isspace():
             index += 1
         return index
+
+    # Where each real link's ]( is: a link can't hold another in its text, though an image can
+    links = []
+
+    def holds_a_link(bracket):
+        opener = closing[bracket]
+        image = opener and text[opener - 1] == "!" and not _backslashes_before(text, opener - 1) % 2
+        return not image and bisect.bisect_left(links, opener) < len(links)
 
     targets, covered = [], 0
     for match in re.finditer(r"\]\(", text):
@@ -305,12 +314,14 @@ def _link_targets(text):
             end = space if space is not None else close
         # A link if only a title, in quotes or parentheses, comes between its destination and its ")"
         after = skip_spaces(end, close)
-        real = after == close and match.start() in closing
-        if not real and match.start() in closing and after > end and text[after] in "\"'(":
+        opened_here = match.start() in closing and not holds_a_link(match.start())
+        real = after == close and opened_here
+        if not real and opened_here and after > end and text[after] in "\"'(":
             title_end = first(closers[")" if text[after] == "(" else text[after]], after + 1, close)
             real = title_end is not None and skip_spaces(title_end + 1, close) == close
         if real:
             covered = close
+            links.append(match.start())
             targets.append(text[start:end])
         else:
             # Not a link, but counted the same way in both texts, at a bounded cost
