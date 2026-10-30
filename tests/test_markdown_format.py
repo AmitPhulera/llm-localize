@@ -433,6 +433,24 @@ def test_a_label_and_colon_before_text_is_a_paragraph(tmp_path):
     assert [unit.source for unit in units] == ["[Deprecated]: Use the new API.", "See [docs]."]
 
 
+def test_a_shortcut_reference_may_escape_a_bracket(tmp_path):
+    (tmp_path / "s.md").write_text("[a\\]b]: /target\n\nSee [a\\]b].\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    assert markdown.find_problem("See [a\\]b].", "Voir [a\\]c].") == "links"
+    # After an escaped backslash, the bracket is a link's
+    assert markdown.find_problem("See it \\].", "Voir \\\\[a\\]b].") == "links"
+
+
+def test_a_definition_in_a_quote_makes_its_label_a_link(tmp_path):
+    (tmp_path / "s.md").write_text("> See [the FAQ].\n>\n> [the FAQ]: /faq\n\nAlso [the FAQ].\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    assert markdown.find_problem("Also [the FAQ].", "Aussi [la FAQ].") == "links"
+
+
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
@@ -464,6 +482,14 @@ def test_a_definitions_title_takes_the_lines_it_spans(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert [unit.source for unit in units] == ['"Hello"']
+
+
+def test_lines_opening_brackets_take_linear_time(tmp_path):
+    (tmp_path / "s.md").write_text("[\n" * 200000, encoding="utf-8")
+
+    started = time.perf_counter()
+    open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+    assert time.perf_counter() - started < 2
 
 
 def test_a_title_from_the_next_line_takes_the_lines_it_spans(tmp_path):
@@ -511,6 +537,14 @@ def test_a_rule_after_a_list_stays_a_rule(tmp_path):
     assert target.read_text(encoding="utf-8") == "- T: one\n- T: two\n---\n\nT: Next\n"
 
 
+def test_many_definitions_take_linear_time(tmp_path):
+    (tmp_path / "s.md").write_text("[a]: /x\n" * 200000, encoding="utf-8")
+
+    started = time.perf_counter()
+    open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+    assert time.perf_counter() - started < 2
+
+
 def test_a_definitions_title_may_start_its_own_line(tmp_path):
     (tmp_path / "s.md").write_text('[docs]: /guide\n"The guide"\n\nText.\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
@@ -525,6 +559,14 @@ def test_front_matter_takes_linear_time(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
     assert time.perf_counter() - started < 1
     assert units[0].source == "A" + " " * 200000 + "B"
+
+
+def test_a_label_matches_its_definition_whatever_its_spacing(tmp_path):
+    (tmp_path / "s.md").write_text("Hello\n\n[read the docs]: /evil\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    assert markdown.find_problem("Hello", "Bonjour [Read  the\tdocs]") == "links"
 
 
 def test_a_code_span_may_end_with_a_backslash(docs):
@@ -596,10 +638,32 @@ def test_front_matter_values_yaml_would_read_as_other_types_are_quoted(tmp_path,
     assert target.read_text(encoding="utf-8").startswith(f'---\ntitle: "{value}"\n---\n')
 
 
+def test_many_labels_are_checked_quickly(tmp_path):
+    labels = 2000
+    (tmp_path / "s.md").write_text("".join(f"See [l{i}].\n\n" for i in range(labels))
+                                   + "".join(f"[l{i}]: /x{i}\n" for i in range(labels)), encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    started = time.perf_counter()
+    problems = {markdown.find_problem(f"See [l{i}].", f"Voir [l{i}].") for i in range(labels)}
+    assert problems == {None} and time.perf_counter() - started < 2
+    assert markdown.find_problem("See [l1].", "Voir [l2].") == "links"
+
+
 def test_an_escaped_backtick_cant_turn_code_into_html(docs):
     markdown = open_file(docs / "fr" / "guide.md")
 
     assert markdown.find_problem("`<img src=x onerror=alert(1)>`", "\\`<img src=x onerror=alert(1)>`") is not None
+
+
+def test_collapsed_references_keep_their_label(tmp_path):
+    (tmp_path / "s.md").write_text("[Alpha][] and [Beta][]\n\n[Alpha]: /safe\n[Beta]: /evil\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    assert markdown.find_problem("[Alpha][]", "[Beta][]") == "links"
+    assert markdown.find_problem("[Alpha][] here", "[Alpha][] ici") is None
 
 
 def test_unclosed_tags_take_linear_time(tmp_path):
@@ -618,7 +682,7 @@ def test_a_heading_with_a_long_run_of_spaces_takes_linear_time(tmp_path):
     assert time.perf_counter() - started < 1
 
 
-@pytest.mark.parametrize("block", ["](" * 100000])
+@pytest.mark.parametrize("block", ["[" + "\\[" * 100000, "](" * 100000])
 def test_checking_brackets_takes_linear_time(docs, block):
     markdown = open_file(docs / "fr" / "guide.md")
 

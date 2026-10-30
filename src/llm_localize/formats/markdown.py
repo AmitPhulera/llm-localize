@@ -36,6 +36,8 @@ LINK_DEFINITION_RE = re.compile(r"^ {0,3}\[((?:\\.|[^\\\]])+)\]:")
 # A definition's destination, with an optional title, or the start of one that goes on to the next line
 DESTINATION = r"(?:<[^<>\n]*>|\S+)"
 DESTINATION_RE = re.compile(rf"""^[ \t]*({DESTINATION})(?:[ \t]+(?:"[^"]*"?|'[^']*'?|\([^)]*\)?))?[ \t]*$""")
+# The start of what may be a definition: a label, over up to 999 characters and lines as CommonMark allows
+DEFINITION_START_RE = re.compile(r"^ {0,3}\[((?:\\.|[^\\\[\]]){1,999})\]:", re.MULTILINE)
 FOOTNOTE_RE = re.compile(r"^( {0,3}\[\^[^\]]+\]:[ \t]*)(.*)$")
 # YAML double-quoted escapes, and how control characters are written in them
 YAML_ESCAPE_RE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
@@ -58,6 +60,10 @@ FRONT_MATTER_COMMENT_RE = re.compile(r"[ \t]+#")
 
 
 BACKTICKS_RE = re.compile(r"`+")
+# [label] or [label][], links to the definition [label]: url; not [text][label] or [text](url)
+# Not after a single backslash, which escapes it (_label_uses checks a longer run), and its label at most 999
+# characters, as CommonMark has it, so a run of escaped brackets isn't rescanned from each
+SHORTCUT_LINK_RE = re.compile(r"(?:(?<![\]\\])|(?<=\\\\))\[((?:\\.|[^\[\]\\]){1,999})\](?:\[\])?(?![\[(:])")
 # Blockquote and list markers before a line's content, like "> " or "- "
 CONTAINER_MARKERS_RE = re.compile(r"^(?:[ \t]*(?:>|[-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]?)*")
 # Plain YAML values a loader reads as something else, like a boolean or a number
@@ -146,10 +152,8 @@ class MarkdownFile(MonolingualFile):
             return "links"
         # [label] alone links to the definition [label]: url, so its text can't change. In
         # [text][label] and [text](url), the first brackets are only link text.
-        for label in self._parser.labels:
-            pattern = re.compile(rf"(?<!\])\[{re.escape(label)}\](?![\[(:])", re.IGNORECASE)
-            if len(pattern.findall(source_text)) != len(pattern.findall(translation_text)):
-                return "links"
+        if self._label_uses(source_text) != self._label_uses(translation_text):
+            return "links"
         # A table cell or a heading's title is written on its one line, where "# of users" is text
         if source in self._parser.inline_texts and source not in self._parser.block_texts:
             return super().find_problem(source_text, translation_text)
@@ -160,6 +164,17 @@ class MarkdownFile(MonolingualFile):
         if _headings(translation_lines) != _headings(source_lines):
             return "headings"
         return super().find_problem(source_text, translation_text)
+
+    def _label_uses(self, text):
+        labels, uses = self._parser.labels, Counter()
+        if not labels:
+            return uses
+        for match in SHORTCUT_LINK_RE.finditer(text):
+            label = _label(match.group(1))
+            # After an escaped backslash, \\[label] is a link; after an odd number of backslashes, it's text
+            if _backslashes_before(text, match.start()) % 2 == 0 and label in labels:
+                uses[label] += 1
+        return uses
 
     @cached_property
     def _applied(self):
@@ -477,6 +492,15 @@ def _backslashes_before(text, index):
     return index - start
 
 
+def _label(text):
+    """Return a link label as CommonMark matches it, case and runs of whitespace aside.
+
+    >>> _label("Read  The\tDocs")
+    'read the docs'
+    """
+    return " ".join(text.split()).casefold()
+
+
 def _heading_parts(match):
     """Return a heading line's ``(prefix, title, closing)``: the closing #s, with the spaces before them, or None.
 
@@ -505,6 +529,18 @@ def _fences(lines):
 def _headings(lines):
     """Return how many of a block's lines, without containers, are headings, or make the line above one."""
     return sum(bool(HEADING_RE.match(line) or SETEXT_RE.match(line)) for line in lines.splitlines())
+
+
+def _definition_starts(text):
+    """Yield ``(label, destination)`` for each line, without containers, that may start a definition;
+    ``destination`` is None if it has none, as for ``[Note]: see below``."""
+    for match in DEFINITION_START_RE.finditer(text):
+        end = text.find("\n", match.end()) % (len(text) + 1)
+        line = text[match.end():end]
+        if not line.strip():
+            line = text[end + 1:text.find("\n", end + 1) % (len(text) + 1)]
+        destination = DESTINATION_RE.match(line)
+        yield _label(match.group(1)), destination.group(1) if destination else None
 
 
 def _definition(line, following):
@@ -596,13 +632,15 @@ class _Parser:
             # A byte order mark, kept as it is, before front matter that follows it
             self.pieces.append("\ufeff")
             self.lines[0] = self.lines[0][1:]
+        # Every definition's label, in quotes and lists too, as [label] links to it anywhere
+        self.labels = {label for label, destination in _definition_starts(_without_containers("".join(self.lines)))
+                       if destination is not None and not label.startswith("^")}
         self.front_matter()
         while self.index < len(self.lines):
             line = self.line()
             if FOOTNOTE_RE.match(line):
                 self.footnote()
             elif _definition(line, self.lines[self.index + 1] if self.index + 1 < len(self.lines) else ""):
-                self.labels.add(line.strip()[1:line.strip().index("]")].lower())
                 self.literal(self.definition_lines())
             elif not line.strip() or RULE_RE.match(line):
                 self.literal()
