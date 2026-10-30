@@ -70,17 +70,8 @@ class StringsResult:
         return None not in self.translations
 
 
-class StringTranslator:
-    """Translates lists of strings with an LLM.
-
-    ::
-
-        translator = StringTranslator(provider="anthropic", api_key="...")
-
-        translator.translate(["Hello", "Hi %(name)s"], "fr")
-        # ["Bonjour", "Salut %(name)s"]
-
-    Safe to share between threads; create one and reuse it.
+class BaseTranslator:
+    """The client and settings ``StringTranslator`` and ``FileTranslator`` share.
 
     :param provider: ``"openai"``, ``"anthropic"``, ``"gemini"``, ``"grok"``,
         or a dotted path to an ``LLMClient`` subclass
@@ -119,6 +110,21 @@ class StringTranslator:
         if config["API_BASE"]:
             options["api_base"] = config["API_BASE"]
         return cls(**{**options, **overrides})
+
+
+class StringTranslator(BaseTranslator):
+    """Translates lists of strings with an LLM.
+
+    ::
+
+        translator = StringTranslator(provider="anthropic", api_key="...")
+
+        translator.translate(["Hello", "Hi %(name)s"], "fr")
+        # ["Bonjour", "Salut %(name)s"]
+
+    Safe to share between threads; create one and reuse it. Takes the
+    options of ``BaseTranslator``.
+    """
 
     def translate(self, texts, language, context="", source_language=None, instructions=None):
         """Return the translations of ``texts`` in order, with ``None`` for any that failed.
