@@ -16,6 +16,7 @@ FORMATS = {
     'xcstrings': 'llm_localize.formats.ios.XcstringsFile',
     'xliff': 'llm_localize.formats.xliff.XliffFile',
     'markdown': 'llm_localize.formats.markdown.MarkdownFile',
+    'docx': 'llm_localize.formats.docx.DocxFile',
 }
 
 

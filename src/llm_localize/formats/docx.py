@@ -8,12 +8,16 @@ paragraph with more than one is sent with each run's text in a tag,
 supported: convert them first, e.g. with LibreOffice's ``soffice
 --headless --convert-to docx``.
 """
+import io
 import os
 import re
 import zipfile
 import zlib
+from functools import cached_property
 from xml.parsers import expat
 
+from llm_localize.formats.base import write_file
+from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.formats.xml_utils import tag_end
 from llm_localize.units import section_context
 
@@ -58,6 +62,31 @@ class _Paragraph:
         return "".join(f"<g{index}>{text}</g{index}>" for index, text in enumerate(texts, start=1))
 
 
+class DocxFile(MonolingualFile):
+    name = "docx"
+    extensions = (".docx",)
+
+    def read_messages(self, path):
+        return {key: Message(text=paragraph.message, context=context)
+                for key, (paragraph, context) in _messages(_read(path)[1]).items()}
+
+    @cached_property
+    def _applied(self):
+        return {}
+
+    def apply(self, key, translation):
+        self._applied[key] = translation
+
+    def save(self):
+        """Write the copy: the source's ZIP, part by part."""
+        package = io.BytesIO()
+        with zipfile.ZipFile(self.source_path) as source, zipfile.ZipFile(package, "w") as target:
+            for info in source.infolist():
+                data = source.read(info)
+                target.writestr(info, data)
+        write_file(self.path, package.getbuffer())
+
+
 def _messages(paragraphs):
     """Return ``{key: (paragraph, context)}`` for paragraphs with text."""
     messages, headings = {}, []
@@ -91,6 +120,8 @@ def _read(path):
 def _paragraphs(part, data):
     """Return a part's paragraphs, with the position of each ``<w:t>`` and how its run is formatted."""
     parser = expat.ParserCreate()
+    # Text in one call, not one per entity like &amp;, which adding up one at a time would make quadratic
+    parser.buffer_text = True
     paragraphs, open_paragraphs, stack = [], [], []
     runs = []  # (format key) of each open run
     current_text = []
