@@ -115,9 +115,17 @@ class XcstringsFile(TranslationFile):
     def open(cls, path, language=None, source_language=None, source_path=None):
         return cls(path, language=language)
 
-    @property
+    @cached_property
     def language(self):
-        return self._language
+        """The language to translate to, spelled as the catalog spells it, or as Xcode would, like ``pt-BR``."""
+        if not self._language:
+            return None
+        wanted = _bcp47(self._language).lower()
+        for entry in self.document.get("strings", {}).values():
+            for code in entry.get("localizations", {}):
+                if _bcp47(code).lower() == wanted:
+                    return code
+        return _bcp47(self._language)
 
     @cached_property
     def document(self):
@@ -134,6 +142,9 @@ class XcstringsFile(TranslationFile):
     def untranslated_units(self):
         if not self.language:
             raise ValueError(f"{self.path} holds every language; pass the one to translate to with --lang")
+        if _bcp47(self.language).lower() == _bcp47(self.source_language).lower():
+            raise ValueError(f"{self.language} is the source language of {self.path}; "
+                             "pass the one to translate to")
         forms = plural_forms(self.language)
         units = []
         for key, entry in self.document.get("strings", {}).items():
@@ -182,6 +193,17 @@ class XcstringsFile(TranslationFile):
     def save(self):
         text = json.dumps(self.document, ensure_ascii=False, indent=2, separators=(",", " : "))
         write_file(self.path, (text + self._ending).encode())
+
+
+def _bcp47(code):
+    """Return a language code cased as BCP 47 writes it, as Xcode does.
+
+    >>> _bcp47("pt-br"), _bcp47("zh_hans"), _bcp47("sr-latn-rs"), _bcp47("es-419"), _bcp47("FR")
+    ('pt-BR', 'zh-Hans', 'sr-Latn-RS', 'es-419', 'fr')
+    """
+    base, *subtags = code.replace("_", "-").split("-")
+    return "-".join([base.lower(), *(tag.title() if len(tag) == 4 else tag.upper() if len(tag) == 2 else tag
+                                     for tag in subtags)])
 
 
 def _plural_units(localization):

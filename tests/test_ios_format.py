@@ -209,10 +209,33 @@ class TestXcstrings:
         assert {category: unit["stringUnit"]["value"] for category, unit in plural.items()} == {
             "one": "%lld файл", "few": "T: %lld files", "many": "T: %lld files", "other": "%lld файла"}
 
+    def test_the_source_language_is_refused(self, catalog):
+        with pytest.raises(ValueError, match="en is the source language of"):
+            open_file(catalog, language="EN").untranslated_units()
+
     def test_languages_stay_in_alphabetical_order(self, catalog):
         translate_file(open_file(catalog, language="de"), FakeClient(), "de")
 
         assert list(json.loads(catalog.read_text())["strings"]["Hello %@"]["localizations"]) == ["de", "fr"]
+
+    @pytest.mark.parametrize("language, code", [("pt-br", "pt-BR"), ("PT_BR", "pt-BR"), ("zh-hans", "zh-Hans")])
+    def test_language_spelled_as_the_catalog_or_xcode_spells_it(self, tmp_path, language, code):
+        catalog = {"sourceLanguage": "en", "strings": {
+            "Hello": {"localizations": {"en": string_unit("Hello"), "pt-BR": string_unit("Olá")}},
+            "Bye": {"localizations": {"en": string_unit("Bye")}}}}
+        path = tmp_path / "Localizable.xcstrings"
+        path.write_text(json.dumps(catalog))
+
+        xcstrings = open_file(path, language=language)
+        units = xcstrings.untranslated_units()
+        translate_file(xcstrings, FakeClient(), language)
+
+        localizations = json.loads(path.read_text())["strings"]
+        assert xcstrings.language == code
+        assert [unit.key for unit in units] == (["Bye"] if code == "pt-BR" else ["Hello", "Bye"])
+        assert {name: list(entry["localizations"]) for name, entry in localizations.items()} == {
+            "Hello": sorted(["en", "pt-BR", code]) if code != "pt-BR" else ["en", "pt-BR"],
+            "Bye": ["en", code]}
 
     def test_cli(self, catalog, capsys):
         assert main([str(catalog), "--lang", "es", "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
