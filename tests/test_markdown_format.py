@@ -131,6 +131,49 @@ def test_code_inside_a_list_item_is_not_translated(tmp_path):
     assert [unit.source for unit in units] == ["Example", "More about it."]
 
 
+CODE_IN_CONTAINERS = """1. Install:
+
+    ```bash
+    npm install
+
+    npm start
+    ```
+
+2. Run it
+    ~~~
+    ./run
+    ~~~
+
+- Item
+  ~~~
+  y = 2
+  ~~~
+"""
+
+
+def test_code_in_list_items_is_not_translated(tmp_path):
+    (tmp_path / "code.md").write_text(CODE_IN_CONTAINERS, encoding="utf-8")
+    target = tmp_path / "fr" / "code.md"
+
+    units = open_file(target, source_path=tmp_path / "code.md").untranslated_units()
+    translate_file(open_file(target, source_path=tmp_path / "code.md"), FakeClient(), "fr")
+
+    assert [unit.source for unit in units] == [
+        "Install:", "Run it", "Item"]
+    assert target.read_text(encoding="utf-8") == (
+        CODE_IN_CONTAINERS.replace("Install:", "T: Install:").replace("Run it", "T: Run it")
+        .replace("- Item", "- T: Item"))
+
+
+def test_code_in_containers_round_trips(tmp_path):
+    (tmp_path / "code.md").write_text(CODE_IN_CONTAINERS, encoding="utf-8")
+    target = tmp_path / "fr" / "code.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "code.md"), FakeClient(prefix=""), "fr")
+
+    assert target.read_text(encoding="utf-8") == CODE_IN_CONTAINERS
+
+
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_only_line_endings_end_lines(tmp_path, newline):
     source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", "- item one",
@@ -141,6 +184,31 @@ def test_only_line_endings_end_lines(tmp_path, newline):
     translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(prefix=""), "fr")
 
     assert target.read_bytes().decode() == source
+
+
+@pytest.mark.parametrize("text", [
+    "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
+])
+def test_untrusted_documents_take_linear_time(tmp_path, text):
+    (tmp_path / "s.md").write_text(text, encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+
+    started = time.perf_counter()
+    for unit in markdown.untranslated_units():
+        markdown.find_problem(unit.source, unit.source)
+    assert time.perf_counter() - started < 2
+
+
+def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
+    (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Item"]
+    # Left open, it ends with the item
+    (tmp_path / "s.md").write_text("- ```\n  code\n- Item\n", encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Item"]
 
 
 def test_a_rule_after_a_list_stays_a_rule(tmp_path):

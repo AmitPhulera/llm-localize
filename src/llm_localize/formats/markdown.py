@@ -161,7 +161,7 @@ class _Parser:
             line = self.line()
             if not line.strip() or RULE_RE.match(line):
                 self.literal()
-            elif FENCE_RE.match(line):
+            elif FENCE_RE.match(line) or self.is_list_fence(line):
                 self.fence()
             elif HEADING_RE.match(line):
                 self.atx_heading()
@@ -182,7 +182,7 @@ class _Parser:
         self.pieces.append("".join(self.lines[start:self.index]))
 
     def fence(self):
-        marker = FENCE_RE.match(self.line()).group(1)
+        marker = FENCE_RE.match(self.line().lstrip()).group(1)
         start = self.index
         self.index += 1
         while self.index < len(self.lines):
@@ -209,21 +209,41 @@ class _Parser:
 
     def list_item(self):
         match = LIST_RE.match(self.line())
+        fence = FENCE_RE.match(self.line()[match.end():])
+        if fence:
+            # An item that starts with code: copied up to its closing fence, or the item's end
+            start, marker_fence = self.index, fence.group(1)
+            closing = re.compile(rf"{re.escape(marker_fence[0])}{{{len(marker_fence)},}}[ \t]*$")
+            self.index += 1
+            while self.index < len(self.lines) and not closing.match(self.line().strip()) and (
+                    not self.line().strip() or self.line().startswith(" " * len(match.group()))):
+                self.index += 1
+            if self.index < len(self.lines) and closing.match(self.line().strip()):
+                self.index += 1
+            self.pieces.append("".join(self.lines[start:self.index]))
+            return
         marker = match.group()
         lines = [self.line()[match.end():]]
         indent = " " * len(marker)
         self.index += 1
         while self.index < len(self.lines):
             current = self.line()
+            # A fence may be indented as far as the item's text, and 3 more
+            fence = FENCE_RE.match(current.lstrip()) and len(current) - len(current.lstrip()) <= len(marker) + 3
             # A rule ends the item too: it can't underline the item's text, as "---" would once indented
-            if (not current.strip() or LIST_RE.match(current) or FENCE_RE.match(current)
-                    or RULE_RE.match(current)
+            if (not current.strip() or LIST_RE.match(current) or fence or RULE_RE.match(current)
                     or HEADING_RE.match(current) or QUOTE_RE.match(current)):
                 break
             # Only the indent: two trailing spaces are a line break
             lines.append(current.lstrip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=marker, prefix=indent, suffix=self.ending(self.index - 1))
+
+    def is_list_fence(self, line):
+        """True if a line opens a code fence inside the list item above: indented at most 3 past its text."""
+        content = self.list_content_indent()
+        stripped = line.lstrip(" ")
+        return content is not None and len(line) - len(stripped) <= content + 3 and bool(FENCE_RE.match(stripped))
 
     def is_indented_code(self, line):
         """True if an indented line starts a code block: four columns in, or past a list item's text."""
@@ -262,7 +282,8 @@ class _Parser:
         while self.index < len(self.lines):
             current = self.line()
             if (not current.strip() or (lines and (FENCE_RE.match(current) or HEADING_RE.match(current)
-                                                    or QUOTE_RE.match(current) or LIST_RE.match(current)))):
+                                                    or QUOTE_RE.match(current) or LIST_RE.match(current)
+                                                    or self.is_list_fence(current)))):
                 break
             if lines and SETEXT_RE.match(current):
                 # The paragraph was a heading, underlined
