@@ -432,6 +432,14 @@ def test_a_quoted_front_matter_value_over_two_lines_is_copied(tmp_path):
     assert [unit.source for unit in units] == ["Text."]
 
 
+def test_a_table_cell_starting_with_a_hash_may_be_translated(tmp_path):
+    (tmp_path / "s.md").write_text("| Plan | # of users |\n| --- | --- |\n| Free | 5 |\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+    markdown.untranslated_units()
+
+    assert markdown.find_problem("# of users", "Nombre d'utilisateurs") is None
+
+
 def test_a_first_cell_without_a_pipe_before_it_cant_start_a_block(tmp_path):
     (tmp_path / "s.md").write_text("Place | Name\n--- | ---\n1st | Alice\n", encoding="utf-8")
     target = tmp_path / "de" / "s.md"
@@ -476,6 +484,20 @@ def test_a_code_span_may_end_with_a_backslash(docs):
 
     assert markdown.find_problem("Open `C:\\`", "Ouvrez `C:\\`") is None
     assert markdown.find_problem("Open `C:\\`", "Ouvrez `D:\\`") == "inline code"
+
+
+def test_a_translation_cant_open_a_code_block(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("Hello", "Bonjour\n~~~") == "code blocks"
+    assert markdown.find_problem("Hello", "Bonjour\n> ```") == "code blocks"
+
+
+def test_a_translation_cant_add_a_heading(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("Some text.", "Du texte.\n---") == "headings"
+    assert markdown.find_problem("Item one", "Élément un\n# Titre") == "headings"
 
 
 def test_a_heading_stays_on_one_line(tmp_path):

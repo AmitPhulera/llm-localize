@@ -51,6 +51,8 @@ FRONT_MATTER_COMMENT_RE = re.compile(r"[ \t]+#")
 
 
 BACKTICKS_RE = re.compile(r"`+")
+# Blockquote and list markers before a line's content, like "> " or "- "
+CONTAINER_MARKERS_RE = re.compile(r"^(?:[ \t]*(?:>|[-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]?)*")
 # Plain YAML values a loader reads as something else, like a boolean or a number
 YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?(?:inf|nan)"
                               r"|[-+]?(?:\d[\d_]*(?:\.[\d_]*)?|\.\d+)(?:e[-+]?\d+)?|0[box][\da-f_]+"
@@ -135,6 +137,15 @@ class MarkdownFile(MonolingualFile):
         # In order, so [one][a] and [two][b] can't become [un][b] and [deux][a]
         if LINK_LABEL_RE.findall(source_text) != LINK_LABEL_RE.findall(translation_text):
             return "links"
+        # A table cell or a heading's title is written on its one line, where "# of users" is text
+        if source in self._parser.inline_texts and source not in self._parser.block_texts:
+            return super().find_problem(source_text, translation_text)
+        source_lines, translation_lines = _without_containers(source_text), _without_containers(translation_text)
+        # A fence added in a block would make the rest of the document code
+        if _fences(translation_lines) != _fences(source_lines):
+            return "code blocks"
+        if _headings(translation_lines) != _headings(source_lines):
+            return "headings"
         return super().find_problem(source_text, translation_text)
 
     @cached_property
@@ -468,6 +479,21 @@ def _heading_parts(match):
     return prefix, title, None
 
 
+def _without_containers(text):
+    """Return a block's text with each line's quote and list markers taken off, for the checks below."""
+    return "\n".join(CONTAINER_MARKERS_RE.sub("", line) for line in text.splitlines())
+
+
+def _fences(lines):
+    """Return how many of a block's lines, without containers, open or close a fenced code block."""
+    return sum(bool(FENCE_RE.match(line)) for line in lines.splitlines())
+
+
+def _headings(lines):
+    """Return how many of a block's lines, without containers, are headings, or make the line above one."""
+    return sum(bool(HEADING_RE.match(line) or SETEXT_RE.match(line)) for line in lines.splitlines())
+
+
 def _parse(text):
     """Split a Markdown document into literal strings and ``_Unit`` blocks, which join back into it.
 
@@ -484,10 +510,14 @@ class _Parser:
         self.lines = [line for line in re.split(r"(?<=\n)|(?<=\r)(?!\n)", text) if line]
         self.pieces = []
         self.headings = []
+        # The texts of blocks written on one line, table cells and headings, and of the rest
+        self.inline_texts, self.block_texts = set(), set()
         self.index = 0
         self.indent_cache = (0, None)  # pieces looked at by list_content_indent, and its answer
 
-    def unit(self, text, first_prefix="", prefix="", suffix="", context=None, encode=None):
+    def unit(self, text, first_prefix="", prefix="", suffix="", context=None, encode=None, one_line=False):
+        """Add a block to translate; ``one_line`` if it's written on one line, like a heading's title."""
+        (self.inline_texts if one_line else self.block_texts).add(text)
         if not text.strip():
             self.pieces.append(first_prefix + (encode(text) if encode else text) + suffix)
             return
@@ -604,7 +634,7 @@ class _Parser:
         level = prefix.count("#")
         context = self.heading(level, title)
         self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context,
-                  encode=_one_line)
+                  encode=_one_line, one_line=True)
         self.index += 1
 
     def blockquote(self):
@@ -732,7 +762,7 @@ class _Parser:
                     self.pieces.append(cell)
                 else:
                     self.unit(cell[1], first_prefix=cell[0], suffix=cell[2],
-                              encode=_first_table_cell if starts_line else _table_cell)
+                              encode=_first_table_cell if starts_line else _table_cell, one_line=True)
                     starts_line = False
             self.pieces.append(self.ending(self.index))
             self.index += 1
