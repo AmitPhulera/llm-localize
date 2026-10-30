@@ -64,6 +64,12 @@ class TestXliff1:
         assert open_file(path).language == "fr"
         assert open_file(path, language="fr-CA").language == "fr-CA"
 
+    def test_another_language_than_the_file_declares_is_refused(self, xliff):
+        path = xliff(XLIFF_1)
+
+        with pytest.raises(ValueError, match="declares its target language as fr, not de"):
+            open_file(path, language="de").untranslated_units()
+
     def test_needs_a_language(self, xliff):
         path = xliff(XLIFF_1.replace(' target-language="fr"', ""))
 

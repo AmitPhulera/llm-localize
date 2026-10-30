@@ -26,7 +26,7 @@ from llm_localize.formats.xml_utils import (
     tag_end,
     to_utf8,
 )
-from llm_localize.plurals import plural_categories
+from llm_localize.plurals import compatible_languages, plural_categories
 from llm_localize.units import TranslationUnit
 
 UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
@@ -68,6 +68,12 @@ class XliffFile(TranslationFile):
     def untranslated_units(self):
         if not self.language:
             raise ValueError(f"Can't tell the target language of {self.path}; pass it with --lang")
+        declared = self._parsed.target_language
+        # Another variant of the declared language may be given, like zh-Hans for zh_CN, but not one with other
+        # plural rules or another script, like pt-PT for pt_BR or zh-Hant for zh_Hans
+        if self._language and declared and not compatible_languages(declared, self._language):
+            raise ValueError(f"{self.path} declares its target language as {declared}, not {self._language}; "
+                             "fix it, or don't pass a language")
         units = []
         for key, segment in self._parsed.segments.items():
             if segment.source.strip() and (segment.target is None or not segment.target.strip()

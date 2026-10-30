@@ -105,7 +105,7 @@ llm-localize MyApp/Localizable.xcstrings --lang fr     # a string catalog, one l
 llm-localize src/locale/messages.fr.xlf      # Angular's extract-i18n output, XLIFF 1.2
 ```
 
-Each unit holds its source and translation, so like a PO file, one file is one language: its `target-language`, or `--lang`. A unit is translated when it has no `<target>`, an empty one, or one in the `new` or `needs-translation` state, and the translation's state becomes `translated`. Units marked `translate="no"` are skipped, and notes are sent as context.
+Each unit holds its source and translation, so like a PO file, one file is one language: its `target-language`, or `--lang` for a file that doesn't declare one; `--lang` naming another language is refused. A unit is translated when it has no `<target>`, an empty one, or one in the `new` or `needs-translation` state, and the translation's state becomes `translated`. Units marked `translate="no"` are skipped, and notes are sent as context.
 
 - Inline elements like `<x id="INTERPOLATION"/>`, `<ph/>`, `<g>` and `<pc>` must be kept with their attributes.
 - The file is edited in place: a new `<target>` goes right after its `<source>`, and the rest of the file is kept byte for byte.
