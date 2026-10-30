@@ -452,6 +452,14 @@ def test_link_candidates_sharing_spaces_take_linear_time(docs):
     assert time.perf_counter() - started < 1
 
 
+def test_a_long_heading_is_shortened_in_its_blocks_context(tmp_path):
+    (tmp_path / "s.md").write_text("# " + "A" * 5000 + "\n\nHi\n\nThere\n", encoding="utf-8")
+
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [len(unit.context) for unit in units[1:]] == [109, 109]
+
+
 def test_footnote_text_in_a_block_is_translated(docs):
     markdown = open_file(docs / "fr" / "guide.md")
 

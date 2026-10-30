@@ -40,3 +40,21 @@ class TranslationUnit:
     @property
     def is_plural(self):
         return bool(self.plural_source)
+
+
+# The longest a heading is quoted in the context of the blocks under it
+MAX_HEADING_IN_CONTEXT = 100
+
+
+def section_context(titles):
+    """Return the context of a block under headings ``titles``, each shortened, so a document with a huge
+    heading over many blocks doesn't hold a copy of it for each.
+
+    >>> section_context(["Install", "On " + "Linux" * 30])[:40], section_context([])
+    ('Section: Install > On LinuxLinuxLinuxLin', '')
+    >>> len(section_context(["x" * 1000]))
+    109
+    """
+    shortened = [title if len(title) <= MAX_HEADING_IN_CONTEXT else title[:MAX_HEADING_IN_CONTEXT - 1] + "…"
+                 for title in titles]
+    return "Section: " + " > ".join(shortened) if shortened else ""

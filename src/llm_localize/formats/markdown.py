@@ -15,7 +15,7 @@ from functools import cached_property
 
 from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
-from llm_localize.units import TranslationUnit
+from llm_localize.units import TranslationUnit, section_context
 
 FRONT_MATTER_KEYS = ("title", "description")
 
@@ -643,7 +643,7 @@ class _Parser:
         self.pieces.append(_Unit(str(len(self.pieces)), text, first_prefix, prefix, suffix, context, encode))
 
     def context(self):
-        return "Section: " + " > ".join(title for _, title in self.headings) if self.headings else ""
+        return section_context([title for _, title in self.headings])
 
     def heading(self, level, title):
         """Record a heading, and return its context: the headings it's under."""

@@ -15,6 +15,7 @@ import zlib
 from xml.parsers import expat
 
 from llm_localize.formats.xml_utils import tag_end
+from llm_localize.units import section_context
 
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
 
@@ -64,7 +65,7 @@ def _messages(paragraphs):
         text = "".join(paragraph.texts)
         if not text.strip():
             continue
-        context = "Section: " + " > ".join(title for _, title in headings) if headings else ""
+        context = section_context([title for _, title in headings])
         messages[f"{paragraph.part}:{index}"] = (paragraph, context)
     return messages
 
