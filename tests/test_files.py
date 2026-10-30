@@ -35,7 +35,7 @@ def test_fills_in_a_file_that_holds_its_translations():
 
 
 def test_unknown_format():
-    with pytest.raises(ValueError, match="No translation format"):
+    with pytest.raises(ValueError, match="No translation format registered for notes.txt"):
         translator_with().translate(b"x", "notes.txt", "fr")
 
 

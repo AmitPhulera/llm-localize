@@ -86,8 +86,10 @@ class FileTranslator(BaseTranslator):
         """
         if isinstance(content, str):
             content = content.encode("utf-8")
-        suffix = Path(Path(filename).name).suffix.lower()
-        format_class = get_format_class(format) if format else format_class_for_path(f"upload{suffix}")
+        # Only the name's last part is used, never a path in it
+        upload_name = Path(filename).name
+        suffix = Path(upload_name).suffix.lower()
+        format_class = get_format_class(format) if format else format_class_for_path(upload_name or "upload")
         source_language = source_language or self.source_language
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / f"source{suffix}"
