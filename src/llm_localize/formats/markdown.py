@@ -26,6 +26,8 @@ QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 # Written so spaces can be matched only one way: optional runs of them side by side make a long line of
 # spaces quadratic to rule out
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
+# A plain YAML value that needs quoting: one starting with an indicator, or holding ": " or " #"
+YAML_UNSAFE_RE = re.compile(r"^[-?:,\[\]{}#&*!|>'\"%@`\s]|: |\s#|:$|\s$")
 # HTML blocks holding code rather than text, copied up to their closing tag
 RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.IGNORECASE)
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
@@ -38,11 +40,14 @@ TAG_RE = re.compile(r"<[^<>]+>")
 class _Unit:
     """A translatable block, and how to write its translation back: a prefix per line, and the line ending."""
 
-    def __init__(self, key, text, first_prefix="", prefix="", suffix="", context=""):
+    def __init__(self, key, text, first_prefix="", prefix="", suffix="", context="", encode=None):
         self.key, self.text, self.context = key, text, context
         self.first_prefix, self.prefix, self.suffix = first_prefix, prefix, suffix
+        self.encode = encode
 
     def render(self, translation):
+        if self.encode:
+            translation = self.encode(translation)
         lines = translation.split("\n")
         # Lines end as the block's last one does, so a document with \r\n line endings keeps them
         newline = "\r\n" if self.suffix.endswith("\r\n") else "\n"
@@ -103,6 +108,28 @@ def _read(path):
         parser = _Parser(f.read())
     parser.parse()
     return parser
+
+
+def _yaml_decode(value, quote):
+    """Return a front matter value's text, from its YAML quoting."""
+    if quote == "'":
+        return value.replace("''", "'")
+    if quote == '"':
+        return re.sub(r'\\(["\\])', r"\1", value)
+    return value
+
+
+def _yaml_encode(text, quote):
+    """Write text as a YAML value in its original quoting, adding double quotes when plain text needs them.
+
+    >>> _yaml_encode("L'application", "'"), _yaml_encode('Un "titre"', '"'), _yaml_encode("Étapes : 2", "")
+    ("'L''application'", '"Un \\\\"titre\\\\""', '"Étapes : 2"')
+    """
+    if quote == "'":
+        return "'" + text.replace("'", "''") + "'"
+    if quote == '"' or YAML_UNSAFE_RE.search(text) or not text:
+        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return text
 
 
 def _code_span_positions(text):
@@ -180,13 +207,13 @@ class _Parser:
         self.index = 0
         self.indent_cache = (0, None)  # pieces looked at by list_content_indent, and its answer
 
-    def unit(self, text, first_prefix="", prefix="", suffix="", context=None):
+    def unit(self, text, first_prefix="", prefix="", suffix="", context=None, encode=None):
         if not text.strip():
-            self.pieces.append(first_prefix + text + suffix)
+            self.pieces.append(first_prefix + (encode(text) if encode else text) + suffix)
             return
         if context is None:
             context = self.context()
-        self.pieces.append(_Unit(str(len(self.pieces)), text, first_prefix, prefix, suffix, context))
+        self.pieces.append(_Unit(str(len(self.pieces)), text, first_prefix, prefix, suffix, context, encode))
 
     def context(self):
         return "Section: " + " > ".join(title for _, title in self.headings) if self.headings else ""
