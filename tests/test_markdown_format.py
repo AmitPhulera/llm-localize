@@ -270,6 +270,9 @@ def test_only_line_endings_end_lines(tmp_path, newline):
 
 
 @pytest.mark.parametrize("source", [
+    "---\ntitle: |\n  A title\n  on two lines\ndescription: >-\n  Folded\n---\n\nText.\n",
+    "---\ntitle: A long title\n  that goes on\n---\n\nText.\n",
+    '---\ntitle: "Line\\nBreak \\t \\"tab\\" \\u00e9"\n---\n\nText.\n',
     "\ufeff---\nlayout: post\ntitle: Guide\n---\n\nText.\n",
     "<div>\r\nHello\r\n</div>\r\n",
 ])
@@ -432,3 +435,11 @@ def test_front_matter_comments_stay_after_the_value(tmp_path):
     assert [unit.source for unit in units] == ["Hello", "Plain", "Text."]
     assert target.read_text(encoding="utf-8").startswith(
         '---\ntitle: "FR Hello" # shown in the nav\ndescription: FR Plain # a note\n---\n')
+
+
+def test_an_escape_naming_no_character_is_left_as_written(tmp_path):
+    (tmp_path / "s.md").write_text('---\ntitle: "Bad \\UFFFFFFFF"\n---\n\nText.\n', encoding="utf-8")
+
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert units[0].source == "Bad \\UFFFFFFFF"

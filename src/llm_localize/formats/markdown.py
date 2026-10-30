@@ -28,6 +28,11 @@ QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 # Written so spaces can be matched only one way: optional runs of them side by side make a long line of
 # spaces quadratic to rule out
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
+# YAML double-quoted escapes, and how control characters are written in them
+YAML_ESCAPE_RE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
+YAML_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n", "v": "\v", "f": "\f", "r": "\r",
+                "e": "\x1b", " ": " ", '"': '"', "/": "/", "\\": "\\", "N": "\x85", "_": "\xa0",
+                "L": "\u2028", "P": "\u2029"}
 # A block scalar's indicator, like | or >-, whose value is on the indented lines below
 YAML_BLOCK_RE = re.compile(r"[|>][+-]?\d?[+-]?")
 # A plain YAML value that needs quoting: one starting with an indicator, or holding ": " or " #"
@@ -156,12 +161,25 @@ def _front_matter_line(line):
 
 
 def _yaml_decode(value, quote):
-    """Return a front matter value's text, from its YAML quoting."""
+    r"""Return a front matter value's text, from its YAML quoting.
+
+    >>> _yaml_decode(r"Line\nBreak \t \"tab\" \u00e9", '"'), _yaml_decode("L''app", "'")
+    ('Line\nBreak \t "tab" é', "L'app")
+    """
     if quote == "'":
         return value.replace("''", "'")
     if quote == '"':
-        return re.sub(r'\\(["\\])', r"\1", value)
+        return YAML_ESCAPE_RE.sub(_yaml_unescape, value)
     return value
+
+
+def _yaml_unescape(match):
+    escape = match.group(1)
+    if escape[0] in "xuU":
+        code = int(escape[1:], 16)
+        # One that names no character is left as written
+        return match.group() if code > 0x10FFFF else chr(code)
+    return YAML_ESCAPES.get(escape, escape)
 
 
 def _yaml_encode(text, quote):
@@ -329,9 +347,12 @@ class _Parser:
             key, separator, quote, value, comment = match or (None,) * 5
             block_scalar = not quote and YAML_BLOCK_RE.fullmatch((value or "").strip())
             if match and value.strip() and not continued and not block_scalar:
-                self.unit(_yaml_decode(value, quote), first_prefix=key + separator,
-                          suffix=comment + self.ending(self.index), context=f"Front matter: {key}",
-                          encode=lambda text, quote=quote: _yaml_encode(text, quote))
+                text = _yaml_decode(value, quote)
+                # An unchanged value is written as it was, escapes and all
+                self.unit(text, first_prefix=key + separator, suffix=comment + self.ending(self.index),
+                          context=f"Front matter: {key}",
+                          encode=lambda new, text=text, raw=quote + value + quote, quote=quote:
+                              raw if new == text else _yaml_encode(new, quote))
                 self.index += 1
             else:
                 self.literal()
