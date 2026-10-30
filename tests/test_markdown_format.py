@@ -133,6 +133,15 @@ def test_only_line_endings_end_lines(tmp_path, newline):
     assert target.read_bytes().decode() == source
 
 
+def test_a_rule_after_a_list_stays_a_rule(tmp_path):
+    (tmp_path / "s.md").write_text("- one\n- two\n---\n\nNext\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(), "fr")
+
+    assert target.read_text(encoding="utf-8") == "- T: one\n- T: two\n---\n\nT: Next\n"
+
+
 def test_a_heading_with_a_long_run_of_spaces_takes_linear_time(tmp_path):
     (tmp_path / "s.md").write_text("# x" + " " * 200000 + "y\n", encoding="utf-8")
 

@@ -206,10 +206,13 @@ class _Parser:
         self.index += 1
         while self.index < len(self.lines):
             current = self.line()
+            # A rule ends the item too: it can't underline the item's text, as "---" would once indented
             if (not current.strip() or LIST_RE.match(current) or FENCE_RE.match(current)
+                    or RULE_RE.match(current)
                     or HEADING_RE.match(current) or QUOTE_RE.match(current)):
                 break
-            lines.append(current.strip())
+            # Only the indent: two trailing spaces are a line break
+            lines.append(current.lstrip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=marker, prefix=indent, suffix=self.ending(self.index - 1))
 
