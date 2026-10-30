@@ -724,6 +724,22 @@ def test_a_run_whose_batches_all_fail_keeps_the_existing_copy(tmp_path):
     assert target.read_text(encoding="utf-8") == "# FR: Hello\n\nFR: Some text.\n"
 
 
+def test_a_run_with_a_failed_batch_keeps_the_existing_copy(tmp_path, caplog):
+    (tmp_path / "s.md").write_text("# Title\n\nHello world.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+    target.parent.mkdir()
+    target.write_text("# Titre\n\nBonjour le monde.\n", encoding="utf-8")
+    client = ScriptedClient([{"0": "T: Title"}, RuntimeError("rate limited")])
+
+    markdown = open_file(target, source_path=tmp_path / "s.md")
+
+    result = translate_file(markdown, client, "fr", batch_size=1, workers=1)
+
+    assert result.failed_batches == 1
+    assert target.read_text(encoding="utf-8") == "# Titre\n\nBonjour le monde.\n"
+    assert "kept as it was" in caplog.text
+
+
 def test_a_document_with_nothing_to_translate_is_copied(tmp_path):
     (tmp_path / "s.md").write_text("```\ncode\n```\n", encoding="utf-8")
     target = tmp_path / "fr" / "s.md"

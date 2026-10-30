@@ -189,6 +189,8 @@ class MarkdownFile(MonolingualFile):
         self._applied[key] = translation
 
     copies_the_source = True
+    # Written once, at the end, so a run that doesn't finish can leave an existing copy as it was
+    save_after_each_batch = False
 
     def save(self):
         """Write the translated copy: every block's translation, or its source text if it has none yet."""

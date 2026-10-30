@@ -278,6 +278,7 @@ def translate_file(translation_file, client, language, source_language="en", bat
     if batches:
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {executor.submit(run, batch): i for i, batch in enumerate(batches)}
+            finished = False
             try:
                 done = 0
                 for future in as_completed(futures):
@@ -296,13 +297,20 @@ def translate_file(translation_file, client, language, source_language="en", bat
                     result.rejected += rejected
                     logger.info("%s: %d/%d batches done, %d/%d translated", translation_file.path,
                                 done, len(batches), result.translated, result.untranslated)
+                finished = not result.failed_batches
             except BaseException:
                 # A fatal error or Ctrl-C: don't send the requests still queued, or retry those sent
                 stop.set()
                 executor.shutdown(wait=True, cancel_futures=True)
                 raise
             finally:
-                if applied and not translation_file.save_after_each_batch:
+                # A document's copy is rebuilt from its source, so a run that didn't finish would put the source's
+                # text back over blocks an earlier run translated: an existing copy is kept as it is then
+                if applied and not finished and translation_file.copies_the_source and os.path.exists(
+                        translation_file.path):
+                    logger.warning("%s: kept as it was, since not every batch was translated; run again to "
+                                   "update it", translation_file.path)
+                elif applied and not translation_file.save_after_each_batch:
                     translation_file.save()
     # A document's copy is written even when nothing in it was translated: the source's text, for now. An
     # existing copy is left as it is, so a run whose batches all fail can't undo an earlier one's work.
