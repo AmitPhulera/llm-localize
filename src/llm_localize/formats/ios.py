@@ -2,6 +2,14 @@
 import codecs
 import os
 import re
+from functools import cached_property
+
+from llm_localize.formats.monolingual import Message, MonolingualFile
+
+INSTRUCTIONS = (
+    "Messages are Apple strings, and each one's context gives its key or comment. Keep format "
+    "specifiers like %@, %d, %lld and %1$@ exactly as they are."
+)
 
 TOKEN_RE = re.compile(r"""
     (?P<space>\s+)
@@ -14,6 +22,27 @@ TOKEN_RE = re.compile(r"""
 BOMS = {"utf-8-sig": codecs.BOM_UTF8, "utf-16-le": codecs.BOM_UTF16_LE, "utf-16-be": codecs.BOM_UTF16_BE}
 
 ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "'": "'", "0": "\0"}
+
+
+class StringsFile(MonolingualFile):
+    name = "strings"
+    extensions = (".strings",)
+    instructions = INSTRUCTIONS
+
+    def read_messages(self, path):
+        messages = {}
+        for entry in _read_strings(path)[1]:
+            context = "; ".join(filter(None, [entry["comment"], "" if entry["key"] == entry["value"]
+                                              else f"Key: {entry['key']}"]))
+            messages[entry["key"]] = Message(text=entry["value"], context=context)
+        return messages
+
+    @cached_property
+    def _applied(self):
+        return {}
+
+    def apply(self, key, translation):
+        self._applied[key] = translation
 
 
 def _starts_line(text, index):
