@@ -1,9 +1,11 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/en/guide.md``.
 
-The document is split into blocks: paragraphs. Each block is one
-message.
+The document is split into blocks: headings and paragraphs. Each block
+is one message, sent with the headings above it as context.
 """
 import re
+
+HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*?)([ \t]+#+[ \t]*)?$")
 
 
 class _Unit:
@@ -30,9 +32,9 @@ def _read(path):
 def _parse(text):
     """Split a Markdown document into literal strings and ``_Unit`` blocks, which join back into it.
 
-    >>> pieces = _parse("Some *text*.\\n\\nMore.\\n")
+    >>> pieces = _parse("# Title\\n\\nSome *text*.\\n")
     >>> [(piece.text, piece.context) if isinstance(piece, _Unit) else piece for piece in pieces]
-    [('Some *text*.', ''), '\\n', ('More.', '')]
+    [('Title', ''), '\\n', ('Some *text*.', 'Section: Title')]
     """
     return _Parser(text).parse()
 
@@ -41,13 +43,26 @@ class _Parser:
     def __init__(self, text):
         self.lines = text.splitlines(keepends=True)
         self.pieces = []
+        self.headings = []
         self.index = 0
 
-    def unit(self, text, first_prefix="", prefix="", suffix=""):
+    def unit(self, text, first_prefix="", prefix="", suffix="", context=None):
         if not text.strip():
             self.pieces.append(first_prefix + text + suffix)
             return
-        self.pieces.append(_Unit(str(len(self.pieces)), text, first_prefix, prefix, suffix))
+        if context is None:
+            context = self.context()
+        self.pieces.append(_Unit(str(len(self.pieces)), text, first_prefix, prefix, suffix, context))
+
+    def context(self):
+        return "Section: " + " > ".join(title for _, title in self.headings) if self.headings else ""
+
+    def heading(self, level, title):
+        """Record a heading, and return its context: the headings it's under."""
+        self.headings = [(lvl, t) for lvl, t in self.headings if lvl < level]
+        context = self.context()
+        self.headings.append((level, title.strip()))
+        return context
 
     def line(self, offset=0):
         index = self.index + offset
@@ -66,16 +81,25 @@ class _Parser:
             line = self.line()
             if not line.strip():
                 self.literal()
+            elif HEADING_RE.match(line):
+                self.atx_heading()
             else:
                 self.paragraph()
         return self.pieces
+
+    def atx_heading(self):
+        prefix, title, closing = HEADING_RE.match(self.line()).groups()
+        level = prefix.count("#")
+        context = self.heading(level, title)
+        self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context)
+        self.index += 1
 
     def paragraph(self):
         indent = re.match(r"[ \t]*", self.line()).group()
         lines = []
         while self.index < len(self.lines):
             current = self.line()
-            if not current.strip():
+            if not current.strip() or (lines and HEADING_RE.match(current)):
                 break
             lines.append(current[len(indent):] if current.startswith(indent) else current.strip())
             self.index += 1
