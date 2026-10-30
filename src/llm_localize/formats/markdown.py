@@ -273,6 +273,39 @@ def _link_targets(text):
     return targets
 
 
+def _closing_parentheses(text):
+    """Return, for each position, where the parentheses opened before it close: the first ``)`` that
+    brings the depth below what it was there, or the end of the text.
+
+    Worked out for every position in one pass, so finding each link's end
+    doesn't rescan the rest of the block. A backslash escapes the next
+    character.
+
+    >>> text = "see](a(b)c) and](d)"
+    >>> ends = _closing_parentheses(text)
+    >>> text[5:ends[5]], text[17:ends[17]]
+    ('a(b)c', 'd')
+    """
+    depths, depth, escaped = [0], 0, False
+    for char in text:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        else:
+            depth += (char == "(") - (char == ")")
+        depths.append(depth)
+    ends, lower = [len(text)] * (len(text) + 1), []
+    for position in reversed(range(len(text) + 1)):
+        # The nearest later position whose depth is lower: the ) before it closed this one's parentheses
+        while lower and depths[lower[-1]] >= depths[position]:
+            lower.pop()
+        if lower:
+            ends[position] = lower[-1] - 1
+        lower.append(position)
+    return ends
+
+
 def _code_span_positions(text):
     r"""Return ``(start, end)`` of each code span: a backtick run, up to the next run as long.
 
