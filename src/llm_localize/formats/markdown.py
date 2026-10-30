@@ -5,7 +5,8 @@ is one message, sent with the headings above it as context.
 """
 import re
 
-HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*?)([ \t]+#+[ \t]*)?$")
+# A heading line; its closing #s, if any, are split off by _heading_parts, which a regex would do in quadratic time
+HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
 
 
 class _Unit:
@@ -27,6 +28,21 @@ def _read(path):
         parser = _Parser(f.read())
     parser.parse()
     return parser
+
+
+def _heading_parts(match):
+    """Return a heading line's ``(prefix, title, closing)``: the closing #s, with the spaces before them, or None.
+
+    >>> _heading_parts(HEADING_RE.match("## Install ##  ")), _heading_parts(HEADING_RE.match("# C#"))
+    (('## ', 'Install', ' ##  '), ('# ', 'C#', None))
+    """
+    prefix, title = match.groups()
+    body = title.rstrip(" \t")
+    without = body.rstrip("#")
+    if without != body and without[-1:] in (" ", "\t"):
+        text = without.rstrip(" \t")
+        return prefix, text, title[len(text):]
+    return prefix, title, None
 
 
 def _parse(text):
@@ -88,7 +104,7 @@ class _Parser:
         return self.pieces
 
     def atx_heading(self):
-        prefix, title, closing = HEADING_RE.match(self.line()).groups()
+        prefix, title, closing = _heading_parts(HEADING_RE.match(self.line()))
         level = prefix.count("#")
         context = self.heading(level, title)
         self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context)
