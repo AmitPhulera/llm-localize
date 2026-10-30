@@ -185,6 +185,17 @@ def test_cleanup_only_without_a_language(tmp_path, capsys):
     assert capsys.readouterr().out == f"{path}: nothing to translate\n  cleared 1 broken translations\n"
 
 
+def test_languages_can_be_named(tmp_path, capsys):
+    (tmp_path / "en.json").write_text('{"a": "Hi"}')
+    path = tmp_path / "hi.json"
+
+    assert main([str(path), "--lang", "Hindi", "--source-lang", "english",
+                 "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+    assert json.loads(path.read_text()) == {"a": "T: Hi"}
+    assert capsys.readouterr().out == f"{path} (hi): translated 1 of 1\n"
+
+
 @pytest.mark.parametrize("target", ["fr.json", "fr.md", "res/values-fr/strings.xml"])
 def test_a_missing_source_is_an_error_with_paths_too(tmp_path, monkeypatch, capsys, target):
     monkeypatch.chdir(tmp_path)
@@ -195,3 +206,14 @@ def test_a_missing_source_is_an_error_with_paths_too(tmp_path, monkeypatch, caps
 
     assert f"The source file nope{Path(target).suffix} doesn't exist" in capsys.readouterr().err
     assert not Path(target).exists()
+
+
+@pytest.mark.parametrize("option", ["--lang", "--source-lang"])
+def test_unknown_language_names_are_refused(tmp_path, capsys, option):
+    (tmp_path / "en.json").write_text('{"a": "Hi"}')
+
+    with pytest.raises(SystemExit):
+        main(["fr.json", "--source", str(tmp_path / "en.json"), "--lang", "fr", option, "Klingonese"])
+
+    assert "unknown language 'Klingonese': give its code" in capsys.readouterr().err
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["en.json"]

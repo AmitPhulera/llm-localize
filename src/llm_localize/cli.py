@@ -5,6 +5,7 @@ import logging
 import sys
 
 from llm_localize.formats import FORMATS
+from llm_localize.languages import language_code
 from llm_localize.providers import PROVIDERS, get_client
 from llm_localize.providers.base import FatalError, LLMError
 from llm_localize.runner import summarize, translate_files
@@ -59,8 +60,9 @@ def positive_int(value):
 
 def add_translation_arguments(parser, defaults):
     """Add the options shared by the CLI and the Django command."""
-    parser.add_argument('--source-lang', default=defaults['SOURCE_LANGUAGE'],
-                        help="Language the source text is written in (default: %(default)s)")
+    parser.add_argument('--source-lang', default=defaults['SOURCE_LANGUAGE'], type=language_code,
+                        help="Language the source text is written in, as a code or English name "
+                             "(default: %(default)s)")
     parser.add_argument('--format', default=defaults['FORMAT'],
                         help=f"File format, one of {', '.join(FORMATS)} or a dotted path to a "
                              "TranslationFile subclass (default: detect from the file extension)")
@@ -136,8 +138,10 @@ def main(argv=None):
         description="Translate untranslated messages in translation files with an LLM.",
     )
     parser.add_argument('paths', nargs='+', help="Translation files to translate")
-    parser.add_argument('--lang', help="Target language (default: the language each file declares, or "
-                                       "for one file per language, the language in its path)")
+    parser.add_argument('--lang', type=language_code,
+                        help="Target language, as a code like hi or an English name like Hindi (default: the "
+                             "language each file declares, or for one file per language, the language in "
+                             "its path)")
     parser.add_argument('--source', help="For formats with one file per language, like JSON: the file to "
                                          "translate from (default: the file beside each path, with the "
                                          "language in its path swapped for --source-lang)")

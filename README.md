@@ -62,7 +62,7 @@ llm-localize messages.fr.json --source-lang en_US   # from messages.en_US.json
 llm-localize out.json --lang es --source strings.json
 ```
 
-The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it. The source file is the same path with that code swapped for `--source-lang`, unless `--source` gives it. A glob that also matches the source file is fine: it has nothing missing.
+The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it, as a code or an English name. The source file is the same path with that code swapped for `--source-lang`, unless `--source` gives it. A glob that also matches the source file is fine: it has nothing missing.
 
 A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
 

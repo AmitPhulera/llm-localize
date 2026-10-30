@@ -1,4 +1,9 @@
 """Language code helpers."""
+import argparse
+import re
+
+# A language code or locale name: a 2-3 letter language, then subtags like zh-Hans, pt_BR or nl_NL-x-informal
+LANGUAGE_CODE_RE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*")
 
 # English names of the languages Django supports, by language code, from
 # Django's LANG_INFO (django/conf/locale/__init__.py), with fallbacks like
@@ -148,6 +153,31 @@ def language_name(lang_code):
     """
     code = normalize(lang_code)
     return LANGUAGE_NAMES.get(code) or LANGUAGE_NAMES.get(code.split("-")[0]) or lang_code
+
+
+def language_code(language):
+    """Return the code for a language given by its English name, or ``language`` itself if it's a code.
+
+    It's the type of the command line's language options, so anything
+    else, like a name the table doesn't list, is refused with
+    ``argparse.ArgumentTypeError`` rather than taken for a code.
+
+    >>> language_code("hindi"), language_code("Brazilian Portuguese"), language_code("fr"), language_code("rw")
+    ('hi', 'pt-br', 'fr', 'rw')
+    >>> language_code("Simplified Chinese"), language_code("Traditional Chinese"), language_code("sr_Latn")
+    ('zh-hans', 'zh-hant', 'sr_Latn')
+    >>> language_code("Klingonese")
+    Traceback (most recent call last):
+    argparse.ArgumentTypeError: unknown language 'Klingonese': give its code, like fr or pt-BR
+    """
+    wanted = language.strip().lower()
+    codes = [code for code, name in LANGUAGE_NAMES.items() if name.lower() == wanted]
+    if codes:
+        # Of codes sharing a name, one without a region: zh-hant rather than zh-hk or zh-tw
+        return min(codes, key=lambda code: len(code.split("-")[-1]) == 2 and "-" in code)
+    if not LANGUAGE_CODE_RE.fullmatch(language):
+        raise argparse.ArgumentTypeError(f"unknown language {language!r}: give its code, like fr or pt-BR")
+    return language
 
 
 def same_language(code, other):
