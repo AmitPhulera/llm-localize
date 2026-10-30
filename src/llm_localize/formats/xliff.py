@@ -21,6 +21,7 @@ from llm_localize.formats.base import TranslationFile, splice, write_file
 from llm_localize.formats.monolingual import _is_language_code
 from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
+    changes_tags,
     decode_character_references,
     from_utf8,
     line_indent,
@@ -100,14 +101,17 @@ class XliffFile(TranslationFile):
     def find_problem(self, source, translation):
         # Inline elements' attributes, like equiv-text="{{ name }}", aren't ICU, so the ICU check sees tokens.
         # The rest is checked as an app reads it: &#37;s is %s, and &lt;a href="..."&gt; is a link.
-        masked_source, masked_translation = (_as_read(text) for text in _mask_elements(source, translation))
-        if icu.is_icu_choice(masked_source):
+        masked_source, masked_translation = _as_read(_mask_elements(source)), _as_read(_mask_elements(translation))
+        choice = icu.is_icu_choice(masked_source)
+        if choice:
             problem = icu.find_problem(masked_source, masked_translation, list(plural_categories(self.language)),
                                        ordinal_categories(self.language))
         else:
-            problem = super().find_problem(_as_read(source), _as_read(translation))
+            problem = super().find_problem(masked_source, masked_translation)
         if problem:
             return problem
+        if changes_tags(source, translation, counted=not choice):
+            return "XML tags"
         try:
             expat.ParserCreate().Parse(f"<r>{BARE_AMPERSAND_RE.sub('&amp;', translation)}</r>", True)
         except expat.ExpatError:
@@ -161,17 +165,25 @@ def _as_read(text):
     return unescape(decode_character_references(text), {"&quot;": '"', "&apos;": "'"})
 
 
-def _mask_elements(*texts):
-    """Return the texts with each inline element replaced by a token like ``<t0/>``, the same for the same element.
+def _mask_elements(text):
+    """Return the text with paired inline elements as bare tags, and placeholders as ``%(inline_name)s``.
 
-    >>> _mask_elements('Hi <x id="N" equiv-text="{{ name }}"/>', 'Salut <x id="N" equiv-text="{{ name }}"/>')
-    ('Hi <t0/>', 'Salut <t0/>')
+    Placeholders may then move, as word order needs, while pairs like
+    ``<g>`` still nest; ``changes_tags`` checks each is kept as it is.
+
+    >>> _mask_elements('Hi <x id="N" equiv-text="{{ name }}"/> <g id="1">Bob</g>')
+    'Hi  %(inline_x)s <g>Bob</g>'
     """
-    tokens = {}
-
-    def token(match):
-        return tokens.setdefault(match.group(), f"<t{len(tokens)}/>")
-    return tuple(ELEMENT_RE.sub(token, text) for text in texts)
+    def name_alone(match):
+        tag = match.group()
+        name = re.match(r"</?([^\s/>]+)", tag).group(1)
+        if tag.endswith("/>"):
+            # A placeholder, like <x/> or <ph/>: a named placeholder, which may move past markup too, written
+            # without braces, so an apostrophe before it, as in l'<x/>, isn't ICU quoting, and after a space, so
+            # a % before it, as in Turkish's %<x/>, isn't taken for part of it
+            return " %(inline_" + re.sub(r"\W", "_", name.lower()) + ")s"
+        return f"</{name}>" if tag.startswith("</") else f"<{name}>"
+    return ELEMENT_RE.sub(name_alone, text)
 
 
 def _with_namespaces(start_tag, namespaces):

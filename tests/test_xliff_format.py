@@ -96,8 +96,8 @@ class TestXliff1:
         assert open_file(path).untranslated_units() == []
 
     @pytest.mark.parametrize("translation, reason", [
-        (f"Bonjour {NAME.replace('INTERPOLATION', 'OTHER')} !", "HTML attributes"),
-        ("Bonjour !", "placeholders"),  # the element's equiv-text holds {{ name }}
+        (f"Bonjour {NAME.replace('INTERPOLATION', 'OTHER')} !", "XML tags"),
+        ("Bonjour !", "placeholders"),
         (f"Bonjour {NAME} < !", "XML"),
     ])
     def test_broken_inline_elements_are_rejected(self, xliff, translation, reason):
@@ -184,7 +184,7 @@ ICU_WITH_NAME = ('{VAR_PLURAL, plural, =1 {one file by <x id="I" equiv-text="{{ 
      'other {<x id="C" equiv-text="{{ count }}"/> fichiers}}', None),
     ('{VAR_PLURAL, plural, =1 {un fichier de <x id="OTHER" equiv-text="{{ name }}"/>} '
      'one {<x id="C" equiv-text="{{ count }}"/> fichier} many {<x id="C" equiv-text="{{ count }}"/> de fichiers} '
-     'other {<x id="C" equiv-text="{{ count }}"/> fichiers}}', "HTML tags"),
+     'other {<x id="C" equiv-text="{{ count }}"/> fichiers}}', "XML tags"),
 ])
 def test_icu_messages_with_interpolations_inside_cases(xliff, translation, reason):
     assert open_file(xliff(XLIFF_1)).find_problem(ICU_WITH_NAME, translation) == reason
@@ -247,6 +247,28 @@ def test_escaped_markup_is_checked_as_markup(xliff):
     assert xliff_file.find_problem("&lt;b&gt;Hi&lt;/b&gt;", double_decoded) is not None
 
 
+def test_inline_placeholders_may_move_past_each_other(xliff):
+    xliff_file = open_file(xliff(XLIFF_1))
+    shown = '<x id="INTERPOLATION" equiv-text="{{ shown }}"/>'
+    total = '<x id="INTERPOLATION_1" equiv-text="{{ total }}"/>'
+
+    assert xliff_file.find_problem(f"Showing {shown} of {total}", f"{total} 件中 {shown} 件を表示") is None
+    assert xliff_file.find_problem(f"Showing {shown} of {total}", f"{total} 件中 {total} 件を表示") is not None
+    # A % before one is text, as Turkish writes %50
+    pct = '<x id="INTERPOLATION" equiv-text="{{ pct }}"/>'
+    assert xliff_file.find_problem(f"{pct}% off", f"%{pct} indirim") is None
+    # An apostrophe before a placeholder isn't ICU quoting
+    icu = "{VAR_PLURAL, plural, =1 {Open %s once} other {Open %s # times}}"
+    elided = "{VAR_PLURAL, plural, =1 {Ouvrir l'%s une fois} one {Ouvrir l'%s # fois} many {Ouvrir l'%s # fois} " \
+             "other {Ouvrir l'%s # fois}}"
+    assert xliff_file.find_problem(icu.replace("%s", shown), elided.replace("%s", shown)) is None
+    # Past markup too
+    welcome = '<g id="1">welcome</g>'
+    assert xliff_file.find_problem(f"Hello {shown}, {welcome}", f'<g id="1">ようこそ</g>、{shown}さん') is None
+    # One can't stand in for another
+    assert xliff_file.find_problem(f"{shown}, {total}, {shown}", f"{total}, {shown}, {total}") == "XML tags"
+
+
 def test_the_state_attribute_is_set_not_text_in_another(xliff):
     path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a"><source>Hi</source>'
                  '<target note=\' state="new"\' state="new"></target></trans-unit></body></file></xliff>')
@@ -281,6 +303,14 @@ def test_translate_no_holds_for_the_units_inside(xliff):
                  '<trans-unit id="hello"><source>Hello</source></trans-unit></body></file></xliff>')
 
     assert [unit.key for unit in open_file(path).untranslated_units()] == ["tagline", "hello"]
+
+
+def test_inline_elements_keep_their_case(xliff):
+    xliff_file = open_file(xliff(XLIFF_1))
+
+    changed = NAME.replace("<x id=", "<X ID=")
+
+    assert xliff_file.find_problem(f"Hello {NAME}!", f"Bonjour {changed} !") == "XML tags"
 
 
 def test_deep_nesting_takes_linear_time(xliff):
