@@ -1,8 +1,43 @@
 """XLIFF 1.2 files, as written by Angular's extract-i18n and most translation tools."""
 import os
+from functools import cached_property
 from xml.parsers import expat
 
+from llm_localize.formats.base import TranslationFile
 from llm_localize.formats.xml_utils import line_indent, tag_end, to_utf8
+from llm_localize.plurals import plural_categories
+
+
+class XliffFile(TranslationFile):
+
+    def __init__(self, path, language=None):
+        super().__init__(path)
+        self._language = language
+
+    @classmethod
+    def open(cls, path, language=None, source_language=None, source_path=None):
+        return cls(path, language=language)
+
+    @property
+    def language(self):
+        return self._language or self._parsed.target_language
+
+    @property
+    def instructions(self):
+        categories = ", ".join(plural_categories(self.language or "en"))
+        return (
+            "Messages are XLIFF segments: keep inline XML elements like <x id=\"...\"/>, <ph id=\"...\"/>, "
+            "<g>...</g> and <pc>...</pc> exactly as they are, with their attributes, translating only "
+            "the text around and inside them. Keep XML entities like &amp; and &lt; as they are. A message "
+            "in ICU MessageFormat, like \"{VAR_PLURAL, plural, =1 {one item} other {# items}}\", must keep "
+            "its argument names, exact cases like =1 and select cases, and give each plural argument one "
+            f"case per plural category of the target language: {categories}. In ICU messages an apostrophe "
+            "before {, } or # starts quoted text, so write it twice: l''{app}, not l'{app}."
+        )
+
+    @cached_property
+    def _parsed(self):
+        return _read(self.path)
 
 
 class _Segment:
