@@ -1,12 +1,24 @@
-"""XLIFF 1.2 files, as written by Angular's extract-i18n and most translation tools."""
+"""XLIFF 1.2 files, as written by Angular's extract-i18n and most translation tools.
+
+Each ``<trans-unit>`` holds its source and its translation, so like a
+PO file one file is one target language, named by its
+``target-language`` attribute or by ``--lang``. A unit is translated
+when it has no ``<target>``, an empty one, or one in the
+``new``/``needs-translation`` state, and the translation's state becomes
+``translated``. Inline elements like ``<x/>``, ``<ph/>`` and ``<g>``
+must be kept with their attributes. Units marked ``translate="no"`` are
+skipped. The file is edited in place, so everything else stays as it was.
+"""
 import os
 from functools import cached_property
 from xml.parsers import expat
 
-from llm_localize.formats.base import TranslationFile
+from llm_localize.formats.base import TranslationFile, splice, write_file
 from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
+    from_utf8,
     line_indent,
+    set_attribute,
     tag_end,
     to_utf8,
 )
@@ -17,6 +29,8 @@ UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
 
 
 class XliffFile(TranslationFile):
+    name = "xliff"
+    extensions = (".xlf", ".xliff")
 
     def __init__(self, path, language=None):
         super().__init__(path)
@@ -63,6 +77,28 @@ class XliffFile(TranslationFile):
 
     def apply(self, key, translation):
         self._applied[key] = BARE_AMPERSAND_RE.sub("&amp;", translation)
+
+    def save(self):
+        """Write the file: its original bytes, with each translated segment's target and state replaced."""
+        parsed = self._parsed
+        data = parsed.data
+        replacements = []
+        for key, translation in self._applied.items():
+            segment = parsed.segments[key]
+            text = translation.encode()
+            if segment.target_span:
+                start, end = segment.target_span
+                start_tag, closing = data[start:segment.target_inner[0]], data[segment.target_inner[1]:end]
+                if parsed.version == "1":
+                    start_tag = set_attribute(start_tag, b"state", b"translated")
+                replacements.append((start, end, start_tag + text + closing))
+            else:
+                state = b' state="translated"' if parsed.version == "1" else b""
+                # On a line of its own after the source, or right after it when the source shares its line
+                newline = b"\n" + segment.indent if segment.indent else b""
+                element = newline + b"<target" + state + b">" + text + b"</target>"
+                replacements.append((segment.source_end, segment.source_end, element))
+        write_file(self.path, from_utf8(splice(data, replacements), parsed.encoding, parsed.bom))
 
 
 class _Segment:

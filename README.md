@@ -14,7 +14,7 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
-It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO, JSON, Android and iOS files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
+It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic. gettext PO, JSON, Android, iOS and XLIFF files ship today (see [Formats](#formats)), and other formats plug in as small classes (see [Adding a format](#adding-a-format)).
 
 ## Install
 
@@ -47,6 +47,7 @@ The format is chosen by file extension, or with `--format`.
 | `android` | `.xml` | one language per file | `<plurals>` items by CLDR category |
 | `strings` | `.strings` | one language per file | none (`.stringsdict` isn't supported) |
 | `xcstrings` | `.xcstrings` | every language, one at a time with `--lang` | plural variations by CLDR category |
+| `xliff` | `.xlf`, `.xliff` | source and translation, one file per language | — |
 
 ### One file per language
 
@@ -97,6 +98,17 @@ llm-localize MyApp/Localizable.xcstrings --lang fr     # a string catalog, one l
 
 - **`.strings`** files are translated from the same file in `en.lproj` (with `--source-lang`'s code), or `Base.lproj` if there's none. Each entry is sent with the comment above it, and its key when that differs from the text. New entries are added at the end with their comments, empty values are filled in place, and the file keeps its encoding, UTF-8 or UTF-16.
 - **`.xcstrings`** catalogs hold every language, so pass the target with `--lang`. An entry is translated when the language has no value, an empty one, or one in the `new` state, and the translation is marked `translated`. Plural variations get one form per CLDR category of the language. Entries marked `shouldTranslate: false`, and those with device variations or substitutions, are skipped. Set `--source-lang` to the catalog's `sourceLanguage` if it isn't English, since the prompt names it.
+
+### XLIFF
+
+```bash
+llm-localize src/locale/messages.fr.xlf      # Angular's extract-i18n output, XLIFF 1.2
+```
+
+Each unit holds its source and translation, so like a PO file, one file is one language: its `target-language`, or `--lang`. A unit is translated when it has no `<target>`, an empty one, or one in the `new` or `needs-translation` state, and the translation's state becomes `translated`. Units marked `translate="no"` are skipped, and notes are sent as context.
+
+- Inline elements like `<x id="INTERPOLATION"/>`, `<ph/>`, `<g>` and `<pc>` must be kept with their attributes.
+- The file is edited in place: a new `<target>` goes right after its `<source>`, and the rest of the file is kept byte for byte.
 
 ## LLM providers
 
