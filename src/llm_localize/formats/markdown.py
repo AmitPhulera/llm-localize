@@ -34,7 +34,9 @@ YAML_UNSAFE_RE = re.compile(r"^[-?:,\[\]{}#&*!|>'\"%@`\s]|: |\s#|:$|\s$")
 RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.IGNORECASE)
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
 COMMENT_RE = re.compile(r"^ {0,3}<!--")
-FRONT_MATTER_LINE_RE = re.compile(rf"^({'|'.join(FRONT_MATTER_KEYS)})([ \t]*:[ \t]*)([\"']?)(.*?)\3[ \t]*$")
+# A front matter key, before its value, like title: "Guide" # shown in the nav
+FRONT_MATTER_KEY_RE = re.compile(rf"^({'|'.join(FRONT_MATTER_KEYS)})([ \t]*:[ \t]*)")
+FRONT_MATTER_COMMENT_RE = re.compile(r"[ \t]+#")
 
 BACKTICKS_RE = re.compile(r"`+")
 TAG_RE = re.compile(r"<[^<>]+>")
@@ -112,6 +114,40 @@ def _read(path):
         parser = _Parser(f.read())
     parser.parse()
     return parser
+
+
+def _front_matter_line(line):
+    r"""Return a front matter line's ``(key, separator, quote, value, comment)``, or None for another key.
+
+    The value ends at its closing quote, or unquoted at a comment, followed
+    only by a comment or spaces.
+
+    >>> _front_matter_line('title: "Guide" # shown'), _front_matter_line("title: A  B  ")
+    (('title', ': ', '"', 'Guide', ' # shown'), ('title', ': ', '', 'A  B', '  '))
+    >>> _front_matter_line(r'title: "Use \" # to" # note'), _front_matter_line("title: 'It''s' # x")
+    (('title', ': ', '"', 'Use \\" # to', ' # note'), ('title', ': ', "'", "It''s", ' # x'))
+    """
+    key = FRONT_MATTER_KEY_RE.match(line)
+    if not key:
+        return None
+    rest = line[key.end():]
+    if rest[:1] in ("'", '"'):
+        quote, index, last = rest[0], 1, len(rest.rstrip(" \t"))
+        while index < len(rest):
+            # A double-quoted value may escape a quote with \, a single-quoted one by doubling it
+            if quote == '"' and rest[index] == "\\" or rest.startswith("''", index) and quote == "'":
+                index += 2
+                continue
+            if rest[index] == quote:
+                if index + 1 >= last or FRONT_MATTER_COMMENT_RE.match(rest, index + 1):
+                    return key.group(1), key.group(2), quote, rest[1:index], rest[index + 1:]
+                break
+            index += 1
+    # Before the spaces that end it, or that come before a #
+    # One space and #, not FRONT_MATTER_COMMENT_RE: a search for a run of them rescans a long run of spaces
+    comment = re.search(r"[ \t]#", rest)
+    end = len((rest[:comment.start()] if comment else rest).rstrip(" \t"))
+    return key.group(1), key.group(2), "", rest[:end], rest[end:]
 
 
 def _yaml_decode(value, quote):
@@ -281,11 +317,11 @@ class _Parser:
             return
         self.literal()
         while self.index < end:
-            match = FRONT_MATTER_LINE_RE.match(self.line())
-            if match and match.group(4).strip():
-                key, separator, quote, value = match.groups()
+            match = _front_matter_line(self.line())
+            key, separator, quote, value, comment = match or (None,) * 5
+            if match and value.strip():
                 self.unit(_yaml_decode(value, quote), first_prefix=key + separator,
-                          suffix=self.ending(self.index), context=f"Front matter: {key}",
+                          suffix=comment + self.ending(self.index), context=f"Front matter: {key}",
                           encode=lambda text, quote=quote: _yaml_encode(text, quote))
                 self.index += 1
             else:

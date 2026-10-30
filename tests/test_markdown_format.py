@@ -359,6 +359,15 @@ def test_a_rule_after_a_list_stays_a_rule(tmp_path):
     assert target.read_text(encoding="utf-8") == "- T: one\n- T: two\n---\n\nT: Next\n"
 
 
+def test_front_matter_takes_linear_time(tmp_path):
+    (tmp_path / "s.md").write_text("---\ntitle: A" + " " * 200000 + "B\n---\n", encoding="utf-8")
+
+    started = time.perf_counter()
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+    assert time.perf_counter() - started < 1
+    assert units[0].source == "A" + " " * 200000 + "B"
+
+
 def test_a_heading_stays_on_one_line(tmp_path):
     (tmp_path / "s.md").write_text("# Install\n\nText.\n", encoding="utf-8")
     target = tmp_path / "fr" / "s.md"
@@ -402,3 +411,16 @@ def test_a_long_line_of_spaces_after_a_table_candidate_takes_linear_time(tmp_pat
     started = time.perf_counter()
     open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
     assert time.perf_counter() - started < 1
+
+
+def test_front_matter_comments_stay_after_the_value(tmp_path):
+    (tmp_path / "s.md").write_text('---\ntitle: "Hello" # shown in the nav\ndescription: Plain # a note\n---\n\n'
+                                   "Text.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+    units = open_file(target, source_path=tmp_path / "s.md").untranslated_units()
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(prefix="FR "), "fr")
+
+    assert [unit.source for unit in units] == ["Hello", "Plain", "Text."]
+    assert target.read_text(encoding="utf-8").startswith(
+        '---\ntitle: "FR Hello" # shown in the nav\ndescription: FR Plain # a note\n---\n')
