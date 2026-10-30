@@ -29,6 +29,8 @@ This line wraps.
 acme --help
 ```
 
+    indented code
+
 Setext heading
 --------------
 
@@ -119,6 +121,14 @@ def test_the_source_itself_is_left_alone(tmp_path):
     result = translate_file(open_file(path, source_language="en"), FakeClient(), "en")
 
     assert (result.untranslated, path.read_text()) == (0, "# Hello\n")
+
+
+def test_code_inside_a_list_item_is_not_translated(tmp_path):
+    (tmp_path / "guide.md").write_text('- Example\n\n      print("Hello")\n\n  More about it.\n')
+
+    units = open_file(tmp_path / "fr" / "guide.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Example", "More about it."]
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

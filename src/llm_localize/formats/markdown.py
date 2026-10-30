@@ -124,6 +124,7 @@ class _Parser:
         self.pieces = []
         self.headings = []
         self.index = 0
+        self.indent_cache = (0, None)  # pieces looked at by list_content_indent, and its answer
 
     def unit(self, text, first_prefix="", prefix="", suffix="", context=None):
         if not text.strip():
@@ -168,9 +169,17 @@ class _Parser:
                 self.blockquote()
             elif LIST_RE.match(line) and not RULE_RE.match(line):
                 self.list_item()
+            elif line.startswith(("    ", "\t")) and self.is_indented_code(line):
+                self.indented_code()
             else:
                 self.paragraph()
         return self.pieces
+
+    def indented_code(self):
+        start = self.index
+        while self.index < len(self.lines) and (not self.line().strip() or self.line().startswith(("    ", "\t"))):
+            self.index += 1
+        self.pieces.append("".join(self.lines[start:self.index]))
 
     def fence(self):
         marker = FENCE_RE.match(self.line()).group(1)
@@ -215,6 +224,37 @@ class _Parser:
             lines.append(current.lstrip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=marker, prefix=indent, suffix=self.ending(self.index - 1))
+
+    def is_indented_code(self, line):
+        """True if an indented line starts a code block: four columns in, or past a list item's text."""
+        content = self.list_content_indent()
+        expanded = line.expandtabs(4)
+        return content is None or len(expanded) - len(expanded.lstrip()) >= content + 4
+
+    def list_content_indent(self):
+        """Return how far in the text of the list item above starts, if the blocks since belong to it, or None.
+
+        Pieces are only ever added, so the answer for the pieces looked at
+        last time is kept, and only those added since are looked at.
+        """
+        looked_at, indent = self.indent_cache
+        self.indent_cache = (len(self.pieces), self._list_content_indent(looked_at, indent))
+        return self.indent_cache[1]
+
+    def _list_content_indent(self, looked_at, indent):
+        for piece in reversed(self.pieces[looked_at:]):
+            if isinstance(piece, str):
+                # Blank lines, and code indented inside the item
+                if not piece.strip() or piece.startswith(("    ", "\t")):
+                    continue
+                return None
+            if LIST_RE.match(piece.first_prefix):
+                return len(piece.first_prefix.expandtabs(4))
+            # A paragraph indented to continue the item
+            if piece.first_prefix and not piece.first_prefix.strip():
+                continue
+            return None
+        return indent
 
     def paragraph(self):
         indent = re.match(r"[ \t]*", self.line()).group()
