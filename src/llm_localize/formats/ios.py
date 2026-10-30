@@ -133,6 +133,7 @@ class XcstringsFile(TranslationFile):
             text = f.read()
         self._ending = "\n" if text.endswith("\n") else ""
         document = load_json(text, self.path)
+        _check_catalog(document, self.path)
         return document
 
     @property
@@ -193,6 +194,35 @@ class XcstringsFile(TranslationFile):
     def save(self):
         text = json.dumps(self.document, ensure_ascii=False, indent=2, separators=(",", " : "))
         write_file(self.path, (text + self._ending).encode())
+
+
+def _check_catalog(document, path):
+    """Raise ValueError unless the catalog has objects and strings where Xcode writes them."""
+    def check(value, kind, where):
+        if not isinstance(value, kind):
+            raise ValueError(f"{path} is not a valid string catalog: {where} must be "
+                             f"{'an object' if kind is dict else 'a string'}")
+
+    def check_localization(localization, where):
+        check(localization, dict, where)
+        check(localization.get("stringUnit", {}), dict, f"{where} stringUnit")
+        check(localization.get("stringUnit", {}).get("value", ""), str, f"{where} stringUnit value")
+        check(localization.get("variations", {}), dict, f"{where} variations")
+        for kind, cases in localization.get("variations", {}).items():
+            check(cases, dict, f"{where} {kind} variations")
+            for case, variation in cases.items():
+                # Device variations may hold plural ones in turn
+                check_localization(variation, f"{where} {kind} variation {case!r}")
+
+    check(document, dict, "the catalog")
+    check(document.get("sourceLanguage", ""), str, "sourceLanguage")
+    check(document.get("strings", {}), dict, "strings")
+    for key, entry in document.get("strings", {}).items():
+        check(entry, dict, f"the entry {key!r}")
+        check(entry.get("comment", ""), str, f"the comment of {key!r}")
+        check(entry.get("localizations", {}), dict, f"the localizations of {key!r}")
+        for language, localization in entry.get("localizations", {}).items():
+            check_localization(localization, f"the {language} localization of {key!r}")
 
 
 def _bcp47(code):

@@ -156,6 +156,19 @@ def test_invalid_files_raise_value_error_naming_the_upload(content, name):
     assert name in str(error.value) and "source." not in str(error.value)
 
 
+@pytest.mark.parametrize("catalog", [
+    {"strings": []},
+    {"strings": {"a": "Hi"}},
+    {"strings": {"a": {"localizations": []}}},
+    {"strings": {"a": {"localizations": {"en": {"stringUnit": "Hi"}}}}},
+    {"strings": {"a": {"localizations": {"en": {"variations": {"plural": {"one": []}}}}}}},
+    {"strings": {"a": {"comment": 3}}},
+])
+def test_malformed_string_catalogs_raise_value_error(catalog):
+    with pytest.raises(ValueError, match="x.xcstrings is not a valid string catalog"):
+        translator_with().translate(json.dumps(catalog), "x.xcstrings", "fr")
+
+
 def test_translations_msgfmt_clears_make_the_file_incomplete():
     po = PO.split("\nmsgid", 1)[0] + '\nmsgid "Hello\\n"\nmsgstr ""\n'
 
