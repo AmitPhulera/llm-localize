@@ -381,6 +381,14 @@ def test_a_link_inside_another_keeps_the_outer_one_text(docs):
         is None
 
 
+def test_link_candidates_sharing_spaces_take_linear_time(docs):
+    text = "[a](" * 3000 + " " * 100_000 + "x" + ")" * 3000
+
+    started = time.perf_counter()
+    open_file(docs / "fr" / "guide.md").find_problem(text, text)
+    assert time.perf_counter() - started < 1
+
+
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()

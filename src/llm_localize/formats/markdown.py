@@ -57,6 +57,7 @@ YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?
                               r"|\d{4}-\d\d?-\d\d?(?:[ tT].*)?")
 LINK_LABEL_RE = re.compile(r"\]\[([^\]]*)\]|\[\^([^\]]+)\]")
 TAG_RE = re.compile(r"<[^<>]+>")
+NON_SPACE_RE = re.compile(r"\S")
 # A backslash-escaped bracket or <, after any escaped backslashes
 ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\([\[\]<])")
 
@@ -284,10 +285,14 @@ def _link_targets(text):
         found = bisect.bisect_left(positions, start)
         return positions[found] if found < len(positions) and positions[found] < stop else None
 
+    non_spaces = {}
+
     def skip_spaces(index, stop):
-        while index < stop and text[index].isspace():
-            index += 1
-        return index
+        # Remembered, so a run of spaces many candidates share is only crossed once
+        if index not in non_spaces:
+            found = NON_SPACE_RE.search(text, index)
+            non_spaces[index] = found.start() if found else len(text)
+        return min(non_spaces[index], stop)
 
     # Where each real link's ]( is: a link can't hold another in its text, though an image can
     links = []
