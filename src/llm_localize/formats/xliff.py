@@ -10,6 +10,7 @@ must be kept with their attributes. Units marked ``translate="no"`` are
 skipped. The file is edited in place, so everything else stays as it was.
 """
 import os
+from collections import Counter
 from functools import cached_property
 from xml.parsers import expat
 from xml.sax.saxutils import quoteattr
@@ -149,6 +150,7 @@ def _read(path):
     parsed.encoding, parsed.bom = encoding, bom
     parser = expat.ParserCreate("UTF-8")
     stack = []  # (local name, attrs, start index, inner start)
+    open_elements = Counter()  # how many of each element are open, so ancestors needn't be listed per tag
     unit = {}
 
     def local(tag):
@@ -158,7 +160,7 @@ def _read(path):
         name = local(tag)
         start_index = parser.CurrentByteIndex
         inner_start = tag_end(data, start_index)
-        names = [entry[0] for entry in stack]
+        parent = stack[-1][0] if stack else ""
         if name == "xliff":
             parsed.version = "2" if attrs.get("version", "").startswith("2") else "1"
         elif name == "file" and attrs.get("target-language"):
@@ -167,7 +169,7 @@ def _read(path):
             unit.clear()
             unit.update(id=attrs.get("id", ""), skip=attrs.get("translate") == "no", notes=[], segments=0,
                         state=None, segment_tag=None, read=[])
-        elif name in ("source", "target") and _in_segment(names):
+        elif name in ("source", "target") and _in_segment(parent):
             if name == "source":
                 unit["segments"] += 1
                 key = f"{unit['id']}#{unit['segments']}" if parsed.version == "2" else unit["id"]
@@ -182,6 +184,7 @@ def _read(path):
                                       if name == "xmlns" or name.startswith("xmlns:")}
                 unit["current"] = None if unit["skip"] else (key, segment)
         stack.append((name, attrs, start_index, inner_start))
+        open_elements[name] += 1
 
     def end(tag):
         name, attrs, start_index, inner_start = stack.pop()
@@ -189,10 +192,11 @@ def _read(path):
         self_closing = data[inner_start - 2:inner_start] == b"/>"
         inner_end = inner_start if self_closing else end_index
         element_end = inner_start if self_closing else data.index(b">", end_index) + 1
-        names = [entry[0] for entry in stack]
-        if name == "note" and ("trans-unit" in names or "unit" in names):
+        open_elements[name] -= 1
+        parent = stack[-1][0] if stack else ""
+        if name == "note" and (open_elements["trans-unit"] or open_elements["unit"]):
             unit["notes"].append(" ".join(data[inner_start:inner_end].decode().split()))
-        elif name in ("source", "target") and _in_segment(names) and unit.get("current"):
+        elif name in ("source", "target") and _in_segment(parent) and unit.get("current"):
             key, segment = unit["current"]
             raw = data[inner_start:inner_end].decode()
             if name == "source":
@@ -222,6 +226,6 @@ def _read(path):
     return parsed
 
 
-def _in_segment(names):
-    """True if a source or target is a unit's own, not one inside alt-trans or a note."""
-    return bool(names) and names[-1] in ("trans-unit", "segment")
+def _in_segment(parent):
+    """True if a source or target, in ``parent``, is a unit's own, not one inside alt-trans or a note."""
+    return parent in ("trans-unit", "segment")
