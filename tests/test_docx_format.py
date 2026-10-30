@@ -166,6 +166,26 @@ def test_a_failed_save_leaves_no_partial_file(report, monkeypatch):
     assert not path.parent.exists() or list(path.parent.iterdir()) == []
 
 
+def test_equations_are_left_alone(tmp_path):
+    math = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+    equation = "<m:oMath><m:r><m:t>A=pi r</m:t></m:r></m:oMath>"
+    document = (f'<w:document {W} {math}><w:body><w:p><w:r><w:t xml:space="preserve">The area is </w:t></w:r>'
+                f'{equation}<w:r><w:t xml:space="preserve"> square units.</w:t></w:r></w:p></w:body></w:document>')
+    source = tmp_path / "math.docx"
+    with zipfile.ZipFile(source, "w") as package:
+        package.writestr("word/document.xml", document)
+    target = tmp_path / "fr" / "math.docx"
+
+    [unit] = open_file(target, source_path=source).untranslated_units()
+    translate_file(open_file(target, source_path=source),
+                   ScriptedClient([{"0": "<g1>L'aire est </g1><g2> unités carrées.</g2>"}]), "fr")
+
+    assert "A=pi r" not in unit.source
+    saved = parts(target)["word/document.xml"]
+    assert equation in saved and "L'aire est" in saved and "unités carrées." in saved
+    expat.ParserCreate().Parse(saved, True)
+
+
 @pytest.mark.parametrize("document", [
     '<document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
     '<body><p><r><t>Hello world</t></r></p></body></document>',

@@ -30,10 +30,16 @@ GROUP_RE = re.compile(r"<g(\d+)>(.*?)</g\1>", re.S)
 GROUP_TAG_RE = re.compile(r"</?g\d+>")
 HEADING_STYLE_RE = re.compile(r"^(?:heading|Heading)\s*(\d)$")
 
+# WordprocessingML, transitional and strict; elements of other namespaces, like Office Math's
+# <m:r><m:t>, are never taken for runs or text
+WORD_NAMESPACES = {"http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                   "http://purl.oclc.org/ooxml/wordprocessingml/main"}
+MATH_NAMESPACES = ("http://schemas.openxmlformats.org/officeDocument/2006/math",
+                   "http://purl.oclc.org/ooxml/officeDocument/math")
 # Elements that sit between runs' text and stay where they are, so text on either side is separate
 SEPARATORS = {"tab", "br", "cr", "drawing", "pict", "object", "fldChar", "instrText", "sym", "ptab",
               "footnoteReference", "endnoteReference", "commentReference", "noBreakHyphen", "softHyphen",
-              "hyperlink", "fldSimple", "txbxContent"}
+              "hyperlink", "fldSimple", "txbxContent", *(f"{namespace} oMath" for namespace in MATH_NAMESPACES)}
 
 
 class _Text:
@@ -238,7 +244,7 @@ def _paragraphs(part, data):
     positions are in that.
     """
     data = to_utf8(data, part)[0]
-    parser = expat.ParserCreate("UTF-8")
+    parser = expat.ParserCreate("UTF-8", namespace_separator=" ")
     # Text in one call, not one per entity like &amp;, which adding up one at a time would make quadratic
     parser.buffer_text = True
     paragraphs, open_paragraphs, stack = [], [], []
@@ -247,7 +253,9 @@ def _paragraphs(part, data):
     current_text = []
 
     def local(tag):
-        return tag.rpartition(":")[2]
+        """Return a WordprocessingML element's local name, like ``r``; any other element keeps its namespace."""
+        namespace, _, name = tag.rpartition(" ")
+        return name if namespace in WORD_NAMESPACES else tag
 
     def start(tag, attrs):
         name = local(tag)
@@ -262,7 +270,7 @@ def _paragraphs(part, data):
         elif not open_paragraphs:
             return
         elif name == "pStyle" and parent == "pPr":
-            open_paragraphs[-1].style = attrs.get("w:val", "")
+            open_paragraphs[-1].style = attrs.get(f"{tag.rpartition(' ')[0]} val", "")
         elif name == "r":
             runs.append(b"")
         elif name == "hyperlink":
