@@ -70,6 +70,33 @@ def _read(path):
 
     def end(tag):
         name, attrs, start_index, inner_start = stack.pop()
+        end_index = parser.CurrentByteIndex
+        self_closing = data[inner_start - 2:inner_start] == b"/>"
+        inner_end = inner_start if self_closing else end_index
+        element_end = inner_start if self_closing else data.index(b">", end_index) + 1
+        names = [entry[0] for entry in stack]
+        if name == "note" and ("trans-unit" in names or "unit" in names):
+            unit["notes"].append(" ".join(data[inner_start:inner_end].decode().split()))
+        elif name in ("source", "target") and _in_segment(names) and unit.get("current"):
+            key, segment = unit["current"]
+            raw = data[inner_start:inner_end].decode()
+            if name == "source":
+                segment.source = raw
+                segment.source_end = element_end
+                parsed.segments[key] = segment
+                unit["read"].append(segment)
+            else:
+                segment.target = raw
+                segment.target_span = (start_index, element_end)
+                segment.target_inner = (inner_start, inner_end)
+                if parsed.version == "1":
+                    segment.state = attrs.get("state")
+        elif name in ("trans-unit", "unit"):
+            context = "; ".join(filter(None, [*unit["notes"], f"ID: {unit['id']}"]))
+            # Notes may come after the sources, so context is set once the unit is read
+            for segment in unit["read"]:
+                segment.context = context
+
     parser.StartElementHandler = start
     parser.EndElementHandler = end
     try:
