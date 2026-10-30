@@ -280,7 +280,9 @@ def _link_targets(text):
     # Where each whitespace and each character that can end a destination or title is, found by bisecting,
     # so no link is scanned again from each one inside it
     spaces = [match.start() for match in re.finditer(r"\s", text)]
-    closers = {char: [match.start() for match in re.finditer(re.escape(char), text)] for char in "\"')>"}
+    # An escaped one doesn't end a title: [a](b "\")") is one link
+    closers = {char: [match.start() for match in re.finditer(re.escape(char), text)
+                      if not _backslashes_before(text, match.start()) % 2] for char in "\"'()>"}
 
     def first(positions, start, stop):
         found = bisect.bisect_left(positions, start)
@@ -323,8 +325,14 @@ def _link_targets(text):
         opened_here = match.start() in closing and not holds_a_link(match.start())
         real = after == close and opened_here
         if not real and opened_here and after > end and text[after] in "\"'(":
-            title_end = first(closers[")" if text[after] == "(" else text[after]], after + 1, close)
-            real = title_end is not None and skip_spaces(title_end + 1, close) == close
+            # Its ")" comes after the title, which may hold one, as in [a](b "c)d")
+            title_end = first(closers[")" if text[after] == "(" else text[after]], after + 1, len(text))
+            # One in parentheses can't hold another (, so ([c](d)) is no title, and [c](d) a link
+            if text[after] == "(" and first(closers["("], after + 1, title_end or len(text)) is not None:
+                title_end = None
+            title_close = len(text) if title_end is None else skip_spaces(title_end + 1, len(text))
+            real = text.startswith(")", title_close)
+            close = title_close if real else close
         if real:
             covered = close
             links.append(match.start())

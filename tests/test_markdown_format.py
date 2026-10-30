@@ -384,6 +384,17 @@ def test_a_link_inside_another_keeps_the_outer_one_text(docs):
         is None
 
 
+def test_a_link_ends_where_commonmark_ends_it(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    # \" doesn't end the title, which is never closed, so [b](//evil.example) is the link
+    assert markdown.find_problem("See [a](/safe).", r'Voir [a](/safe "[b](//evil.example)\").') == "links"
+    # A ) in a title isn't the link's
+    assert markdown.find_problem("[a [b](c)](/x)", '[a](/x "y)z") [b](c)') == "links"
+    assert markdown.find_problem("See [a](/ok).", "Voir [a](/ok ([c](//evil.example))).") == "links"
+    assert markdown.find_problem('See [a](/x "y)z").', 'Voir [a](/x "y)z").') is None
+
+
 def test_link_candidates_sharing_spaces_take_linear_time(docs):
     text = "[a](" * 3000 + " " * 100_000 + "x" + ")" * 3000
 
