@@ -214,6 +214,36 @@ def _yaml_control_escape(match):
         f"\\x{ord(character):02x}" if ord(character) < 0x100 else f"\\u{ord(character):04x}")
 
 
+def _link_targets(text):
+    """Return the destination of each inline link and image, allowing balanced parentheses in it.
+
+    >>> _link_targets('[a](docs/a_(b).md "Title") and ![x](<my img.png>)')
+    ['docs/a_(b).md', '<my img.png>']
+    """
+    targets = []
+    for match in re.finditer(r"\]\(", text):
+        index, depth = match.end(), 0
+        while index < len(text):
+            char = text[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            index += 1
+        inside = text[match.end():index].strip()
+        # The destination, without a title after it
+        if inside.startswith("<"):
+            targets.append(inside[:inside.find(">") + 1] or inside)
+        else:
+            targets.append(inside.split()[0] if inside else "")
+    return targets
+
+
 def _code_span_positions(text):
     r"""Return ``(start, end)`` of each code span: a backtick run, up to the next run as long.
 
