@@ -305,6 +305,7 @@ result.rejected    # why, e.g. Counter({"placeholders": 1})
 - A file that holds its translations (PO, XLIFF, `.xcstrings`) comes back filled in. For a file of one language (JSON, Android, `.strings`, Markdown, Word), the upload is the source, and the result is the new language's file.
 - The format comes from the name's extension, or `format="json"`. Only the extension is used: the content goes in a temporary directory under a fixed name.
 - Uploads are untrusted, so files over `max_bytes` (5 MB), with more than `max_messages` (2000) messages to translate (each plural form counts), or ZIP-based files that unpack to more than `max_unpacked_bytes` (50 MB) raise `ValueError` before any LLM call. Set them on the translator.
+- In Django, `get_file_translator()` from `llm_localize.contrib.django` builds one from `LLM_LOCALIZE`.
 
 As with strings, call it from a background task: a document can take a minute.
 
