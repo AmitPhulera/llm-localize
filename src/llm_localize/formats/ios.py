@@ -28,10 +28,16 @@ def _read_strings(path):
         data = f.read()
     encoding = _encoding(data)
     text = data[len(BOMS.get(encoding, b"")):].decode(encoding.replace("-sig", ""))
-    tokens = [(match.lastgroup, match.group(), match.span()) for match in TOKEN_RE.finditer(text)
-              if match.lastgroup != "space"]
-    if sum(len(match.group()) for match in TOKEN_RE.finditer(text)) != len(text):
-        raise ValueError(f"{path} is not a valid .strings file")
+    # One token after another; a search from every position would go on past something like an unfinished
+    # comment, rescanning the rest of the file each time
+    tokens, position = [], 0
+    while position < len(text):
+        match = TOKEN_RE.match(text, position)
+        if not match:
+            raise ValueError(f"{path} is not a valid .strings file")
+        if match.lastgroup != "space":
+            tokens.append((match.lastgroup, match.group(), match.span()))
+        position = match.end()
     entries, comment, index = [], "", 0
     while index < len(tokens):
         kind, value, _ = tokens[index]
