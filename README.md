@@ -60,9 +60,12 @@ llm-localize locales/fr.json locales/de.json        # from locales/en.json
 llm-localize locales/fr/common.json                 # from locales/en/common.json
 llm-localize messages.fr.json --source-lang en_US   # from messages.en_US.json
 llm-localize out.json --lang es --source strings.json
+llm-localize --source locales/en.json --lang hindi  # writes locales/hi.json
 ```
 
 The target language is the language code in the path, from the file name first and then its directories, unless `--lang` gives it, as a code or an English name. The source file is the same path with that code swapped for `--source-lang`, unless `--source` gives it. A glob that also matches the source file is fine: it has nothing missing.
+
+With `--source` and `--lang` but no path, the translation goes beside the source: its language swapped in the path (`locales/en.json` gives `locales/hi.json`, `res/values/strings.xml` gives `res/values-hi/strings.xml`, `Base.lproj` gives `hi.lproj`), or added before the extension when the path has none (`report.docx` gives `report.hi.docx`).
 
 A message counts as missing when its key is absent or its value is empty. A changed source text isn't noticed, since the target file doesn't record what it was translated from: delete the translation to have it retranslated.
 
@@ -119,6 +122,7 @@ Each unit holds its source and translation, so like a PO file, one file is one l
 llm-localize docs/fr/guide.md                      # from docs/en/guide.md, or docs/guide.md
 llm-localize docs/guide.fr.md                      # from docs/guide.en.md, or docs/guide.md
 llm-localize translated/guide.md --lang fr --source docs/guide.md
+llm-localize --source report.docx --lang hi        # writes report.hi.docx
 ```
 
 The target path names the language, as for JSON, and the source is the same path with the source language, or with no language at all.

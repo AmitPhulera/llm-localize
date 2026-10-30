@@ -2,9 +2,11 @@
 import argparse
 import contextlib
 import logging
+import os
 import sys
 
-from llm_localize.formats import FORMATS
+from llm_localize.formats import FORMATS, format_class_for_path, get_format_class
+from llm_localize.formats.monolingual import MonolingualFile
 from llm_localize.languages import language_code
 from llm_localize.providers import PROVIDERS, get_client
 from llm_localize.providers.base import FatalError, LLMError
@@ -132,12 +134,32 @@ def run(options, jobs, api_key=None, model_params=None):
     )
 
 
+def translation_path(parser, options):
+    """Return where --lang's translation of --source goes, for a command without paths."""
+    if not options.source:
+        parser.error("give the files to translate, or --source and --lang")
+    if not options.lang:
+        parser.error("--source without a file to write needs --lang")
+    try:
+        format_class = (get_format_class(options.format) if options.format
+                        else format_class_for_path(options.source))
+    except ValueError as e:
+        parser.error(str(e))
+    if not issubclass(format_class, MonolingualFile):
+        parser.error(f"{options.source} holds its translations; pass it as the file to translate")
+    if not os.path.isfile(options.source):
+        parser.error(f"{options.source} doesn't exist")
+    return format_class.translation_path(options.source, options.lang, options.source_lang)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog='llm-localize',
         description="Translate untranslated messages in translation files with an LLM.",
     )
-    parser.add_argument('paths', nargs='+', help="Translation files to translate")
+    parser.add_argument('paths', nargs='*', help="Translation files to translate (default with --source: its "
+                                                 "translation beside it, like hi.json for en.json or "
+                                                 "guide.hi.md for guide.md)")
     parser.add_argument('--lang', type=language_code,
                         help="Target language, as a code like hi or an English name like Hindi (default: the "
                              "language each file declares, or for one file per language, the language in "
@@ -155,7 +177,8 @@ def main(argv=None):
     # Progress goes to stderr too, keeping stdout for the summary
     configure_logging(options.verbosity, sys.stderr, sys.stderr)
     try:
-        results = run(options, [(path, options.lang) for path in options.paths])
+        paths = options.paths or [translation_path(parser, options)]
+        results = run(options, [(path, options.lang) for path in paths])
     except (LLMError, ValueError, OSError) as e:
         for result in getattr(e, "results", []):
             print(summarize(result))

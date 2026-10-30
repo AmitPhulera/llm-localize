@@ -212,7 +212,7 @@ def test_languages_django_doesnt_list_can_be_named(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     Path("en.json").write_text('{"a": "Hi"}')
 
-    assert main(["am.json", "--source", "en.json", "--lang", "Amharic",
+    assert main(["--source", "en.json", "--lang", "Amharic",
                  "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
     assert json.loads(Path("am.json").read_text()) == {"a": "T: Hi"}
@@ -223,7 +223,7 @@ def test_a_code_that_is_also_a_name_stays_a_code(tmp_path, monkeypatch):
     Path("en.json").write_text('{"a": "Hi"}')
 
     # CLDR's name for gaa is "Ga", but ga is Irish
-    assert main(["ga.json", "--source", "en.json", "--lang", "ga",
+    assert main(["--source", "en.json", "--lang", "ga",
                  "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
     assert Path("ga.json").exists()
@@ -234,7 +234,43 @@ def test_unknown_language_names_are_refused(tmp_path, capsys, option):
     (tmp_path / "en.json").write_text('{"a": "Hi"}')
 
     with pytest.raises(SystemExit):
-        main(["fr.json", "--source", str(tmp_path / "en.json"), "--lang", "fr", option, "Klingonese"])
+        main(["--source", str(tmp_path / "en.json"), "--lang", "fr", option, "Klingonese"])
 
     assert "unknown language 'Klingonese': give its code" in capsys.readouterr().err
     assert sorted(p.name for p in tmp_path.iterdir()) == ["en.json"]
+
+
+@pytest.mark.parametrize("source, target", [
+    ("to_trans.md", "to_trans.hi.md"),
+    ("locales/en.json", "locales/hi.json"),
+    ("locales/en/app.json", "locales/hi/app.json"),
+    ("res/values/strings.xml", "res/values-hi/strings.xml"),
+    ("Base.lproj/Localizable.strings", "hi.lproj/Localizable.strings"),
+    ("en.lproj/Localizable.strings", "hi.lproj/Localizable.strings"),
+])
+def test_source_without_a_path_writes_beside_it(tmp_path, monkeypatch, capsys, source, target):
+    monkeypatch.chdir(tmp_path)
+    content = {".md": "# Hi\n", ".json": '{"a": "Hi"}', ".strings": '"a" = "Hi";\n',
+               ".xml": '<resources><string name="a">Hi</string></resources>'}
+    Path(source).parent.mkdir(parents=True, exist_ok=True)
+    Path(source).write_text(content[Path(source).suffix])
+
+    assert main(["--source", source, "--lang", "hi", "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) \
+        == 0
+
+    assert "T: Hi" in Path(target).read_text()
+    assert capsys.readouterr().out == f"{target} (hi): translated 1 of 1\n"
+
+
+@pytest.mark.parametrize("args, message", [
+    ([], "give the files to translate, or --source and --lang"),
+    (["--source", "guide.md"], "--source without a file to write needs --lang"),
+    (["--source", "django.po", "--lang", "hi"], "django.po holds its translations"),
+    (["--source", "notes.txt", "--lang", "hi"], "No translation format"),
+    (["--source", "missing.json", "--lang", "hi"], "missing.json doesn't exist"),
+])
+def test_source_without_a_path_errors(capsys, args, message):
+    with pytest.raises(SystemExit):
+        main(args)
+
+    assert message in capsys.readouterr().err
