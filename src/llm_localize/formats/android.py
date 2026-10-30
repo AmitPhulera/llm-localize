@@ -18,7 +18,7 @@ from pathlib import Path
 from xml.parsers import expat
 
 from llm_localize.formats.base import splice, write_file
-from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code
+from llm_localize.formats.monolingual import Message, MonolingualFile, _is_language_code, _written_like
 from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
     changes_tags,
@@ -82,6 +82,28 @@ class AndroidFile(MonolingualFile):
     def language_from_path(self):
         match = _values_dir(self.path)
         return match[1] if match else None
+
+    @classmethod
+    def translation_path(cls, source_path, language, source_language="en"):
+        """``res/values/strings.xml`` gives ``res/values-hi/strings.xml``, and for pt-BR ``values-pt-rBR``.
+
+        The ``values`` directory is the source's own, even for a bare
+        ``strings.xml`` in the current directory.
+        """
+        source = Path(os.path.abspath(source_path))
+        directory = source.parent.name
+        match = _values_dir(Path(directory, source.name), source_language)
+        if match:
+            other_qualifiers = match[2]
+        elif directory.split("-")[0] == "values":
+            other_qualifiers = directory.split("-")[1:]
+        else:
+            return super().translation_path(source_path, language, source_language)
+        # Android wants the mobile country and network codes before the language
+        split = next((index for index, qualifier in enumerate(other_qualifiers)
+                      if not re.fullmatch(r"mcc\d+|mnc\d+", qualifier)), len(other_qualifiers))
+        name = "-".join(["values", *other_qualifiers[:split], _qualifier(language), *other_qualifiers[split:]])
+        return _written_like(source.parent.with_name(name) / source.name, source_path)
 
     def source_path_candidates(self):
         match = _values_dir(self.path, self._language)
@@ -215,6 +237,20 @@ def _with_namespaces(root_tag, source_root_tag, text):
         return root_tag
     end = len(root_tag) - (2 if root_tag.endswith("/>") else 1)
     return root_tag[:end].rstrip() + "".join(missing) + root_tag[end:]
+
+
+def _qualifier(language):
+    """Return the ``values-`` qualifier for a language.
+
+    >>> _qualifier("hi"), _qualifier("pt-br"), _qualifier("sr_Latn")
+    ('hi', 'pt-rBR', 'b+sr+Latn')
+    """
+    base, *subtags = language.replace("_", "-").split("-")
+    if not subtags:
+        return base.lower()
+    if len(subtags) == 1 and len(subtags[0]) == 2:
+        return f"{base.lower()}-r{subtags[0].upper()}"
+    return "+".join(["b", base.lower(), *subtags])
 
 
 def _values_dir(path, language=None):
@@ -517,3 +553,4 @@ def _read(path):
     # Only elements that were read in full count; resources without a name can't be matched
     resources.elements = {key: element for key, element in resources.elements.items() if element.name}
     return resources
+

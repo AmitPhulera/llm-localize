@@ -225,6 +225,11 @@ def _first_searched_part(path):
     return max(0, len(parts) - len(Path(relative).parts))
 
 
+def _written_like(path, original):
+    """Return ``path``, relative to the current directory if ``original`` is."""
+    return path if Path(original).is_absolute() else Path(os.path.relpath(path))
+
+
 def _base(code):
     return code.lower().replace("_", "-").split("-")[0]
 

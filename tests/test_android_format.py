@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 from xml.parsers import expat
 
 import pytest
@@ -257,12 +258,40 @@ class TestTranslating:
         assert capsys.readouterr().out == f"{path} (de): translated 6 of 6\n"
 
 
+def test_translation_path_uses_android_qualifiers():
+    assert AndroidFile.translation_path("res/values-night/strings.xml", "pt-br") \
+        == Path("res/values-pt-rBR-night/strings.xml")
+
+
+@pytest.mark.parametrize("source, target", [
+    ("res/values-mcc310/strings.xml", "res/values-mcc310-hi/strings.xml"),
+    ("res/values-mcc310-mnc004-night/strings.xml", "res/values-mcc310-mnc004-hi-night/strings.xml"),
+    ("res/values-mcc310-de/strings.xml", "res/values-mcc310-hi/strings.xml"),
+])
+def test_translation_path_keeps_mobile_codes_before_the_language(source, target):
+    assert AndroidFile.translation_path(source, "hi") == Path(target)
+
+
+def test_translation_path_replaces_a_source_language_the_tables_dont_list():
+    assert AndroidFile.translation_path("res/values-rw/strings.xml", "fr", "rw") \
+        == Path("res/values-fr/strings.xml")
+
+
 def test_source_found_for_a_language_the_tables_dont_list(tmp_path):
     write(tmp_path / "res" / "values" / "strings.xml", '<resources><string name="a">Hi</string></resources>')
 
     android = open_file(tmp_path / "res" / "values-rw" / "strings.xml", language="rw")
 
     assert android.source_path == str(tmp_path / "res" / "values" / "strings.xml")
+
+
+def test_translation_path_for_a_bare_name_in_the_values_directory(tmp_path, monkeypatch):
+    (tmp_path / "res" / "values").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path / "res" / "values")
+
+    assert AndroidFile.translation_path("strings.xml", "hi") == Path("../values-hi/strings.xml")
+    assert AndroidFile.translation_path(tmp_path / "res/values/strings.xml", "hi") \
+        == tmp_path / "res/values-hi/strings.xml"
 
 
 def test_finding_the_doctype_takes_linear_time():
