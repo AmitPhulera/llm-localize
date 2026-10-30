@@ -16,12 +16,23 @@ This line wraps.
 
 ## Install
 
+1. Run `pip install acme`.
+2. Open the app
+   and sign in.
+   - Nested item with [the docs].
+
+> **Note:** keep your key secret.
+>
+> It's in `~/.acme`.
+
 ```bash
 acme --help
 ```
 
 Setext heading
 --------------
+
+- [ ] Todo item
 
 ---
 '''
@@ -50,7 +61,12 @@ def test_blocks(docs):
         ('Welcome to **Acme**. Read the [guide](https://example.com/guide "Guide") or the [FAQ][faq].\n'
          "This line wraps.", "Section: Getting started"),
         ("Install", "Section: Getting started"),
+        ("Run `pip install acme`.", "Section: Getting started > Install"),
+        ("Open the app\nand sign in.", "Section: Getting started > Install"),
+        ("Nested item with [the docs].", "Section: Getting started > Install"),
+        ("**Note:** keep your key secret.\n\nIt's in `~/.acme`.", "Section: Getting started > Install"),
         ("Setext heading", "Section: Getting started"),
+        ("Todo item", "Section: Getting started > Setext heading"),
     ]
 
 
@@ -59,10 +75,13 @@ def test_translations_keep_the_structure(docs):
 
     result = translate_file(open_file(path), FakeClient(), "fr")
 
-    assert result.translated == 4
+    assert result.translated == 9
     text = path.read_text(encoding="utf-8")
+    assert "2. T: Open the app\n   and sign in.\n   - T: Nested item with [the docs].\n" in text
+    assert "> T: **Note:** keep your key secret.\n>\n> It's in `~/.acme`.\n" in text
     assert "```bash\nacme --help\n```\n" in text
     assert "T: Setext heading\n--------------\n" in text
+    assert "- [ ] T: Todo item\n" in text
 
 
 @pytest.mark.parametrize("target, source", [
@@ -89,7 +108,7 @@ def test_cli(docs, capsys):
 
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
-    assert capsys.readouterr().out == f"{path} (de): translated 4 of 4\n"
+    assert capsys.readouterr().out == f"{path} (de): translated 9 of 9\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
@@ -104,8 +123,8 @@ def test_the_source_itself_is_left_alone(tmp_path):
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_only_line_endings_end_lines(tmp_path, newline):
-    source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", "",
-                           "```", "code\x85here", "```", ""])
+    source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", "- item one",
+                           "  goes on", "", "> quoted", "> lines", "", "```", "code\x85here", "```", ""])
     (tmp_path / "s.md").write_text(source, encoding="utf-8", newline="")
     target = tmp_path / "fr" / "s.md"
 

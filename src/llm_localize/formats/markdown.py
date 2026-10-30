@@ -1,9 +1,10 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/guide.md``.
 
-The document is split into blocks: headings and paragraphs. Each block
-is one message, sent with the headings above it as context. Code blocks
-are copied as they are. Every run translates the whole document, since a
-changed source can't be matched to the old translation block by block.
+The document is split into blocks: headings, paragraphs, list items, and
+blockquotes. Each block is one message, sent with the headings above it
+as context. Code blocks are copied as they are. Every run translates the
+whole document, since a changed source can't be matched to the old
+translation block by block.
 """
 import re
 from functools import cached_property
@@ -17,6 +18,8 @@ FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
 SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+LIST_RE = re.compile(r"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?")
+QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 
 
 class _Unit:
@@ -161,6 +164,10 @@ class _Parser:
                 self.fence()
             elif HEADING_RE.match(line):
                 self.atx_heading()
+            elif QUOTE_RE.match(line):
+                self.blockquote()
+            elif LIST_RE.match(line) and not RULE_RE.match(line):
+                self.list_item()
             else:
                 self.paragraph()
         return self.pieces
@@ -183,12 +190,36 @@ class _Parser:
         self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context)
         self.index += 1
 
+    def blockquote(self):
+        lines, prefix = [], QUOTE_RE.match(self.line()).group()
+        while self.index < len(self.lines) and QUOTE_RE.match(self.line() or ""):
+            lines.append(self.line()[QUOTE_RE.match(self.line()).end():])
+            self.index += 1
+        self.unit("\n".join(lines), first_prefix=prefix, prefix=prefix.rstrip() + " ",
+                  suffix=self.ending(self.index - 1))
+
+    def list_item(self):
+        match = LIST_RE.match(self.line())
+        marker = match.group()
+        lines = [self.line()[match.end():]]
+        indent = " " * len(marker)
+        self.index += 1
+        while self.index < len(self.lines):
+            current = self.line()
+            if (not current.strip() or LIST_RE.match(current) or FENCE_RE.match(current)
+                    or HEADING_RE.match(current) or QUOTE_RE.match(current)):
+                break
+            lines.append(current.strip())
+            self.index += 1
+        self.unit("\n".join(lines), first_prefix=marker, prefix=indent, suffix=self.ending(self.index - 1))
+
     def paragraph(self):
         indent = re.match(r"[ \t]*", self.line()).group()
         lines = []
         while self.index < len(self.lines):
             current = self.line()
-            if not current.strip() or (lines and (FENCE_RE.match(current) or HEADING_RE.match(current))):
+            if (not current.strip() or (lines and (FENCE_RE.match(current) or HEADING_RE.match(current)
+                                                    or QUOTE_RE.match(current) or LIST_RE.match(current)))):
                 break
             if lines and SETEXT_RE.match(current):
                 # The paragraph was a heading, underlined
