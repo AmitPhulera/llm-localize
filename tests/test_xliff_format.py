@@ -1,5 +1,6 @@
 import time
 from random import Random
+from xml.parsers import expat
 
 import pytest
 
@@ -94,6 +95,31 @@ def test_line_indent_matches_scanning_the_whole_line():
         data = bytes(random.choice(b" \t\n\r\x0bx<") for _ in range(random.randrange(12)))
         for start in range(len(data) + 1):
             assert line_indent(data, start) == scanned(data, start), (data, start)
+
+
+def test_new_targets_are_named_like_their_source(xliff):
+    path = xliff('<x:xliff xmlns:x="urn:oasis:names:tc:xliff:document:1.2" version="1.2">'
+                 '<x:file target-language="fr"><x:body><x:trans-unit id="a"><x:source>Hello</x:source>'
+                 '</x:trans-unit></x:body></x:file></x:xliff>')
+
+    translate_file(open_file(path), FakeClient(), "fr")
+
+    assert '<x:source>Hello</x:source><x:target state="translated">T: Hello</x:target>' in path.read_text()
+    assert open_file(path).untranslated_units() == []
+
+
+def test_targets_declare_the_namespaces_their_source_does(xliff):
+    path = xliff('<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2"><file target-language="fr">'
+                 '<body><trans-unit id="a"><source xmlns:x="urn:oasis:names:tc:xliff:document:1.2">Hello '
+                 '<x:g id="b">world</x:g></source></trans-unit><trans-unit id="c"><source xmlns:x="urn:x">'
+                 '<x:g id="d">Bye</x:g></source><target></target></trans-unit></body></file></xliff>')
+
+    translate_file(open_file(path), FakeClient(), "fr")
+
+    text = path.read_text()
+    assert '<target state="translated" xmlns:x="urn:oasis:names:tc:xliff:document:1.2">' in text
+    assert '<target state="translated" xmlns:x="urn:x">' in text
+    expat.ParserCreate(namespace_separator=" ").Parse(text, True)
 
 
 def test_the_state_attribute_is_set_not_text_in_another(xliff):

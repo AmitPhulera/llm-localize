@@ -12,6 +12,7 @@ skipped. The file is edited in place, so everything else stays as it was.
 import os
 from functools import cached_property
 from xml.parsers import expat
+from xml.sax.saxutils import quoteattr
 
 from llm_localize.formats.base import TranslationFile, splice, write_file
 from llm_localize.formats.xml_utils import (
@@ -91,14 +92,24 @@ class XliffFile(TranslationFile):
                 start_tag, closing = data[start:segment.target_inner[0]], data[segment.target_inner[1]:end]
                 if parsed.version == "1":
                     start_tag = set_attribute(start_tag, b"state", b"translated")
+                missing = segment.namespaces.keys() - segment.target_attrs
+                start_tag = _with_namespaces(start_tag, {name: segment.namespaces[name] for name in missing})
                 replacements.append((start, end, start_tag + text + closing))
             else:
                 state = b' state="translated"' if parsed.version == "1" else b""
                 # On a line of its own after the source, or right after it when the source shares its line
                 newline = b"\n" + segment.indent if segment.indent else b""
-                element = newline + b"<target" + state + b">" + text + b"</target>"
+                name = segment.target_name
+                start_tag = _with_namespaces(b"<" + name + state + b">", segment.namespaces)
+                element = newline + start_tag + text + b"</" + name + b">"
                 replacements.append((segment.source_end, segment.source_end, element))
         write_file(self.path, from_utf8(splice(data, replacements), parsed.encoding, parsed.bom))
+
+
+def _with_namespaces(start_tag, namespaces):
+    """Return an opened target start tag declaring ``namespaces``, the source's, which its text may use."""
+    declarations = b"".join(f" {name}={quoteattr(namespaces[name])}".encode() for name in sorted(namespaces))
+    return start_tag[:-1] + declarations + start_tag[-1:]
 
 
 class _Segment:
@@ -110,8 +121,13 @@ class _Segment:
         self.target = None
         self.target_span = None
         self.target_inner = None
+        self.target_attrs = set()
+        # The namespaces the source declares, like xmlns:x, as {attribute: URI}
+        self.namespaces = {}
         self.state = None
         self.segment_tag = None
+        # A new target is named like the source, x:target for x:source, so it's in the same namespace
+        self.target_name = b"target"
 
 
 class _Parsed:
@@ -161,6 +177,9 @@ def _read(path):
                 segment.indent = line_indent(data, start_index)
                 segment.segment_tag = unit["segment_tag"]
                 segment.state = unit["state"]
+                segment.target_name = tag.rpartition(":")[0].encode() + b":target" if ":" in tag else b"target"
+                segment.namespaces = {name: value for name, value in attrs.items()
+                                      if name == "xmlns" or name.startswith("xmlns:")}
                 unit["current"] = None if unit["skip"] else (key, segment)
         stack.append((name, attrs, start_index, inner_start))
 
@@ -185,6 +204,7 @@ def _read(path):
                 segment.target = raw
                 segment.target_span = (start_index, element_end)
                 segment.target_inner = (inner_start, inner_end)
+                segment.target_attrs = set(attrs)
                 if parsed.version == "1":
                     segment.state = attrs.get("state")
         elif name in ("trans-unit", "unit"):
