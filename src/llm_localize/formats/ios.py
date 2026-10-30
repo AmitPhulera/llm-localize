@@ -16,6 +16,11 @@ BOMS = {"utf-8-sig": codecs.BOM_UTF8, "utf-16-le": codecs.BOM_UTF16_LE, "utf-16-
 ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "'": "'", "0": "\0"}
 
 
+def _starts_line(text, index):
+    """True if only spaces come before ``index`` on its line."""
+    return not text[text.rfind("\n", 0, index) + 1:index].strip()
+
+
 def _read_strings(path):
     """Return a ``.strings`` file's text, its entries and its encoding.
 
@@ -42,7 +47,16 @@ def _read_strings(path):
     while index < len(tokens):
         kind, value, _ = tokens[index]
         if kind == "comment":
-            comment = " ".join(value.strip("/*").split())
+            words = " ".join(value.strip("/*").split())
+            if not _starts_line(text, tokens[index][2][0]):
+                # After an entry on its line, it's that entry's
+                comment = ""
+            elif index and value.startswith("//") and tokens[index - 1][1].startswith("//") \
+                    and _starts_line(text, tokens[index - 1][2][0]):
+                # Lines of // comments run on, as one comment
+                comment = f"{comment} {words}"
+            else:
+                comment = words
             index += 1
             continue
         parts = tokens[index:index + 4]
