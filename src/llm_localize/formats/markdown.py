@@ -290,7 +290,8 @@ class _Parser:
         prefix, title, closing = _heading_parts(HEADING_RE.match(self.line()))
         level = prefix.count("#")
         context = self.heading(level, title)
-        self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context)
+        self.unit(title, first_prefix=prefix, suffix=(closing or "") + self.ending(self.index), context=context,
+                  encode=_one_line)
         self.index += 1
 
     def blockquote(self):

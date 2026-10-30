@@ -329,6 +329,16 @@ def test_a_rule_after_a_list_stays_a_rule(tmp_path):
     assert target.read_text(encoding="utf-8") == "- T: one\n- T: two\n---\n\nT: Next\n"
 
 
+def test_a_heading_stays_on_one_line(tmp_path):
+    (tmp_path / "s.md").write_text("# Install\n\nText.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                   ScriptedClient([{"0": "Installer\nAvant de commencer", "1": "Texte."}]), "fr")
+
+    assert target.read_text(encoding="utf-8") == "# Installer Avant de commencer\n\nTexte.\n"
+
+
 def test_unclosed_tags_take_linear_time(tmp_path):
     (tmp_path / "s.md").write_text("<a " + "<" * 200000 + "\n", encoding="utf-8")
 
