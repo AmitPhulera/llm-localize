@@ -37,8 +37,7 @@ UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
 # The halves of a pair written as two placeholders, as the start and end tags they stand for
 PAIR_HALVES = {"sc": "<sc>", "ec": "</sc>", "bx": "<bx>", "ex": "</bx>", "sm": "<sm>", "em": "</sm>"}
 ELEMENT_ID_RE = re.compile(r"""\sid\s*=\s*["']([^"']*)["']""")
-# An inline element's tag: <x .../>, <g ...>, </g>
-ELEMENT_RE = re.compile(r"<[^<>]+>")
+CDATA_OR_ELEMENT_RE = re.compile(r"<!\[CDATA\[.*?\]\]>|<[^<>]+>", re.DOTALL)
 
 
 def _language_in_name(path):
@@ -169,16 +168,21 @@ def _as_read(text):
 
 
 def _mask_elements(text):
-    """Return the text with paired inline elements as bare tags, and placeholders as ``%(inline_name)s``.
+    """Return the text with paired inline elements as bare tags, and placeholders as ``%(inline_name_id)s``.
 
     Placeholders may then move, as word order needs, while pairs like
     ``<g>`` still nest; ``changes_tags`` checks each is kept as it is.
 
-    >>> _mask_elements('Hi <x id="N" equiv-text="{{ name }}"/> <g id="1">Bob</g>')
-    'Hi  %(inline_x)s <g>Bob</g>'
+    HTML in a CDATA section is text to XLIFF, so it's left as it is, for the
+    HTML check to compare.
+
+    >>> _mask_elements('Hi <x id="N" equiv-text="{{ name }}"/> <g id="1">Bob</g> <![CDATA[<a href="/x">]]>')
+    'Hi  %(inline_x_N)s <g>Bob</g> <![CDATA[<a href="/x">]]>'
     """
     def name_alone(match):
         tag = match.group()
+        if tag.startswith("<![CDATA["):
+            return tag
         name = re.match(r"</?([^\s/>]+)", tag).group(1)
         if tag.endswith("/>"):
             # Half of a pair, which must stay in order: 2.0's <sc/> and <ec/> and <sm/> and <em/>, 1.2's
@@ -191,10 +195,13 @@ def _mask_elements(text):
                 return f"<{'/' if pair.group(1) == 'CLOSE' else ''}x-{pair.group(2).lower()}>"
             # A placeholder, like <x/> or <ph/>: a named placeholder, which may move past markup too, written
             # without braces, so an apostrophe before it, as in l'<x/>, isn't ICU quoting, and after a space, so
-            # a % before it, as in Turkish's %<x/>, isn't taken for part of it
-            return " %(inline_" + re.sub(r"\W", "_", name.lower()) + ")s"
+            # a % before it, as in Turkish's %<x/>, isn't taken for part of it. Its id is part of its name, so
+            # placeholders can't swap places between an ICU message's cases; other characters are written as
+            # codes, so ids like a-b and a_b stay apart
+            name = name.lower() + ("_" + element_id.group(1) if element_id else "")
+            return " %(inline_" + re.sub(r"\W", lambda char: f"-{ord(char.group()):x}-", name) + ")s"
         return f"</{name}>" if tag.startswith("</") else f"<{name}>"
-    return ELEMENT_RE.sub(name_alone, text)
+    return CDATA_OR_ELEMENT_RE.sub(name_alone, text)
 
 
 def _with_namespaces(start_tag, namespaces):
