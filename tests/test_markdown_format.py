@@ -57,6 +57,9 @@ Setext heading
 - [ ] Todo item
 
 ---
+
+[faq]: https://example.com/faq
+[the docs]: https://example.com/docs
 '''
 
 
@@ -116,6 +119,7 @@ def test_translations_keep_the_structure(docs):
     assert "```bash\nacme --help\n```\n" in text
     assert "T: Setext heading\n--------------\n" in text
     assert "- [ ] T: Todo item\n" in text
+    assert text.endswith("[faq]: https://example.com/faq\n[the docs]: https://example.com/docs\n")
 
 
 @pytest.mark.parametrize("translation, reason", [
@@ -124,6 +128,8 @@ def test_translations_keep_the_structure(docs):
     ("Lisez le [guide](https://example.com/guide-fr) ou la [FAQ][faq].", "links"),
     ("Lisez le [guide](https://example.com/guide) ou la [FAQ][foire].", "links"),
     ("Lisez le [mode d'emploi](https://example.com/guide) ou la [foire aux questions][faq].", None),
+    ("Élément avec [la documentation].", "links"),
+    ("Élément avec [the docs].", None),
     ("Un <b>gras</b> perdu", "HTML tags"),
 ])
 def test_find_problem(docs, translation, reason):
@@ -131,6 +137,7 @@ def test_find_problem(docs, translation, reason):
     source = {
         "Lancez": "Run `pip install acme`.",
         "Lisez": "Read the [guide](https://example.com/guide) or the [FAQ][faq].",
+        "Élément": "Item with [the docs].",
         "Un": "A <i>bold</i> loss",
     }[translation.split()[0]]
 
@@ -198,6 +205,15 @@ def test_code_inside_a_list_item_is_not_translated(tmp_path):
     units = open_file(tmp_path / "fr" / "guide.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Example", "More about it."]
+
+
+def test_footnotes_are_translated(tmp_path):
+    (tmp_path / "guide.md").write_text("Text[^1].\n\n[^1]: The footnote\n    explains things.\n")
+    path = tmp_path / "fr" / "guide.md"
+
+    translate_file(open_file(path), FakeClient(), "fr")
+
+    assert path.read_text() == "T: Text[^1].\n\n[^1]: T: The footnote\n    explains things.\n"
 
 
 def test_label_order_is_explained(docs):
@@ -308,6 +324,7 @@ def test_only_line_endings_end_lines(tmp_path, newline):
     '---\ntitle: "Line\\nBreak \\t \\"tab\\" \\u00e9"\n---\n\nText.\n',
     "\ufeff---\nlayout: post\ntitle: Guide\n---\n\nText.\n",
     "<div>\r\nHello\r\n</div>\r\n",
+    "- first line  \n  second line  \n  third\n\n[^1]: a note  \n    goes on\n",
 ])
 def test_unchanged_translations_keep_the_document(tmp_path, source):
     (tmp_path / "s.md").write_text(source, encoding="utf-8", newline="")

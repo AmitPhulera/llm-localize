@@ -122,9 +122,9 @@ llm-localize translated/guide.md --lang fr --source docs/guide.md
 
 The target path names the language, as for JSON, and the source is the same path with the source language, or with no language at all.
 
-- The document is split into blocks: headings, paragraphs, list items, blockquotes, table cells, and HTML blocks that have text. Each is sent with the headings above it as context. The front matter's `title` and `description` are translated too, and written back as valid YAML.
-- Code blocks (including those indented inside list items), the rest of the front matter and HTML comments are copied as they are. Translating the source file itself, as a glob might, does nothing.
-- Each translation must keep its `inline code`, link and image targets, reference labels like `[text][label]` and `[^1]`, and HTML tags. A block that fails keeps its source text in the copy, and is counted as rejected.
+- The document is split into blocks: headings, paragraphs, list items, blockquotes, table cells, footnotes, and HTML blocks that have text. Each is sent with the headings above it as context. The front matter's `title` and `description` are translated too, and written back as valid YAML.
+- Code blocks (including those indented inside list items), the rest of the front matter, link reference definitions and HTML comments are copied as they are. Translating the source file itself, as a glob might, does nothing.
+- Each translation must keep its `inline code`, link and image targets, reference labels like `[text][label]` and `[^1]`, shortcut references to defined links, and HTML tags. A block that fails keeps its source text in the copy, and is counted as rejected.
 - Every run translates the whole document, since a changed source can't be matched to the old copy block by block.
 
 ## LLM providers

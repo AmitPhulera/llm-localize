@@ -2,10 +2,11 @@
 
 The document is split into blocks: headings, paragraphs, list items,
 blockquotes, table cells, and HTML blocks with text. Each block is one
-message, sent with the headings above it as context. Code blocks, front
-matter (except ``title`` and ``description``) and comments are copied as
-they are. Every run translates the whole document, since a changed
-source can't be matched to the old translation block by block.
+message, sent with the headings above it as context. Code blocks,
+front matter (except ``title`` and ``description``), link reference
+definitions and comments are copied as they are. Every run translates
+the whole document, since a changed source can't be matched to the old
+translation block by block.
 """
 import bisect
 import re
@@ -30,6 +31,8 @@ QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 # Written so spaces can be matched only one way: optional runs of them side by side make a long line of
 # spaces quadratic to rule out
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
+LINK_DEFINITION_RE = re.compile(r"^ {0,3}\[[^\]]+\]:[ \t]*\S")
+FOOTNOTE_RE = re.compile(r"^( {0,3}\[\^[^\]]+\]:[ \t]*)(.*)$")
 # YAML double-quoted escapes, and how control characters are written in them
 YAML_ESCAPE_RE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
 YAML_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n", "v": "\v", "f": "\f", "r": "\r",
@@ -137,6 +140,12 @@ class MarkdownFile(MonolingualFile):
         # In order, so [one][a] and [two][b] can't become [un][b] and [deux][a]
         if LINK_LABEL_RE.findall(source_text) != LINK_LABEL_RE.findall(translation_text):
             return "links"
+        # [label] alone links to the definition [label]: url, so its text can't change. In
+        # [text][label] and [text](url), the first brackets are only link text.
+        for label in self._parser.labels:
+            pattern = re.compile(rf"(?<!\])\[{re.escape(label)}\](?![\[(:])", re.IGNORECASE)
+            if len(pattern.findall(source_text)) != len(pattern.findall(translation_text)):
+                return "links"
         # A table cell or a heading's title is written on its one line, where "# of users" is text
         if source in self._parser.inline_texts and source not in self._parser.block_texts:
             return super().find_problem(source_text, translation_text)
@@ -510,6 +519,7 @@ class _Parser:
         self.lines = [line for line in re.split(r"(?<=\n)|(?<=\r)(?!\n)", text) if line]
         self.pieces = []
         self.headings = []
+        self.labels = set()
         # The texts of blocks written on one line, table cells and headings, and of the rest
         self.inline_texts, self.block_texts = set(), set()
         self.index = 0
@@ -555,7 +565,12 @@ class _Parser:
         self.front_matter()
         while self.index < len(self.lines):
             line = self.line()
-            if not line.strip() or RULE_RE.match(line):
+            if FOOTNOTE_RE.match(line):
+                self.footnote()
+            elif LINK_DEFINITION_RE.match(line):
+                self.labels.add(line.strip()[1:line.strip().index("]")].lower())
+                self.literal()
+            elif not line.strip() or RULE_RE.match(line):
                 self.literal()
             elif FENCE_RE.match(line) or self.is_list_fence(line):
                 self.fence()
@@ -748,6 +763,16 @@ class _Parser:
                 continue
             return None
         return indent
+
+    def footnote(self):
+        """A footnote definition, ``[^1]: text``, and the indented lines continuing it."""
+        prefix, text = FOOTNOTE_RE.match(self.line()).groups()
+        lines = [text]
+        self.index += 1
+        while self.index < len(self.lines) and self.line().strip() and self.line().startswith((" ", "\t")):
+            lines.append(self.line().lstrip())
+            self.index += 1
+        self.unit("\n".join(lines), first_prefix=prefix, prefix="    ", suffix=self.ending(self.index - 1))
 
     def table(self):
         while self.index < len(self.lines) and self.line() is not None and "|" in self.line():
