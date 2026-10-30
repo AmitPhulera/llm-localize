@@ -1,6 +1,16 @@
-"""Language code helpers."""
+"""Language code helpers.
+
+Languages are named from Django's table below and, for the many it
+doesn't list, from ``data/language_names.json``: the English names the
+Unicode CLDR gives each language and variant (cldr-json 48.2.0,
+cldr-localenames-full/main/en/languages.json), keyed by lowercase code,
+under the Unicode license in licenses/Unicode-LICENSE.txt.
+"""
 import argparse
+import functools
+import json
 import re
+from importlib import resources
 
 # A language code or locale name: a 2-3 letter language, then subtags like zh-Hans, pt_BR or nl_NL-x-informal
 LANGUAGE_CODE_RE = re.compile(r"[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*")
@@ -146,32 +156,44 @@ def language_name(lang_code):
     'French'
     >>> language_name("pt_BR")
     'Brazilian Portuguese'
-    >>> language_name("en-us")
-    'English'
-    >>> language_name("am")
-    'am'
+    >>> language_name("en-us"), language_name("en-nz")
+    ('American English', 'English')
+    >>> language_name("am"), language_name("xx")
+    ('Amharic', 'xx')
     """
     code = normalize(lang_code)
-    return LANGUAGE_NAMES.get(code) or LANGUAGE_NAMES.get(code.split("-")[0]) or lang_code
+    base = code.split("-")[0]
+    return (LANGUAGE_NAMES.get(code) or _cldr_names().get(code) or LANGUAGE_NAMES.get(base)
+            or _cldr_names().get(base) or lang_code)
 
 
 def language_code(language):
     """Return the code for a language given by its English name, or ``language`` itself if it's a code.
 
     It's the type of the command line's language options, so anything
-    else, like a name the table doesn't list, is refused with
+    else, like a name neither table lists, is refused with
     ``argparse.ArgumentTypeError`` rather than taken for a code.
 
     >>> language_code("hindi"), language_code("Brazilian Portuguese"), language_code("fr"), language_code("rw")
     ('hi', 'pt-br', 'fr', 'rw')
     >>> language_code("Simplified Chinese"), language_code("Traditional Chinese"), language_code("sr_Latn")
     ('zh-hans', 'zh-hant', 'sr_Latn')
+    >>> language_code("Amharic"), language_code("kinyarwanda"), language_code("Swiss High German")
+    ('am', 'rw', 'de-ch')
+    >>> language_code("ga"), language_code("Ga"), language_code("Irish"), language_code(" fr ")
+    ('ga', 'Ga', 'ga', 'fr')
     >>> language_code("Klingonese")
     Traceback (most recent call last):
     argparse.ArgumentTypeError: unknown language 'Klingonese': give its code, like fr or pt-BR
     """
-    wanted = language.strip().lower()
-    codes = [code for code, name in LANGUAGE_NAMES.items() if name.lower() == wanted]
+    language = language.strip()
+    wanted = language.lower()
+    # A code is taken as one, even where it's also a name, like ga (Irish), which CLDR calls Ga's gaa
+    if wanted.replace("_", "-") in LANGUAGE_NAMES or wanted.replace("_", "-") in _cldr_names():
+        return language
+    # Django's names first, so its codes stay the ones given for the languages it lists
+    codes = ([code for code, name in LANGUAGE_NAMES.items() if name.lower() == wanted]
+             or [code for code, name in _cldr_names().items() if name.lower() == wanted])
     if codes:
         # Of codes sharing a name, one without a region: zh-hant rather than zh-hk or zh-tw
         return min(codes, key=lambda code: len(code.split("-")[-1]) == 2 and "-" in code)
@@ -211,3 +233,8 @@ def to_locale(language):
     country, _, rest = country.partition("-")
     country = country.title() if len(country) > 2 else country.upper()
     return f"{language}_{country}" + (f"-{rest}" if rest else "")
+
+
+@functools.cache
+def _cldr_names():
+    return json.loads(resources.files("llm_localize").joinpath("data/language_names.json").read_text("utf-8"))

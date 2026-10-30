@@ -208,6 +208,27 @@ def test_a_missing_source_is_an_error_with_paths_too(tmp_path, monkeypatch, caps
     assert not Path(target).exists()
 
 
+def test_languages_django_doesnt_list_can_be_named(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("en.json").write_text('{"a": "Hi"}')
+
+    assert main(["am.json", "--source", "en.json", "--lang", "Amharic",
+                 "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+    assert json.loads(Path("am.json").read_text()) == {"a": "T: Hi"}
+
+
+def test_a_code_that_is_also_a_name_stays_a_code(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("en.json").write_text('{"a": "Hi"}')
+
+    # CLDR's name for gaa is "Ga", but ga is Irish
+    assert main(["ga.json", "--source", "en.json", "--lang", "ga",
+                 "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+    assert Path("ga.json").exists()
+
+
 @pytest.mark.parametrize("option", ["--lang", "--source-lang"])
 def test_unknown_language_names_are_refused(tmp_path, capsys, option):
     (tmp_path / "en.json").write_text('{"a": "Hi"}')
