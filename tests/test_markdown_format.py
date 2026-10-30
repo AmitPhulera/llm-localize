@@ -369,6 +369,9 @@ def test_an_escaped_tag_cant_lose_its_backslash(docs):
         == "escapes"
     # Moved elsewhere, the escape would still be there, but the link text wouldn't be text any more
     assert markdown.find_problem(r"\[click](//evil.example) [note]", r"[click](//evil.example) \[note]") == "links"
+    # or the tag it escaped wouldn't be
+    assert markdown.find_problem(r"Write \<img src=x onerror=alert(1)> and <b>bold</b>.",
+                                 r"Écrivez <img src=x onerror=alert(1)> et \<b>gras</b>.") == "escapes"
 
 
 def test_a_link_inside_another_keeps_the_outer_one_text(docs):

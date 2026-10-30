@@ -58,8 +58,9 @@ YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?
 LINK_LABEL_RE = re.compile(r"\]\[([^\]]*)\]|\[\^([^\]]+)\]")
 TAG_RE = re.compile(r"<[^<>]+>")
 NON_SPACE_RE = re.compile(r"\S")
-# A backslash-escaped bracket or <, after any escaped backslashes
-ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\([\[\]<])")
+# A backslash-escaped bracket or <, after any escaped backslashes; a < with the tag name after it, so an
+# escape can't move from one tag to another
+ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\([\[\]]|<[/!?]?[A-Za-z][\w:.-]*|<)")
 
 
 class _Unit:
