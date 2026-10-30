@@ -48,6 +48,10 @@ FRONT_MATTER_KEY_RE = re.compile(rf"^({'|'.join(FRONT_MATTER_KEYS)})([ \t]*:[ \t
 FRONT_MATTER_COMMENT_RE = re.compile(r"[ \t]+#")
 
 BACKTICKS_RE = re.compile(r"`+")
+# Plain YAML values a loader reads as something else, like a boolean or a number
+YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?(?:inf|nan)"
+                              r"|[-+]?(?:\d[\d_]*(?:\.[\d_]*)?|\.\d+)(?:e[-+]?\d+)?|0[box][\da-f_]+"
+                              r"|\d{4}-\d\d?-\d\d?(?:[ tT].*)?")
 TAG_RE = re.compile(r"<[^<>]+>")
 
 
@@ -198,7 +202,7 @@ def _yaml_encode(text, quote):
     control = CONTROL_RE.search(text)
     if quote == "'" and not control:
         return "'" + text.replace("'", "''") + "'"
-    if quote or control or YAML_UNSAFE_RE.search(text) or not text:
+    if quote or control or YAML_UNSAFE_RE.search(text) or YAML_IMPLICIT_RE.fullmatch(text) or not text:
         escaped = text.replace("\\", "\\\\").replace('"', '\\"')
         return '"' + CONTROL_RE.sub(_yaml_control_escape, escaped) + '"'
     return text

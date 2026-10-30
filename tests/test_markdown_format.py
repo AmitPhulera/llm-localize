@@ -410,6 +410,17 @@ def test_a_carriage_return_in_a_translation_ends_a_line_as_a_newline_does(tmp_pa
     assert target.read_text(encoding="utf-8") == "# Installer # Titre\n\n> Remarque\n> suite\n"
 
 
+@pytest.mark.parametrize("value", ["Yes", "On", "2026", "null", "1.5", "2026-10-31"])
+def test_front_matter_values_yaml_would_read_as_other_types_are_quoted(tmp_path, value):
+    (tmp_path / "s.md").write_text("---\ntitle: Oui\n---\n\nText.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                   ScriptedClient([{"0": value, "1": "Texte."}]), "fr")
+
+    assert target.read_text(encoding="utf-8").startswith(f'---\ntitle: "{value}"\n---\n')
+
+
 def test_unclosed_tags_take_linear_time(tmp_path):
     (tmp_path / "s.md").write_text("<a " + "<" * 200000 + "\n", encoding="utf-8")
 
