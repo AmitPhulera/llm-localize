@@ -56,6 +56,8 @@ YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?
                               r"|\d{4}-\d\d?-\d\d?(?:[ tT].*)?")
 LINK_LABEL_RE = re.compile(r"\]\[([^\]]*)\]|\[\^([^\]]+)\]")
 TAG_RE = re.compile(r"<[^<>]+>")
+# A backslash-escaped bracket or <, after any escaped backslashes
+ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\([\[\]<])")
 
 
 class _Unit:
@@ -122,6 +124,9 @@ class MarkdownFile(MonolingualFile):
         translation_spans, translation_text = _split_code(translation)
         if Counter(source_spans) != Counter(translation_spans):
             return "inline code"
+        # Without its backslash, an escaped \[ or \< would start a link or a tag
+        if Counter(ESCAPE_RE.findall(source_text)) != Counter(ESCAPE_RE.findall(translation_text)):
+            return "escapes"
         if Counter(_link_targets(source_text)) != Counter(_link_targets(translation_text)):
             return "links"
         # In order, so [one][a] and [two][b] can't become [un][b] and [deux][a]

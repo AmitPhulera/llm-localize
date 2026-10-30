@@ -358,6 +358,16 @@ def test_untrusted_documents_take_linear_time(tmp_path, text):
     assert time.perf_counter() - started < 2
 
 
+def test_an_escaped_tag_cant_lose_its_backslash(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem(r"Write \<b> for bold", r"Écrivez \<b> pour le gras") is None
+    assert markdown.find_problem(r"Write \<img src=x onerror=alert(1)>", "Écrivez <img src=x onerror=alert(1)>") \
+        == "escapes"
+    assert markdown.find_problem(r"Write \[click](javascript:alert(1))", "Écrivez [click](javascript:alert(1))") \
+        == "escapes"
+
+
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
