@@ -1,4 +1,5 @@
 import time
+import warnings
 import zipfile
 
 import pytest
@@ -111,6 +112,57 @@ def test_saves_keep_a_symlinked_targets_link_and_mode(report, tmp_path):
 
     assert link.is_symlink()
     assert real.stat().st_mode & 0o777 == 0o640
+
+
+def test_a_zip_without_a_word_document_is_refused(tmp_path):
+    path = tmp_path / "other.docx"
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("hello.txt", "hi")
+
+    with pytest.raises(ValueError, match="other.docx is not a Word document: it has no word/document.xml"):
+        open_file(tmp_path / "fr" / "other.docx", source_path=path).untranslated_units()
+
+
+def test_a_package_naming_a_part_twice_is_refused(tmp_path):
+    path = tmp_path / "twice.docx"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with zipfile.ZipFile(path, "w") as package:
+            package.writestr("word/document.xml", DOCUMENT)
+            package.writestr("word/document.xml", DOCUMENT)
+
+    with pytest.raises(ValueError, match="it has more than one word/document.xml"):
+        open_file(tmp_path / "fr" / "twice.docx", source_path=path).untranslated_units()
+
+
+def test_a_corrupt_part_is_refused_before_translating(tmp_path):
+    path = tmp_path / "corrupt.docx"
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("word/document.xml", DOCUMENT)
+        package.writestr("word/media/image1.png", b"png data")
+    path.write_bytes(path.read_bytes().replace(b"png data", b"PNG DATA"))
+
+    with pytest.raises(ValueError, match="word/media/image1.png is corrupt"):
+        open_file(tmp_path / "fr" / "corrupt.docx", source_path=path).untranslated_units()
+
+
+@pytest.mark.parametrize("flag_bits, compress_type", [(0x1, zipfile.ZIP_STORED), (0, zipfile.ZIP_LZMA)])
+def test_a_package_with_parts_it_cant_copy_is_refused(tmp_path, flag_bits, compress_type):
+    path = tmp_path / "odd.docx"
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("word/document.xml", DOCUMENT)
+        image = zipfile.ZipInfo("word/media/image1.png")
+        image.compress_type = compress_type
+        package.writestr(image, b"png")
+    if flag_bits:
+        # The encrypted flag, in the central directory's entry for the image
+        data = bytearray(path.read_bytes())
+        entry = data.rindex(b"PK\x01\x02")
+        data[entry + 8] |= flag_bits
+        path.write_bytes(bytes(data))
+
+    with pytest.raises(ValueError, match="word/media/image1.png is encrypted or compressed"):
+        open_file(tmp_path / "fr" / "odd.docx", source_path=path).untranslated_units()
 
 
 def test_text_full_of_entities_takes_linear_time(tmp_path):

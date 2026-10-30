@@ -13,6 +13,7 @@ import os
 import re
 import zipfile
 import zlib
+from collections import Counter
 from functools import cached_property
 from xml.parsers import expat
 
@@ -105,7 +106,23 @@ def _read(path):
         return [], []
     try:
         with zipfile.ZipFile(path) as package:
+            # A name used twice would be read for each use, past the limit on what an upload unpacks to
+            repeated = next((name for name, count in Counter(package.namelist()).items() if count > 1), None)
+            if repeated:
+                raise ValueError(f"{path} is not a valid .docx file: it has more than one {repeated}")
+            # Word doesn't encrypt parts or compress them other ways, and copying them would fail after translating
+            unreadable = next((info.filename for info in package.infolist() if info.flag_bits & 0x1
+                               or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)), None)
+            if unreadable:
+                raise ValueError(f"{path} is not a valid .docx file: {unreadable} is encrypted or compressed "
+                                 "in a way Word doesn't use")
+            # Before any translating: copying a corrupt part when saving would fail after it
+            corrupt = package.testzip()
+            if corrupt:
+                raise ValueError(f"{path} is not a valid .docx file: {corrupt} is corrupt")
             names = [name for name in package.namelist() if PART_RE.match(name)]
+            if "word/document.xml" not in names:
+                raise ValueError(f"{path} is not a Word document: it has no word/document.xml")
             # The body first, then headers, footers and notes
             names.sort(key=lambda name: (not name.endswith("document.xml"), name))
             paragraphs = []
