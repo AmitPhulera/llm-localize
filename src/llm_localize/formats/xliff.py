@@ -4,8 +4,16 @@ from functools import cached_property
 from xml.parsers import expat
 
 from llm_localize.formats.base import TranslationFile
-from llm_localize.formats.xml_utils import line_indent, tag_end, to_utf8
+from llm_localize.formats.xml_utils import (
+    BARE_AMPERSAND_RE,
+    line_indent,
+    tag_end,
+    to_utf8,
+)
 from llm_localize.plurals import plural_categories
+from llm_localize.units import TranslationUnit
+
+UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
 
 
 class XliffFile(TranslationFile):
@@ -38,6 +46,23 @@ class XliffFile(TranslationFile):
     @cached_property
     def _parsed(self):
         return _read(self.path)
+
+    def untranslated_units(self):
+        if not self.language:
+            raise ValueError(f"Can't tell the target language of {self.path}; pass it with --lang")
+        units = []
+        for key, segment in self._parsed.segments.items():
+            if segment.source.strip() and (segment.target is None or not segment.target.strip()
+                                           or segment.state in UNTRANSLATED_STATES):
+                units.append(TranslationUnit(key=key, source=segment.source, context=segment.context))
+        return units
+
+    @cached_property
+    def _applied(self):
+        return {}
+
+    def apply(self, key, translation):
+        self._applied[key] = BARE_AMPERSAND_RE.sub("&amp;", translation)
 
 
 class _Segment:
