@@ -8,7 +8,11 @@ from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 from llm_localize.formats.xml_utils import line_indent
 
-from .fakes import FakeClient
+from .fakes import FakeClient, ScriptedClient
+
+NAME = '<x id="INTERPOLATION" equiv-text="{{ name }}"/>'
+FRENCH_ITEMS = ('{VAR_PLURAL, plural, =0 {aucun} one {un élément} many {<x id="INTERPOLATION"/> éléments} '
+                'other {<x id="INTERPOLATION"/> éléments}}')
 
 XLIFF_1 = '''<?xml version="1.0" encoding="UTF-8" ?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
@@ -70,6 +74,40 @@ class TestXliff1:
         with pytest.raises(ValueError, match="declares its target language as fr, not de"):
             open_file(path, language="de").untranslated_units()
 
+    def test_translates_in_place(self, xliff):
+        path = xliff(XLIFF_1)
+        replies = {"0": f"Bonjour {NAME} !", "1": "Nouveau", "2": "Vide & fini", "3": FRENCH_ITEMS}
+        client = ScriptedClient([replies])
+
+        result = translate_file(open_file(path), client, "fr")
+
+        assert result.translated == 4
+        assert path.read_text(encoding="utf-8") == XLIFF_1.replace(
+            f"<source>Hello {NAME}!</source>\n",
+            f'<source>Hello {NAME}!</source>\n        <target state="translated">Bonjour {NAME} !</target>\n',
+        ).replace(
+            '<target state="new">New</target>', '<target state="translated">Nouveau</target>',
+        ).replace(
+            "done</source><target/>", 'done</source><target state="translated">Vide &amp; fini</target>',
+        ).replace(
+            " items}}</source>\n",
+            f' items}}}}</source>\n        <target state="translated">{FRENCH_ITEMS}</target>\n',
+        )
+        assert open_file(path).untranslated_units() == []
+
+    @pytest.mark.parametrize("translation, reason", [
+        (f"Bonjour {NAME.replace('INTERPOLATION', 'OTHER')} !", "HTML attributes"),
+        ("Bonjour !", "placeholders"),  # the element's equiv-text holds {{ name }}
+        (f"Bonjour {NAME} < !", "XML"),
+    ])
+    def test_broken_inline_elements_are_rejected(self, xliff, translation, reason):
+        assert open_file(xliff(XLIFF_1)).find_problem(f"Hello {NAME}!", translation) == reason
+
+    def test_icu_plural_needs_every_category(self, xliff):
+        result = translate_file(open_file(xliff(XLIFF_1)), FakeClient(), "fr")
+
+        assert (result.translated, dict(result.rejected)) == (3, {"plural forms": 1})
+
     def test_a_language_from_the_file_name(self, xliff):
         # As Angular names a copy of the messages.xlf extract-i18n writes, which declares no target language
         path = xliff(XLIFF_1.replace(' target-language="fr"', ""), name="messages.de.xlf")
@@ -108,6 +146,55 @@ def test_line_indent_matches_scanning_the_whole_line():
         data = bytes(random.choice(b" \t\n\r\x0bx<") for _ in range(random.randrange(12)))
         for start in range(len(data) + 1):
             assert line_indent(data, start) == scanned(data, start), (data, start)
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-be", "iso-8859-1"])
+def test_other_encodings_are_kept(xliff, encoding):
+    text = XLIFF_1.replace('encoding="UTF-8"', f'encoding="{encoding.upper()}"')
+    text = text.replace("Save &amp;", "Sauvé &amp;")
+    path = xliff("")
+    path.write_bytes(text.encode(encoding))
+
+    assert open_file(path).untranslated_units()[0].source == f"Hello {NAME}!"
+    translate_file(open_file(path), FakeClient(prefix="Ω: "), "fr")
+
+    saved = path.read_bytes().decode(encoding)
+    assert "Sauvé &amp;" in saved
+    assert "&#937;: Hello" in saved if encoding == "iso-8859-1" else "Ω: Hello" in saved
+    # Only the ICU plural, which the fake client doesn't give every French category, is left
+    assert [unit.key for unit in open_file(path).untranslated_units()] == ["items"]
+
+
+@pytest.mark.parametrize("encoding", ["punycode", "unicode-escape", "utf-7"])
+def test_codecs_that_arent_xml_encodings_are_refused(xliff, encoding):
+    # Python can decode these, punycode in quadratic time, but no XML document is in them
+    path = xliff(XLIFF_1.replace('encoding="UTF-8"', f'encoding="{encoding}"'))
+
+    with pytest.raises(ValueError, match=f"has an encoding XML can't be in, '{encoding}'"):
+        open_file(path).untranslated_units()
+
+
+ICU_WITH_NAME = ('{VAR_PLURAL, plural, =1 {one file by <x id="I" equiv-text="{{ name }}"/>} '
+                 'other {<x id="C" equiv-text="{{ count }}"/> files}}')
+
+
+@pytest.mark.parametrize("translation, reason", [
+    ('{VAR_PLURAL, plural, =1 {un fichier de <x id="I" equiv-text="{{ name }}"/>} '
+     'one {<x id="C" equiv-text="{{ count }}"/> fichier} many {<x id="C" equiv-text="{{ count }}"/> de fichiers} '
+     'other {<x id="C" equiv-text="{{ count }}"/> fichiers}}', None),
+    ('{VAR_PLURAL, plural, =1 {un fichier de <x id="OTHER" equiv-text="{{ name }}"/>} '
+     'one {<x id="C" equiv-text="{{ count }}"/> fichier} many {<x id="C" equiv-text="{{ count }}"/> de fichiers} '
+     'other {<x id="C" equiv-text="{{ count }}"/> fichiers}}', "HTML tags"),
+])
+def test_icu_messages_with_interpolations_inside_cases(xliff, translation, reason):
+    assert open_file(xliff(XLIFF_1)).find_problem(ICU_WITH_NAME, translation) == reason
+
+
+def test_a_message_holding_an_icu_placeholder_isnt_taken_for_icu(xliff):
+    source = 'Updated <x id="ICU" equiv-text="{minutes, plural, =0 {just now} other {later}}"/>'
+    xliff_file = open_file(xliff(XLIFF_1.replace('target-language="fr"', 'target-language="ru"')))
+
+    assert xliff_file.find_problem(source, source.replace("Updated", "Обновлено")) is None
 
 
 def test_new_targets_are_named_like_their_source(xliff):

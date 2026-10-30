@@ -16,6 +16,7 @@ from functools import cached_property
 from xml.parsers import expat
 from xml.sax.saxutils import quoteattr
 
+from llm_localize import icu
 from llm_localize.formats.base import TranslationFile, splice, write_file
 from llm_localize.formats.monolingual import _is_language_code
 from llm_localize.formats.xml_utils import (
@@ -27,10 +28,12 @@ from llm_localize.formats.xml_utils import (
     tag_end,
     to_utf8,
 )
-from llm_localize.plurals import compatible_languages, plural_categories
+from llm_localize.plurals import compatible_languages, ordinal_categories, plural_categories
 from llm_localize.units import TranslationUnit
 
 UNTRANSLATED_STATES = {"new", "needs-translation", "initial"}
+# An inline element's tag: <x .../>, <g ...>, </g>
+ELEMENT_RE = re.compile(r"<[^<>]+>")
 
 
 def _language_in_name(path):
@@ -93,6 +96,22 @@ class XliffFile(TranslationFile):
                 units.append(TranslationUnit(key=key, source=segment.source, context=segment.context))
         return units
 
+    def find_problem(self, source, translation):
+        # Inline elements' attributes, like equiv-text="{{ name }}", aren't ICU, so the ICU check sees tokens
+        masked_source, masked_translation = _mask_elements(source, translation)
+        if icu.is_icu_choice(masked_source):
+            problem = icu.find_problem(masked_source, masked_translation, list(plural_categories(self.language)),
+                                       ordinal_categories(self.language))
+        else:
+            problem = super().find_problem(source, translation)
+        if problem:
+            return problem
+        try:
+            expat.ParserCreate().Parse(f"<r>{BARE_AMPERSAND_RE.sub('&amp;', translation)}</r>", True)
+        except expat.ExpatError:
+            return "XML"
+        return None
+
     @cached_property
     def _applied(self):
         return {}
@@ -129,6 +148,19 @@ class XliffFile(TranslationFile):
                 element = newline + start_tag + text + b"</" + name + b">"
                 replacements.append((segment.source_end, segment.source_end, element))
         write_file(self.path, from_utf8(splice(data, replacements), parsed.encoding, parsed.bom))
+
+
+def _mask_elements(*texts):
+    """Return the texts with each inline element replaced by a token like ``<t0/>``, the same for the same element.
+
+    >>> _mask_elements('Hi <x id="N" equiv-text="{{ name }}"/>', 'Salut <x id="N" equiv-text="{{ name }}"/>')
+    ('Hi <t0/>', 'Salut <t0/>')
+    """
+    tokens = {}
+
+    def token(match):
+        return tokens.setdefault(match.group(), f"<t{len(tokens)}/>")
+    return tuple(ELEMENT_RE.sub(token, text) for text in texts)
 
 
 def _with_namespaces(start_tag, namespaces):
