@@ -168,12 +168,17 @@ def _read(path):
         if name == "xliff":
             parsed.version = "2" if attrs.get("version", "").startswith("2") else "1"
         elif name == "file" and attrs.get("target-language"):
-            parsed.target_language = parsed.target_language or attrs["target-language"]
+            language = attrs["target-language"]
+            if parsed.target_language and parsed.target_language.lower() != language.lower():
+                raise ValueError(f"{path} has files for more than one target language, "
+                                 f"{parsed.target_language} and {language}; translate them as separate files")
+            parsed.target_language = language
         elif name in ("trans-unit", "unit"):
             unit.clear()
             unit.update(id=attrs.get("id", ""), skip=untranslatable[-1], notes=[], segments=0,
                         state=None, segment_tag=None, read=[])
-        elif name in ("source", "target") and _in_segment(parent):
+        elif name in ("source", "target") and _in_segment(parent) and (open_elements["trans-unit"]
+                                                                         or open_elements["unit"]):
             if name == "source":
                 unit["segments"] += 1
                 key = f"{unit['id']}#{unit['segments']}" if parsed.version == "2" else unit["id"]
@@ -203,7 +208,8 @@ def _read(path):
         parent = stack[-1][0] if stack else ""
         if name == "note" and (open_elements["trans-unit"] or open_elements["unit"]):
             unit["notes"].append(" ".join(data[inner_start:inner_end].decode().split()))
-        elif name in ("source", "target") and _in_segment(parent) and unit.get("current"):
+        elif (name in ("source", "target") and _in_segment(parent) and unit.get("current")
+              and (open_elements["trans-unit"] or open_elements["unit"])):
             key, segment = unit["current"]
             raw = data[inner_start:inner_end].decode()
             if name == "source":

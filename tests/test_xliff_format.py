@@ -140,6 +140,24 @@ def test_the_state_attribute_is_set_not_text_in_another(xliff):
     assert '<target note=\' state="new"\' state="translated">T: Hi</target>' in path.read_text()
 
 
+def test_a_segment_outside_a_unit_is_skipped(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body><segment><source>Hello</source></segment>'
+                 '<trans-unit id="a"><source>Hi</source></trans-unit>'
+                 '<segment><source>Evil</source><target>X</target></segment></body></file></xliff>')
+
+    # Neither is read, nor taken for the unit before it
+    assert [(unit.key, unit.source) for unit in open_file(path).untranslated_units()] == [("a", "Hi")]
+
+
+def test_files_for_different_languages_are_refused(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a">'
+                 '<source>A</source></trans-unit></body></file><file target-language="de"><body>'
+                 '<trans-unit id="b"><source>B</source></trans-unit></body></file></xliff>')
+
+    with pytest.raises(ValueError, match="has files for more than one target language, fr and de"):
+        open_file(path).untranslated_units()
+
+
 def test_translate_no_holds_for_the_units_inside(xliff):
     path = xliff('<xliff version="1.2"><file target-language="fr"><body>'
                  '<group translate="no"><trans-unit id="logo"><source>ACME</source></trans-unit>'
