@@ -211,6 +211,9 @@ def _read(path):
                 segment.target_attrs = set(attrs)
                 if parsed.version == "1":
                     segment.state = attrs.get("state")
+        elif name == "seg-source" and parent == "trans-unit" and unit.get("current"):
+            # A new target goes after it: XLIFF 1.2 has source, seg-source, target in that order
+            unit["current"][1].source_end = element_end
         elif name in ("trans-unit", "unit"):
             context = "; ".join(filter(None, [*unit["notes"], f"ID: {unit['id']}"]))
             # Notes may come after the sources, so context is set once the unit is read

@@ -150,3 +150,25 @@ def test_a_file_on_one_line_takes_linear_time(xliff):
     started = time.perf_counter()
     open_file(path).untranslated_units()
     assert time.perf_counter() - started < 3
+
+
+def test_a_new_target_goes_after_the_seg_source(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a">'
+                 '<source>Hi. Bye.</source><seg-source><mrk mid="0" mtype="seg">Hi.</mrk> '
+                 '<mrk mid="1" mtype="seg">Bye.</mrk></seg-source>'
+                 "</trans-unit></body></file></xliff>")
+
+    translate_file(open_file(path), FakeClient(), "fr")
+
+    assert '</seg-source><target state="translated">T: Hi. Bye.</target></trans-unit>' in path.read_text()
+
+
+def test_an_alt_trans_seg_source_doesnt_move_the_target(xliff):
+    path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a"><source>Hello</source>'
+                 '<alt-trans><source>Hello!</source><seg-source><mrk mtype="seg" mid="1">Hello!</mrk></seg-source>'
+                 "<target>Bonjour !</target></alt-trans></trans-unit></body></file></xliff>")
+
+    translate_file(open_file(path), FakeClient(), "fr")
+
+    assert '<source>Hello</source><target state="translated">T: Hello</target><alt-trans>' in path.read_text()
+    assert open_file(path).untranslated_units() == []
