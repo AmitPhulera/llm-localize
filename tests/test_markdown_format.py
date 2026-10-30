@@ -344,6 +344,7 @@ def test_a_title_translated_with_a_line_break_stays_one_value(tmp_path):
 
 @pytest.mark.parametrize("text", [
     "a " + "`" * 20000,  # backtick runs nothing closes
+    "](" * 20000,  # link openings with no end
     "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
     ">\n" * 20000 + "> text\n" + ">\n" * 20000,  # a blockquote's blank lines
     "| " + "`a" * 50000 + " |\n|---|\n",  # a table row full of backticks
@@ -491,6 +492,15 @@ def test_a_heading_with_a_long_run_of_spaces_takes_linear_time(tmp_path):
 
     started = time.perf_counter()
     open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+    assert time.perf_counter() - started < 1
+
+
+@pytest.mark.parametrize("block", ["](" * 100000])
+def test_checking_brackets_takes_linear_time(docs, block):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    started = time.perf_counter()
+    markdown.find_problem(block, block)
     assert time.perf_counter() - started < 1
 
 

@@ -249,22 +249,16 @@ def _link_targets(text):
     >>> _link_targets('[a](docs/a_(b).md "Title") and ![x](<my img.png>)')
     ['docs/a_(b).md', '<my img.png>']
     """
+    if "](" not in text:
+        return []
+    ends = _closing_parentheses(text)
     targets = []
     for match in re.finditer(r"\]\(", text):
-        index, depth = match.end(), 0
-        while index < len(text):
-            char = text[index]
-            if char == "\\":
-                index += 2
-                continue
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                if depth == 0:
-                    break
-                depth -= 1
-            index += 1
-        inside = text[match.end():index].strip()
+        close = ends[match.end()]
+        if close >= len(text):
+            # Never closed, so not a link
+            continue
+        inside = text[match.end():close].strip()
         # The destination, without a title after it
         if inside.startswith("<"):
             targets.append(inside[:inside.find(">") + 1] or inside)
