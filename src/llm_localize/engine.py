@@ -240,6 +240,8 @@ def translate_file(translation_file, client, language, source_language="en", bat
     """Translate a file's untranslated units, saving after each batch.
 
     Saving after each batch keeps finished work if the run is interrupted.
+    Formats with ``save_after_each_batch`` False are saved once at the
+    end instead, or when the run stops early.
     A failed batch is counted and skipped; its units stay untranslated for
     the next run. A ``FatalError``, like a bad API key, cancels the
     batches not yet started and is raised.
@@ -257,6 +259,7 @@ def translate_file(translation_file, client, language, source_language="en", bat
     system_prompt = build_system_prompt(
         language, source_language, translation_file.instructions, extra_instructions)
     lock = threading.Lock()
+    applied = []
     # Set when the run stops early, so batches waiting to retry give up rather than keep it waiting
     stop = threading.Event()
 
@@ -266,8 +269,9 @@ def translate_file(translation_file, client, language, source_language="en", bat
         with lock:
             for key, translation in translations.items():
                 translation_file.apply(batch[key].key, translation)
-            if translations:
+            if translations and translation_file.save_after_each_batch:
                 translation_file.save()
+            applied.extend(translations)
         return len(translations), rejected
 
     if batches:
@@ -296,6 +300,9 @@ def translate_file(translation_file, client, language, source_language="en", bat
                 stop.set()
                 executor.shutdown(wait=True, cancel_futures=True)
                 raise
+            finally:
+                if applied and not translation_file.save_after_each_batch:
+                    translation_file.save()
 
     if cleanup:
         result.cleared = translation_file.cleanup()

@@ -133,6 +133,8 @@ class DocxFile(MonolingualFile):
     def apply(self, key, translation):
         self._applied[key] = translation
 
+    save_after_each_batch = False
+
     def save(self):
         """Write the copy: the source's ZIP, with each translated paragraph's text replaced in its part."""
         parts, paragraphs = self._source

@@ -24,6 +24,8 @@ class TranslationFile(abc.ABC):
     name = None
     extensions = ()
     instructions = ""
+    # False for formats whose save rewrites something big, like a whole archive: saved once at the end
+    save_after_each_batch = True
 
     def __init__(self, path):
         self.path = str(path)

@@ -185,6 +185,24 @@ class TestTranslateFile:
         assert dict_file.cleanups == 1
         assert "File format rules: Dict rules." in client.calls[0][0]
 
+    def test_whole_file_formats_are_saved_once(self):
+        dict_file = DictFile(messages={"a": ("Hello", ""), "c": ("Yes", "")})
+        dict_file.save_after_each_batch = False
+
+        result = translate_file(dict_file, FakeClient(), "es", batch_size=1, workers=2)
+
+        assert (result.batches, result.translated, dict_file.saves) == (2, 2, 1)
+
+    def test_whole_file_formats_keep_finished_batches_when_a_run_stops(self):
+        dict_file = DictFile(messages={"a": ("Hello", ""), "b": ("Bye", "")})
+        dict_file.save_after_each_batch = False
+        client = ScriptedClient([{"0": "Hola"}, FatalError("HTTP 401: invalid key", status=401)])
+
+        with pytest.raises(FatalError):
+            translate_file(dict_file, client, "es", batch_size=1, workers=1)
+
+        assert (dict_file.messages["a"], dict_file.saves) == (("Hello", "Hola"), 1)
+
     def test_a_fatal_error_doesnt_wait_for_other_batches_retries(self):
         class Client(FakeClient):
             def call_llm(self, system_prompt, user_message):
