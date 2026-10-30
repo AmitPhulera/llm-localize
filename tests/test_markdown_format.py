@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 
@@ -230,6 +231,26 @@ def test_links_keep_their_targets(docs, source, translation, reason):
     assert open_file(docs / "fr" / "guide.md").find_problem(source, translation) == reason
 
 
+@pytest.mark.parametrize("source, target", [
+    ("en-guide.md", "en-guide.hi.md"),
+    ("en.guide.md", "hi.guide.md"),
+    ("en-US.md", "hi.md"),
+])
+def test_translation_path_swaps_only_a_whole_language_code(source, target):
+    assert MarkdownFile.translation_path(source, "hi", "en") == Path(target)
+
+
+def test_translation_path_searches_no_further_up_for_a_relative_path_than_an_absolute_one(tmp_path, monkeypatch):
+    (tmp_path / "work").mkdir()
+    monkeypatch.chdir(tmp_path / "work")
+    source = "../en/foo/bar/baz/guide.md"
+
+    # en is more than four parts up, outside the current directory, so it isn't taken for the language
+    assert MarkdownFile.translation_path(source, "hi") == Path("../en/foo/bar/baz/guide.hi.md")
+    assert MarkdownFile.translation_path(tmp_path / "en/foo/bar/baz/guide.md", "hi") \
+        == tmp_path / "en/foo/bar/baz/guide.hi.md"
+
+
 def test_table_cells_keep_code_spans_of_several_backticks(tmp_path):
     path = tmp_path / "fr" / "table.md"
     (tmp_path / "table.md").write_text("| a | b |\n|---|---|\n| x | ``y| z`` |\n", encoding="utf-8")
@@ -237,6 +258,14 @@ def test_table_cells_keep_code_spans_of_several_backticks(tmp_path):
     translate_file(open_file(path, source_path=tmp_path / "table.md"), FakeClient(), "fr")
 
     assert path.read_text(encoding="utf-8").splitlines()[2] == "| T: x | T: ``y| z`` |"
+
+
+def test_translation_path_swaps_a_language_above_the_current_directory(tmp_path, monkeypatch):
+    (tmp_path / "work").mkdir()
+    monkeypatch.chdir(tmp_path / "work")
+
+    assert MarkdownFile.translation_path("../en/foo/guide.md", "hi") == Path("../hi/foo/guide.md")
+    assert MarkdownFile.translation_path(tmp_path / "en/foo/guide.md", "hi") == tmp_path / "hi/foo/guide.md"
 
 
 CODE_IN_CONTAINERS = """1. Install:

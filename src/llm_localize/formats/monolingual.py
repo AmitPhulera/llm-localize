@@ -52,6 +52,26 @@ class MonolingualFile(TranslationFile):
     def open(cls, path, language=None, source_language=None, source_path=None):
         return cls(path, language=language, source_language=source_language, source_path=source_path)
 
+    @classmethod
+    def translation_path(cls, source_path, language, source_language="en"):
+        """Return where ``language``'s translation of the file at ``source_path`` goes.
+
+        The source language in the path is swapped for ``language``, so
+        ``locales/en.json`` gives ``locales/hi.json``; a path without it
+        gets ``language`` before its extension, so ``guide.md`` gives
+        ``guide.hi.md``.
+        """
+        path = Path(source_path)
+        match = cls(source_path, language=source_language)._language_in_path()
+        if not match:
+            return path.with_name(f"{path.stem}.{language}{path.suffix}")
+        part_index, token_index, _ = match
+        parts = list(path.parts)
+        tokens = parts[part_index].split(".")
+        tokens[token_index] = language
+        parts[part_index] = ".".join(tokens)
+        return Path(*parts)
+
     @abc.abstractmethod
     def read_messages(self, path):
         """Return ``{key: Message}`` for the file at ``path``, in file order; ``{}`` if it doesn't exist."""

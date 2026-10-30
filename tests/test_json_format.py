@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 
 import pytest
 
@@ -78,6 +79,7 @@ class TestFindingFiles:
         json_file = open_file(tmp_path / "rw.json", language="rw", source_language="en")
 
         assert json_file.source_path == str(tmp_path / "en.json")
+        assert JsonFile.translation_path("rw.json", "fr", "rw") == Path("fr.json")
 
     def test_missing_source(self, tmp_path):
         with pytest.raises(ValueError, match="Can't find the en file.*--source"):
