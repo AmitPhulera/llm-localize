@@ -9,7 +9,13 @@ from llm_localize.formats.markdown import MarkdownFile
 
 from .fakes import FakeClient, ScriptedClient
 
-GUIDE = '''# Getting started
+GUIDE = '''---
+title: "Getting started"
+description: Install and run the app
+layout: docs
+---
+
+# Getting started
 
 Welcome to **Acme**. Read the [guide](https://example.com/guide "Guide") or the [FAQ][faq].
 This line wraps.
@@ -73,6 +79,8 @@ def test_blocks(docs):
     units = open_file(docs / "fr" / "guide.md").untranslated_units()
 
     assert [(unit.source, unit.context) for unit in units] == [
+        ("Getting started", "Front matter: title"),
+        ("Install and run the app", "Front matter: description"),
         ("Getting started", ""),
         ('Welcome to **Acme**. Read the [guide](https://example.com/guide "Guide") or the [FAQ][faq].\n'
          "This line wraps.", "Section: Getting started"),
@@ -98,8 +106,10 @@ def test_translations_keep_the_structure(docs):
 
     result = translate_file(open_file(path), FakeClient(), "fr")
 
-    assert result.translated == 16
+    assert result.translated == 18
     text = path.read_text(encoding="utf-8")
+    assert 'title: "T: Getting started"\n' in text
+    assert "layout: docs\n" in text
     assert "2. T: Open the app\n   and sign in.\n   - T: Nested item with [the docs].\n" in text
     assert "> T: **Note:** keep your key secret.\n>\n> It's in `~/.acme`.\n" in text
     assert "| T: `--fast` | T: Skips `checks` |\n" in text
@@ -132,7 +142,7 @@ def test_cli(docs, capsys):
 
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
-    assert capsys.readouterr().out == f"{path} (de): translated 16 of 16\n"
+    assert capsys.readouterr().out == f"{path} (de): translated 18 of 18\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
@@ -143,6 +153,24 @@ def test_the_source_itself_is_left_alone(tmp_path):
     result = translate_file(open_file(path, source_language="en"), FakeClient(), "en")
 
     assert (result.untranslated, path.read_text()) == (0, "# Hello\n")
+
+
+@pytest.mark.parametrize("line, source, translation, expected", [
+    ("title: 'Welcome'", "Welcome", "Bienvenue à l'application", "title: 'Bienvenue à l''application'"),
+    ('title: "Welcome"', "Welcome", 'Le "guide"', 'title: "Le \\"guide\\""'),
+    ("title: Welcome", "Welcome", "Étapes : installation", 'title: "Étapes : installation"'),
+    ("title: Welcome", "Welcome", "Bienvenue", "title: Bienvenue"),
+    ("title: 'It''s here'", "It's here", "C'est ici", "title: 'C''est ici'"),
+])
+def test_front_matter_stays_valid_yaml(tmp_path, line, source, translation, expected):
+    (tmp_path / "guide.md").write_text(f"---\n{line}\n---\n")
+    path = tmp_path / "fr" / "guide.md"
+
+    units = open_file(path).untranslated_units()
+    translate_file(open_file(path), ScriptedClient([{"0": translation}]), "fr")
+
+    assert units[0].source == source
+    assert path.read_text().splitlines()[1] == expected
 
 
 def test_code_inside_a_list_item_is_not_translated(tmp_path):
@@ -242,6 +270,7 @@ def test_only_line_endings_end_lines(tmp_path, newline):
 
 
 @pytest.mark.parametrize("source", [
+    "\ufeff---\nlayout: post\ntitle: Guide\n---\n\nText.\n",
     "<div>\r\nHello\r\n</div>\r\n",
 ])
 def test_unchanged_translations_keep_the_document(tmp_path, source):
@@ -254,6 +283,7 @@ def test_unchanged_translations_keep_the_document(tmp_path, source):
 
 
 @pytest.mark.parametrize("source, messages", [
+    ("\ufeff---\nlayout: post\ntitle: Guide\n---\n\nText.\n", ["Guide", "Text."]),
     ('<script>\nvar msg = "hello";\n\nfetch(url);\n</script>\n\n<PRE>\ncode\n</pre>\n\n'
      '<style>p {}</style>\n\nText.\n', ["Text."]),
 ])

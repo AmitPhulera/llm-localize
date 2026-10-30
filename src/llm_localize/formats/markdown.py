@@ -2,10 +2,10 @@
 
 The document is split into blocks: headings, paragraphs, list items,
 blockquotes, table cells, and HTML blocks with text. Each block is one
-message, sent with the headings above it as context. Code blocks and
-comments are copied as they are. Every run translates the whole
-document, since a changed source can't be matched to the old translation
-block by block.
+message, sent with the headings above it as context. Code blocks, front
+matter (except ``title`` and ``description``) and comments are copied as
+they are. Every run translates the whole document, since a changed
+source can't be matched to the old translation block by block.
 """
 import re
 from functools import cached_property
@@ -13,6 +13,8 @@ from functools import cached_property
 from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.units import TranslationUnit
+
+FRONT_MATTER_KEYS = ("title", "description")
 
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # The > markers of quotes inside a quote
@@ -32,6 +34,7 @@ YAML_UNSAFE_RE = re.compile(r"^[-?:,\[\]{}#&*!|>'\"%@`\s]|: |\s#|:$|\s$")
 RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.IGNORECASE)
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
 COMMENT_RE = re.compile(r"^ {0,3}<!--")
+FRONT_MATTER_LINE_RE = re.compile(rf"^({'|'.join(FRONT_MATTER_KEYS)})([ \t]*:[ \t]*)([\"']?)(.*?)\3[ \t]*$")
 
 BACKTICKS_RE = re.compile(r"`+")
 TAG_RE = re.compile(r"<[^<>]+>")
@@ -239,6 +242,11 @@ class _Parser:
         self.index += count
 
     def parse(self):
+        if self.lines and self.lines[0].startswith("\ufeff"):
+            # A byte order mark, kept as it is, before front matter that follows it
+            self.pieces.append("\ufeff")
+            self.lines[0] = self.lines[0][1:]
+        self.front_matter()
         while self.index < len(self.lines):
             line = self.line()
             if not line.strip() or RULE_RE.match(line):
@@ -262,6 +270,27 @@ class _Parser:
             else:
                 self.paragraph()
         return self.pieces
+
+    def front_matter(self):
+        if self.line() not in ("---", "+++"):
+            return
+        fence = self.line()
+        end = next((index for index in range(1, len(self.lines)) if self.lines[index].rstrip("\r\n") == fence),
+                   None)
+        if end is None:
+            return
+        self.literal()
+        while self.index < end:
+            match = FRONT_MATTER_LINE_RE.match(self.line())
+            if match and match.group(4).strip():
+                key, separator, quote, value = match.groups()
+                self.unit(_yaml_decode(value, quote), first_prefix=key + separator,
+                          suffix=self.ending(self.index), context=f"Front matter: {key}",
+                          encode=lambda text, quote=quote: _yaml_encode(text, quote))
+                self.index += 1
+            else:
+                self.literal()
+        self.literal()
 
     def comment(self):
         start = self.index
