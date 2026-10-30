@@ -1,0 +1,53 @@
+site_name: llm-localize
+site_description: Fill in missing translations in your i18n files with an LLM, without breaking them.
+site_url: https://llm-localize.readthedocs.io/
+repo_url: https://github.com/amitphulera/llm-localize
+repo_name: amitphulera/llm-localize
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.footer
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Tutorials:
+      - Django: tutorials/django.md
+      - Flask: tutorials/flask.md
+      - React with i18next: tutorials/react-i18next.md
+      - Vue with vue-i18n: tutorials/vue-i18n.md
+      - Next.js with next-intl: tutorials/nextjs-next-intl.md
+      - Angular: tutorials/angular.md
+  - Translating in CI: ci.md
+  - Reference:
+      - Command line: reference/command-line.md
+      - Formats: reference/formats.md
+      - LLM providers: reference/providers.md
+      - Django: reference/django.md
+      - Python API: reference/python-api.md
+      - Output and errors: reference/output.md
+      - How it works and extending it: reference/extending.md

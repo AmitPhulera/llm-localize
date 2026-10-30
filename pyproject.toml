@@ -46,6 +46,7 @@ llm-localize = "llm_localize.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/amitphulera/llm-localize"
+Documentation = "https://llm-localize.readthedocs.io/"
 Issues = "https://github.com/amitphulera/llm-localize/issues"
 
 [dependency-groups]
