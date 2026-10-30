@@ -423,6 +423,16 @@ def test_link_candidates_sharing_spaces_take_linear_time(docs):
     assert time.perf_counter() - started < 1
 
 
+def test_a_label_and_colon_before_text_is_a_paragraph(tmp_path):
+    (tmp_path / "s.md").write_text("[Deprecated]: Use the new API.\n\n[docs]: /x\n  'Title'\n\nSee [docs].\n",
+                                   encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+
+    units = markdown.untranslated_units()
+
+    assert [unit.source for unit in units] == ["[Deprecated]: Use the new API.", "See [docs]."]
+
+
 def test_a_fence_on_a_list_markers_line_is_copied(tmp_path):
     (tmp_path / "s.md").write_text('- ```python\n  print("Hello")\n  ```\n- Item\n', encoding="utf-8")
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
@@ -447,6 +457,20 @@ def test_a_quoted_front_matter_value_over_two_lines_is_copied(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Text."]
+
+
+def test_a_definitions_title_takes_the_lines_it_spans(tmp_path):
+    (tmp_path / "s.md").write_text("[a]: /x 'Long\ntitle'\n\n[b]: /y \"Title\"\n\"Hello\"\n", encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ['"Hello"']
+
+
+def test_a_title_from_the_next_line_takes_the_lines_it_spans(tmp_path):
+    (tmp_path / "s.md").write_text('[a]: /url\n"A long\ntitle"\n\nText [a].\n', encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Text [a]."]
 
 
 def test_a_table_cell_starting_with_a_hash_may_be_translated(tmp_path):
@@ -485,6 +509,13 @@ def test_a_rule_after_a_list_stays_a_rule(tmp_path):
     translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(), "fr")
 
     assert target.read_text(encoding="utf-8") == "- T: one\n- T: two\n---\n\nT: Next\n"
+
+
+def test_a_definitions_title_may_start_its_own_line(tmp_path):
+    (tmp_path / "s.md").write_text('[docs]: /guide\n"The guide"\n\nText.\n', encoding="utf-8")
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["Text."]
 
 
 def test_front_matter_takes_linear_time(tmp_path):
@@ -536,6 +567,22 @@ def test_a_carriage_return_in_a_translation_ends_a_line_as_a_newline_does(tmp_pa
 
     # Renderers take a \r alone for a line break: the heading stays on its line, and the quote's lines in it
     assert target.read_text(encoding="utf-8") == "# Installer # Titre\n\n> Remarque\n> suite\n"
+
+
+def test_a_label_and_colon_alone_is_text_unless_a_destination_follows(tmp_path):
+    (tmp_path / "s.md").write_text("[foo]:\nSee the docs.\n", encoding="utf-8")
+
+    units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
+
+    assert [unit.source for unit in units] == ["[foo]:\nSee the docs."]
+
+
+def test_a_definition_with_its_destination_on_the_next_line_is_kept(tmp_path):
+    (tmp_path / "s.md").write_text("See [docs].\n\n[docs]:\n  /guide\n", encoding="utf-8")
+    markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
+
+    assert [unit.source for unit in markdown.untranslated_units()] == ["See [docs]."]
+    assert markdown.find_problem("See [docs].", "Voir [documentation].") == "links"
 
 
 @pytest.mark.parametrize("value", ["Yes", "On", "2026", "null", "1.5", "2026-10-31"])

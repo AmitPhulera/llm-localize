@@ -31,7 +31,11 @@ QUOTE_RE = re.compile(r"^ {0,3}>[ \t]?")
 # Written so spaces can be matched only one way: optional runs of them side by side make a long line of
 # spaces quadratic to rule out
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*(?:\|[ \t]*)?:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*(?:\|[ \t]*)?$")
-LINK_DEFINITION_RE = re.compile(r"^ {0,3}\[[^\]]+\]:[ \t]*\S")
+# Its destination may be on the next line
+LINK_DEFINITION_RE = re.compile(r"^ {0,3}\[((?:\\.|[^\\\]])+)\]:")
+# A definition's destination, with an optional title, or the start of one that goes on to the next line
+DESTINATION = r"(?:<[^<>\n]*>|\S+)"
+DESTINATION_RE = re.compile(rf"""^[ \t]*({DESTINATION})(?:[ \t]+(?:"[^"]*"?|'[^']*'?|\([^)]*\)?))?[ \t]*$""")
 FOOTNOTE_RE = re.compile(r"^( {0,3}\[\^[^\]]+\]:[ \t]*)(.*)$")
 # YAML double-quoted escapes, and how control characters are written in them
 YAML_ESCAPE_RE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
@@ -503,6 +507,15 @@ def _headings(lines):
     return sum(bool(HEADING_RE.match(line) or SETEXT_RE.match(line)) for line in lines.splitlines())
 
 
+def _definition(line, following):
+    """True if ``line`` starts a link reference definition: its destination after it or on ``following``."""
+    definition = LINK_DEFINITION_RE.match(line)
+    if not definition:
+        return False
+    rest = line[definition.end():]
+    return bool(DESTINATION_RE.match(rest if rest.strip() else following))
+
+
 def _parse(text):
     """Split a Markdown document into literal strings and ``_Unit`` blocks, which join back into it.
 
@@ -553,6 +566,27 @@ class _Parser:
         line = self.lines[index]
         return line[len(line.rstrip("\r\n")):]
 
+    def definition_lines(self):
+        """Return how many lines the definition here takes: its destination may be on the next line, and its
+        title on the line after or over several."""
+        rest = self.line()[LINK_DEFINITION_RE.match(self.line()).end():]
+        count = 1
+        if not rest.strip():
+            rest, count = self.line(1), 2
+        title = re.match(rf"""[ \t]*{DESTINATION}[ \t]+(["'(])""", rest)
+        if not title and self.line(count):
+            # On the next line
+            title = re.match(r"""[ \t]*(["'(])""", self.line(count))
+            rest, count = (self.line(count), count + 1) if title else (rest, count)
+        if title:
+            # Up to the line that closes it; a title can't hold a blank line
+            closing = ")" if title.group(1) == "(" else title.group(1)
+            if closing not in rest[title.end():]:
+                while self.line(count) and closing not in self.line(count):
+                    count += 1
+                count += self.line(count) is not None and closing in self.line(count)
+        return count
+
     def literal(self, count=1):
         self.pieces.append("".join(self.lines[self.index:self.index + count]))
         self.index += count
@@ -567,9 +601,9 @@ class _Parser:
             line = self.line()
             if FOOTNOTE_RE.match(line):
                 self.footnote()
-            elif LINK_DEFINITION_RE.match(line):
+            elif _definition(line, self.lines[self.index + 1] if self.index + 1 < len(self.lines) else ""):
                 self.labels.add(line.strip()[1:line.strip().index("]")].lower())
-                self.literal()
+                self.literal(self.definition_lines())
             elif not line.strip() or RULE_RE.match(line):
                 self.literal()
             elif FENCE_RE.match(line) or self.is_list_fence(line):
