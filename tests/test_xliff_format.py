@@ -208,3 +208,12 @@ def test_an_alt_trans_seg_source_doesnt_move_the_target(xliff):
 
     assert '<source>Hello</source><target state="translated">T: Hello</target><alt-trans>' in path.read_text()
     assert open_file(path).untranslated_units() == []
+
+
+def test_a_doctype_is_refused(xliff):
+    path = xliff('<?xml version="1.0"?><!DOCTYPE xliff [<!ENTITY b "big">]><xliff version="1.2">'
+                 '<file target-language="fr"><body><trans-unit id="a"><source>Hello &b;</source></trans-unit>'
+                 '</body></file></xliff>')
+
+    with pytest.raises(ValueError, match="has a DOCTYPE, which XLIFF files don't use"):
+        open_file(path).untranslated_units()

@@ -233,6 +233,11 @@ def _read(path):
             for segment in unit["read"]:
                 segment.context = context
 
+    def doctype(*args):
+        # XLIFF never has one, and its entities could expand a small upload enormously
+        raise ValueError(f"{path} has a DOCTYPE, which XLIFF files don't use")
+
+    parser.StartDoctypeDeclHandler = doctype
     parser.StartElementHandler = start
     parser.EndElementHandler = end
     try:
