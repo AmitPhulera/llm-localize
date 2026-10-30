@@ -1,4 +1,5 @@
 """Helpers for XML formats that edit their files in place by byte offsets."""
+import codecs
 import re
 from collections import Counter
 
@@ -7,6 +8,10 @@ CHARACTER_REFERENCE_RE = re.compile(r"&#(\d{1,8}|[xX][0-9A-Fa-f]{1,8});")
 
 # An & that doesn't start an entity like &amp; or &#8230;
 BARE_AMPERSAND_RE = re.compile(r"&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9A-Fa-f]+);)")
+DECLARED_ENCODING_RE = re.compile(rb"""<\?xml[^>]*?\sencoding\s*=\s*["']([A-Za-z0-9._-]+)["']""")
+# The printable ASCII characters
+ASCII = bytes(range(0x20, 0x7F)).decode()
+BOMS = {codecs.BOM_UTF16_LE: "utf-16-le", codecs.BOM_UTF16_BE: "utf-16-be"}
 # A tag, like <b>, </b> or <x id="1"/>
 TAG_RE = re.compile(r"<[^<>]+>")
 
@@ -35,6 +40,51 @@ def changes_tags(source, translation, counted=True):
     """
     kind = Counter if counted else set
     return kind(TAG_RE.findall(source)) != kind(TAG_RE.findall(translation))
+
+
+def to_utf8(data, path):
+    """Return ``(UTF-8 data, encoding, BOM)`` for an XML document's bytes, and how to write them back.
+
+    A UTF-8 document comes back as it is, with ``encoding`` None.
+    Others, like UTF-16, are decoded, so byte offsets and text are UTF-8
+    either way; parse the result with ``expat.ParserCreate("UTF-8")``, as
+    its declaration still names the original encoding.
+
+    >>> to_utf8('<?xml version="1.0" encoding="UTF-16"?><a>é</a>'.encode("utf-16"), "x.xml")[1:]
+    ('utf-16-le', b'\xff\xfe')
+    >>> to_utf8(b'<a/>', "x.xml")
+    (b'<a/>', None, b'')
+    """
+    bom = next((bom for bom in BOMS if data.startswith(bom)), b"")
+    if bom:
+        encoding = BOMS[bom]
+    elif data.startswith(b"<\0?\0"):
+        encoding = "utf-16-le"
+    elif data.startswith(b"\0<\0?"):
+        encoding = "utf-16-be"
+    else:
+        match = DECLARED_ENCODING_RE.match(data)
+        encoding = match.group(1).decode().lower() if match else "utf-8"
+    try:
+        name = codecs.lookup(encoding).name
+        if name == "utf-8":
+            return data, None, b""
+        # A character encoding writes ASCII as ASCII, or is UTF-16 or UTF-32. Python's other codecs, like
+        # punycode or unicode-escape, aren't, and some decode in quadratic time.
+        if not name.startswith(("utf-16", "utf-32")) and ASCII.encode(name) != ASCII.encode():
+            raise ValueError(f"{path} has an encoding XML can't be in, {encoding!r}")
+        return data[len(bom):].decode(encoding).encode(), encoding, bom
+    except LookupError as e:
+        raise ValueError(f"{path} has an unknown encoding {encoding!r}") from e
+    except UnicodeError as e:
+        raise ValueError(f"{path} is not valid {encoding}: {e}") from e
+
+
+def from_utf8(data, encoding, bom):
+    """Return UTF-8 ``data`` in the encoding ``to_utf8`` found, with character references where it falls short."""
+    if not encoding:
+        return data
+    return bom + data.decode().encode(encoding, "xmlcharrefreplace")
 
 
 def tag_end(data, start):
