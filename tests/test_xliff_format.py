@@ -73,8 +73,8 @@ class TestXliff1:
 
 def test_prefixed_empty_target(xliff):
     path = xliff('<x:xliff xmlns:x="urn:oasis:names:tc:xliff:document:1.2" version="1.2">'
-                 '<x:file target-language="fr"><x:body><x:trans-unit id="a"><x:source>Hi</x:source>'
-                 "<x:target></x:target></x:trans-unit></x:body></x:file></x:xliff>")
+                 '<x:file target-language="fr"><x:body><x:trans-unit id="a"><x:source>Hi</x:source><x:target/>'
+                 "</x:trans-unit></x:body></x:file></x:xliff>")
 
     translate_file(open_file(path), FakeClient(), "fr")
 
@@ -112,7 +112,7 @@ def test_targets_declare_the_namespaces_their_source_does(xliff):
     path = xliff('<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2"><file target-language="fr">'
                  '<body><trans-unit id="a"><source xmlns:x="urn:oasis:names:tc:xliff:document:1.2">Hello '
                  '<x:g id="b">world</x:g></source></trans-unit><trans-unit id="c"><source xmlns:x="urn:x">'
-                 '<x:g id="d">Bye</x:g></source><target></target></trans-unit></body></file></xliff>')
+                 '<x:g id="d">Bye</x:g></source><target/></trans-unit></body></file></xliff>')
 
     translate_file(open_file(path), FakeClient(), "fr")
 

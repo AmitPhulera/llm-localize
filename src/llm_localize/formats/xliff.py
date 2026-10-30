@@ -10,6 +10,7 @@ must be kept with their attributes. Units marked ``translate="no"`` are
 skipped. The file is edited in place, so everything else stays as it was.
 """
 import os
+import re
 from collections import Counter
 from functools import cached_property
 from xml.parsers import expat
@@ -20,6 +21,7 @@ from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
     from_utf8,
     line_indent,
+    open_tag,
     set_attribute,
     tag_end,
     to_utf8,
@@ -91,6 +93,10 @@ class XliffFile(TranslationFile):
             if segment.target_span:
                 start, end = segment.target_span
                 start_tag, closing = data[start:segment.target_inner[0]], data[segment.target_inner[1]:end]
+                if start_tag.endswith(b"/>"):
+                    # Closed with its own name, which may have a prefix like x:target
+                    name = re.match(rb"<([^\s/>]+)", start_tag).group(1)
+                    start_tag, closing = open_tag(start_tag), b"</" + name + b">"
                 if parsed.version == "1":
                     start_tag = set_attribute(start_tag, b"state", b"translated")
                 missing = segment.namespaces.keys() - segment.target_attrs
