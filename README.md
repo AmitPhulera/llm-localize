@@ -102,10 +102,10 @@ llm-localize MyApp/Localizable.xcstrings --lang fr     # a string catalog, one l
 ### XLIFF
 
 ```bash
-llm-localize src/locale/messages.fr.xlf      # Angular's extract-i18n output, XLIFF 1.2
+llm-localize src/locale/messages.fr.xlf      # Angular's extract-i18n output, XLIFF 1.2 or 2.0
 ```
 
-Each unit holds its source and translation, so like a PO file, one file is one language: its `target-language`, or `--lang` for a file that doesn't declare one; `--lang` naming another language is refused. A unit is translated when it has no `<target>`, an empty one, or one in the `new` or `needs-translation` state, and the translation's state becomes `translated`. Units marked `translate="no"` are skipped, and notes are sent as context.
+Each unit holds its source and translation, so like a PO file, one file is one language: its `target-language` (1.2) or `trgLang` (2.0), or `--lang` for a file that doesn't declare one; `--lang` naming another language is refused. A unit is translated when it has no `<target>`, an empty one, or one in the `new` or `needs-translation` (1.2) or `initial` (2.0) state, and the translation's state becomes `translated`. Units marked `translate="no"` are skipped, and notes are sent as context.
 
 - Inline elements like `<x id="INTERPOLATION"/>`, `<ph/>`, `<g>` and `<pc>` must be kept with their attributes, though placeholders may change places as word order needs, and translations that aren't well-formed XML are rejected.
 - Angular's ICU plurals and selects are checked with the ICU rules, with a plural case for each category of the target language.

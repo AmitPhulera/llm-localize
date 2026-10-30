@@ -1,10 +1,11 @@
-"""XLIFF 1.2 files, as written by Angular's extract-i18n and most translation tools.
+"""XLIFF 1.2 and 2.0 files, as written by Angular's extract-i18n and most translation tools.
 
-Each ``<trans-unit>`` holds its source and its translation, so like a
-PO file one file is one target language, named by its
-``target-language`` attribute or by ``--lang``. A unit is translated
-when it has no ``<target>``, an empty one, or one in the
-``new``/``needs-translation`` state, and the translation's state becomes
+Each ``<trans-unit>`` (1.2) or ``<segment>`` (2.0) holds its source and
+its translation, so like a PO file one file is one target language,
+named by its ``target-language`` (1.2) or ``trgLang`` (2.0) attribute
+or by ``--lang``. A unit is translated when it has no ``<target>``, an
+empty one, or one in the ``new``/``needs-translation`` (1.2) or
+``initial`` (2.0) state, and the translation's state becomes
 ``translated``. Inline elements like ``<x/>``, ``<ph/>`` and ``<g>``
 must be kept with their attributes. Units marked ``translate="no"`` are
 skipped. The file is edited in place, so everything else stays as it was.
@@ -155,6 +156,9 @@ class XliffFile(TranslationFile):
                 start_tag = _with_namespaces(b"<" + name + state + b">", segment.namespaces)
                 element = newline + start_tag + text + b"</" + name + b">"
                 replacements.append((segment.source_end, segment.source_end, element))
+            if parsed.version == "2" and segment.segment_tag:
+                start, end = segment.segment_tag
+                replacements.append((start, end, set_attribute(data[start:end], b"state", b"translated")))
         write_file(self.path, from_utf8(splice(data, replacements), parsed.encoding, parsed.bom))
 
 
@@ -264,6 +268,7 @@ def _read(path):
         untranslatable.append(attrs.get("translate", "no" if inherited else "yes") == "no")
         if name == "xliff":
             parsed.version = "2" if attrs.get("version", "").startswith("2") else "1"
+            parsed.target_language = attrs.get("trgLang") or parsed.target_language
         elif name == "file" and attrs.get("target-language"):
             language = attrs["target-language"]
             if parsed.target_language and parsed.target_language.lower() != language.lower():
@@ -274,6 +279,9 @@ def _read(path):
             unit.clear()
             unit.update(id=attrs.get("id", ""), skip=untranslatable[-1], notes=[], segments=0,
                         state=None, segment_tag=None, read=[])
+        elif name == "segment" and open_elements["unit"]:
+            unit["segment_tag"] = (start_index, inner_start)
+            unit["state"] = attrs.get("state")
         elif name in ("source", "target") and _in_segment(parent) and (open_elements["trans-unit"]
                                                                          or open_elements["unit"]):
             if name == "source":

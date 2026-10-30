@@ -4,6 +4,7 @@ from xml.parsers import expat
 
 import pytest
 
+from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 from llm_localize.formats.xml_utils import line_indent
@@ -38,6 +39,31 @@ XLIFF_1 = '''<?xml version="1.0" encoding="UTF-8" ?>
         <source>{VAR_PLURAL, plural, =0 {none} one {one item} other {<x id="INTERPOLATION"/> items}}</source>
       </trans-unit>
     </body>
+  </file>
+</xliff>
+'''
+
+XLIFF_2 = '''<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="2.0" xmlns="urn:oasis:names:tc:xliff:document:2.0" srcLang="en" trgLang="de">
+  <file id="ngi18n" original="ng.template">
+    <unit id="welcome">
+      <notes>
+        <note category="description">Greeting</note>
+      </notes>
+      <segment state="initial">
+        <source>Hello <ph id="0" equiv="INTERPOLATION" disp="{{ name }}"/>!</source>
+      </segment>
+    </unit>
+    <unit id="done">
+      <segment state="final">
+        <source>Done</source>
+        <target>Fertig</target>
+      </segment>
+    </unit>
+    <unit id="two">
+      <segment><source>First.</source></segment>
+      <segment><source>Second.</source><target></target></segment>
+    </unit>
   </file>
 </xliff>
 '''
@@ -120,6 +146,43 @@ class TestXliff1:
 
         with pytest.raises(ValueError, match="pass it with --lang"):
             open_file(path).untranslated_units()
+
+
+class TestXliff2:
+
+    def test_translates_in_place(self, xliff):
+        path = xliff(XLIFF_2, "messages.de.xlf")
+
+        result = translate_file(open_file(path), FakeClient(), "de")
+
+        assert result.translated == 3
+        # Segments without a state are initial ones, and become translated
+        assert path.read_text(encoding="utf-8") == XLIFF_2.replace(
+            '<segment state="initial">', '<segment state="translated">',
+        ).replace(
+            "<segment><source>", '<segment state="translated"><source>',
+        ).replace(
+            '"{{ name }}"/>!</source>\n',
+            '"{{ name }}"/>!</source>\n        <target>T: Hello <ph id="0" equiv="INTERPOLATION" '
+            'disp="{{ name }}"/>!</target>\n',
+        ).replace(
+            "<source>First.</source>", "<source>First.</source><target>T: First.</target>",
+        ).replace(
+            "<target></target>", "<target>T: Second.</target>",
+        )
+
+    def test_units_and_context(self, xliff):
+        units = open_file(xliff(XLIFF_2, "messages.de.xlf")).untranslated_units()
+
+        assert [(unit.key, unit.context) for unit in units] == [
+            ("welcome#1", "Greeting; ID: welcome"), ("two#1", "ID: two"), ("two#2", "ID: two")]
+
+    def test_cli(self, xliff, capsys):
+        path = xliff(XLIFF_2, "messages.de.xlf")
+
+        assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+        assert capsys.readouterr().out == f"{path} (de): translated 3 of 3\n"
 
 
 def test_prefixed_empty_target(xliff):
