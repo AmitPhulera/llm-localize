@@ -160,6 +160,9 @@ class MarkdownFile(MonolingualFile):
         if source in self._parser.inline_texts and source not in self._parser.block_texts:
             return super().find_problem(source_text, translation_text)
         source_lines, translation_lines = _without_containers(source_text), _without_containers(translation_text)
+        # A definition added in a block would make [label] link wherever it says
+        if _definitions(translation_lines) != _definitions(source_lines):
+            return "links"
         # A fence added in a block would make the rest of the document code
         if _fences(translation_lines) != _fences(source_lines):
             return "code blocks"
@@ -566,6 +569,24 @@ def _fences(lines):
 def _headings(lines):
     """Return how many of a block's lines, without containers, are headings, or make the line above one."""
     return sum(bool(HEADING_RE.match(line) or SETEXT_RE.match(line)) for line in lines.splitlines())
+
+
+def _definitions(lines):
+    r"""Return the link reference and footnote definitions in a block's lines without containers, like ``[a]: /x``.
+
+    Each is its label, and a link's destination; a footnote's text and a
+    link's title are text to translate.
+
+    A definition's title or label may go on over several lines, so one the
+    translation adds can't hide that way; ``[Note]: see below`` is text.
+
+    >>> block = "[a]: </x y> 'A'\n> [b]:\n> /y\n- [^c]: note\nplain\n[the\ndocs]: /z 'Long\ntitle'"
+    >>> sorted(_definitions(_without_containers(block)))
+    ['[^c]', '[a]: </x y>', '[b]: /y', '[the docs]: /z']
+    """
+    return Counter(f"[{label}]" if label.startswith("^") else f"[{label}]: {destination}"
+                   for label, destination in _definition_starts(lines)
+                   if label.startswith("^") or destination is not None)
 
 
 def _definition_starts(text):

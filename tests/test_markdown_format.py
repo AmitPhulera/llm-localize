@@ -376,6 +376,22 @@ def test_untrusted_documents_take_linear_time(tmp_path, text):
     assert time.perf_counter() - started < 2
 
 
+def test_a_translation_cant_add_a_link_definition(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("Hello", "[click]\n\n[click]: //evil.example") == "links"
+    assert markdown.find_problem("Hello", "Bonjour\n[^9]: injected") == "links"
+    # With its destination on the next line
+    assert markdown.find_problem("Hello", "[click]\n\n[click]:\n  //evil.example") == "links"
+    # Behind brackets that only look like a link
+    assert markdown.find_problem("See [the guide](guide.md).",
+                                 "Voir [le guide](guide.md [connexion](//evil.example) ici.") == "links"
+    # With an escaped bracket in its label, a title or a label over two lines
+    assert markdown.find_problem("Hello \\] \\]", "[x\\]]\n\n[x\\]]: //evil.example") == "links"
+    assert markdown.find_problem("Hello", '[docs]: //evil.example "Bonjour\nmonde"\nSalut') == "links"
+    assert markdown.find_problem("Hello", "[the\ndocs]: //evil.example\nSalut") == "links"
+
+
 def test_an_escaped_tag_cant_lose_its_backslash(docs):
     markdown = open_file(docs / "fr" / "guide.md")
 
@@ -434,6 +450,14 @@ def test_link_candidates_sharing_spaces_take_linear_time(docs):
     started = time.perf_counter()
     open_file(docs / "fr" / "guide.md").find_problem(text, text)
     assert time.perf_counter() - started < 1
+
+
+def test_footnote_text_in_a_block_is_translated(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("Quote[^1].\n[^1]: The note.", "Citation[^1].\n[^1]: La note.") is None
+    assert markdown.find_problem("Quote.\n[a]: /x 'Title'", "Citation.\n[a]: /x 'Titre'") is None
+    assert markdown.find_problem("Quote.\n[a]: /x", "Citation.\n[a]: //evil.example") == "links"
 
 
 def test_a_label_and_colon_before_text_is_a_paragraph(tmp_path):
@@ -503,6 +527,12 @@ def test_lines_opening_brackets_take_linear_time(tmp_path):
     started = time.perf_counter()
     open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
     assert time.perf_counter() - started < 2
+
+
+def test_a_label_and_colon_before_text_may_be_translated(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("[Deprecated]: use the new API.", "[Obsolète] : utilisez la API.") is None
 
 
 def test_a_title_from_the_next_line_takes_the_lines_it_spans(tmp_path):
@@ -670,6 +700,15 @@ def test_an_escaped_backtick_cant_turn_code_into_html(docs):
     assert markdown.find_problem("`<img src=x onerror=alert(1)>`", "\\`<img src=x onerror=alert(1)>`") is not None
 
 
+@pytest.mark.parametrize("translation", [
+    "[click]\n\n> [click]: //evil.example",
+    "[click]\n\n- [click]: //evil.example",
+    "[click]\n\n1. [click]: //evil.example",
+])
+def test_a_translation_cant_add_a_link_definition_in_a_container(docs, translation):
+    assert open_file(docs / "fr" / "guide.md").find_problem("Hello", translation) == "links"
+
+
 def test_collapsed_references_keep_their_label(tmp_path):
     (tmp_path / "s.md").write_text("[Alpha][] and [Beta][]\n\n[Alpha]: /safe\n[Beta]: /evil\n", encoding="utf-8")
     markdown = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md")
@@ -731,10 +770,3 @@ def test_an_escape_naming_no_character_is_left_as_written(tmp_path):
     units = open_file(tmp_path / "fr" / "s.md", source_path=tmp_path / "s.md").untranslated_units()
 
     assert units[0].source == "Bad \\UFFFFFFFF"
-
-
-def test_a_link_cant_hide_behind_brackets_that_only_look_like_one(docs):
-    markdown = open_file(docs / "fr" / "guide.md")
-
-    assert markdown.find_problem("See [the guide](guide.md).",
-                                 "Voir [le guide](guide.md [connexion](//evil.example) ici.") == "links"
