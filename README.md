@@ -304,6 +304,7 @@ result.rejected    # why, e.g. Counter({"placeholders": 1})
 
 - A file that holds its translations (PO, XLIFF, `.xcstrings`) comes back filled in. For a file of one language (JSON, Android, `.strings`, Markdown, Word), the upload is the source, and the result is the new language's file.
 - The format comes from the name's extension, or `format="json"`. Only the extension is used: the content goes in a temporary directory under a fixed name.
+- Uploads are untrusted, so files over `max_bytes` (5 MB), or with more than `max_messages` (2000) messages to translate (each plural form counts) raise `ValueError` before any LLM call. Set them on the translator.
 
 As with strings, call it from a background task: a document can take a minute.
 

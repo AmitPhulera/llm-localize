@@ -8,8 +8,9 @@ holds a single language (JSON, Android, .strings, Markdown, Word), the
 upload is the source and the result is the new language's file.
 
 Uploads are untrusted: the content only ever goes in a temporary
-directory under a fixed name, and only the extension of the given name
-is used.
+directory under a fixed name, only the extension of the given name is
+used, and limits on size and message count stop a file before any LLM
+call.
 """
 import tempfile
 from collections import Counter
@@ -84,11 +85,14 @@ class FileTranslator(BaseTranslator):
             pick the format unless ``format`` is given
         :param format: a format name like ``"json"`` or ``"po"``, or a
             dotted path to a ``TranslationFile`` subclass
-        :raises ValueError: for a file that isn't valid in its format
+        :raises ValueError: for a file that's too big, has too many
+            messages (each plural form counts), or isn't valid in its format
         :raises FatalError: for errors every request would hit, like a bad API key
         """
         if isinstance(content, str):
             content = content.encode("utf-8")
+        if len(content) > self.max_bytes:
+            raise ValueError(f"File is {len(content)} bytes; the limit is {self.max_bytes}")
         # Only the name's last part is used, never a path in it
         upload_name = Path(filename).name
         suffix = Path(upload_name).suffix.lower()
@@ -106,17 +110,36 @@ class FileTranslator(BaseTranslator):
             else:
                 output = source
                 translation_file = format_class.open(source, language=language, source_language=source_language)
-            result = translate_file(
-                translation_file, self.client, language,
-                source_language=source_language,
-                batch_size=self.batch_size,
-                workers=self.workers,
-                extra_instructions=self.instructions if instructions is None else instructions,
-            )
-            # A translation is saved as it's made; with nothing translated, a new file is saved now, so
-            # there's always one to return
-            if not output.exists():
-                translation_file.save()
+            # Only the finished file is returned, so it's written once rather than after every batch
+            translation_file.save_after_each_batch = False
+
+            def named(error):
+                # Errors name the temporary file; name the upload instead
+                return ValueError(str(error).replace(str(source), upload_name).replace(str(output), upload_name))
+
+            try:
+                units = translation_file.untranslated_units()
+            except (OSError, ValueError) as e:
+                raise named(e) from e
+            # Each plural form is translated separately, so each counts
+            count = sum(len(unit.plural_forms) or 1 for unit in units)
+            if count > self.max_messages:
+                raise ValueError(f"File has {count} messages to translate; the limit is {self.max_messages}")
+            try:
+                result = translate_file(
+                    translation_file, self.client, language,
+                    source_language=source_language,
+                    batch_size=self.batch_size,
+                    workers=self.workers,
+                    extra_instructions=self.instructions if instructions is None else instructions,
+                )
+                # A translation is saved as it's made; with nothing translated, a new file is saved now, so
+                # there's always one to return
+                if not output.exists():
+                    translation_file.save()
+            except ValueError as e:
+                # Like a PO file msgfmt rejects after translating
+                raise named(e) from e
             return FileTranslation(
                 content=output.read_bytes(),
                 untranslated=result.untranslated,
