@@ -152,6 +152,15 @@ def test_the_source_itself_is_left_alone(tmp_path):
     assert (result.untranslated, path.read_bytes()) == (0, before)
 
 
+def test_entities_are_refused(tmp_path):
+    body = DOCUMENT.split("?>", 1)[1].replace("Install", "&e;&e;&e;")
+    with zipfile.ZipFile(tmp_path / "report.docx", "w") as package:
+        package.writestr("word/document.xml", f'<!DOCTYPE d [<!ENTITY e "{"x" * 1000}">]>{body}')
+
+    with pytest.raises(ValueError, match="has a DOCTYPE"):
+        open_file(tmp_path / "fr" / "report.docx").untranslated_units()
+
+
 def test_a_failed_save_leaves_no_partial_file(report, monkeypatch):
     path = report.parent / "fr" / "report.docx"
     docx_file = open_file(path)

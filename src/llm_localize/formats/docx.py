@@ -306,6 +306,11 @@ def _paragraphs(part, data):
         if current_text:
             current_text[-1].text += content
 
+    def doctype(*args):
+        # Word never writes one, and its entities could expand a small upload enormously
+        raise ValueError(f"{part} has a DOCTYPE, which Word documents don't use")
+
+    parser.StartDoctypeDeclHandler = doctype
     parser.StartElementHandler = start
     parser.EndElementHandler = end
     parser.CharacterDataHandler = characters
