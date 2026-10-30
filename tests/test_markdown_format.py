@@ -16,6 +16,10 @@ This line wraps.
 
 ## Install
 
+```bash
+acme --help
+```
+
 Setext heading
 --------------
 
@@ -57,6 +61,7 @@ def test_translations_keep_the_structure(docs):
 
     assert result.translated == 4
     text = path.read_text(encoding="utf-8")
+    assert "```bash\nacme --help\n```\n" in text
     assert "T: Setext heading\n--------------\n" in text
 
 
@@ -99,7 +104,8 @@ def test_the_source_itself_is_left_alone(tmp_path):
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_only_line_endings_end_lines(tmp_path, newline):
-    source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", ""])
+    source = newline.join(["# Title", "", "First line second line,", "next\x0cpage", "",
+                           "```", "code\x85here", "```", ""])
     (tmp_path / "s.md").write_text(source, encoding="utf-8", newline="")
     target = tmp_path / "fr" / "s.md"
 

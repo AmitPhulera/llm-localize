@@ -1,9 +1,9 @@
 """Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/guide.md``.
 
 The document is split into blocks: headings and paragraphs. Each block
-is one message, sent with the headings above it as context. Every run
-translates the whole document, since a changed source can't be matched
-to the old translation block by block.
+is one message, sent with the headings above it as context. Code blocks
+are copied as they are. Every run translates the whole document, since a
+changed source can't be matched to the old translation block by block.
 """
 import re
 from functools import cached_property
@@ -12,6 +12,7 @@ from llm_localize.formats.base import write_file
 from llm_localize.formats.monolingual import Message, MonolingualFile
 from llm_localize.units import TranslationUnit
 
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # A heading line; its closing #s, if any, are split off by _heading_parts, which a regex would do in quadratic time
 HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
 SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
@@ -106,9 +107,9 @@ def _heading_parts(match):
 def _parse(text):
     """Split a Markdown document into literal strings and ``_Unit`` blocks, which join back into it.
 
-    >>> pieces = _parse("# Title\\n\\nSome *text*.\\n")
+    >>> pieces = _parse("# Title\\n\\nSome *text*.\\n\\n```py\\nx = 1\\n```\\n")
     >>> [(piece.text, piece.context) if isinstance(piece, _Unit) else piece for piece in pieces]
-    [('Title', ''), '\\n', ('Some *text*.', 'Section: Title')]
+    [('Title', ''), '\\n', ('Some *text*.', 'Section: Title'), '\\n', '```py\\nx = 1\\n```\\n']
     """
     return _Parser(text).parse()
 
@@ -156,11 +157,24 @@ class _Parser:
             line = self.line()
             if not line.strip() or RULE_RE.match(line):
                 self.literal()
+            elif FENCE_RE.match(line):
+                self.fence()
             elif HEADING_RE.match(line):
                 self.atx_heading()
             else:
                 self.paragraph()
         return self.pieces
+
+    def fence(self):
+        marker = FENCE_RE.match(self.line()).group(1)
+        start = self.index
+        self.index += 1
+        while self.index < len(self.lines):
+            current = self.line().strip()
+            self.index += 1
+            if current.startswith(marker[0] * len(marker)) and not current.strip(marker[0]):
+                break
+        self.pieces.append("".join(self.lines[start:self.index]))
 
     def atx_heading(self):
         prefix, title, closing = _heading_parts(HEADING_RE.match(self.line()))
@@ -174,7 +188,7 @@ class _Parser:
         lines = []
         while self.index < len(self.lines):
             current = self.line()
-            if not current.strip() or (lines and HEADING_RE.match(current)):
+            if not current.strip() or (lines and (FENCE_RE.match(current) or HEADING_RE.match(current))):
                 break
             if lines and SETEXT_RE.match(current):
                 # The paragraph was a heading, underlined
