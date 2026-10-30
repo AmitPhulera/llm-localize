@@ -1,12 +1,14 @@
 import codecs
 import json
 import time
+from pathlib import Path
 
 import pytest
 
 from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
+from llm_localize.formats.ios import StringsFile
 
 from .fakes import FakeClient
 
@@ -241,6 +243,19 @@ class TestXcstrings:
         assert main([str(catalog), "--lang", "es", "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
         assert capsys.readouterr().out == f"{catalog} (es): translated 4 of 4\n"
+
+
+@pytest.mark.parametrize("cwd, source, target", [
+    ("", "Base.lproj/sub/Localizable.strings", "hi.lproj/sub/Localizable.strings"),
+    ("Base.lproj", "Localizable.strings", "../hi.lproj/Localizable.strings"),
+    ("en.lproj", "Localizable.strings", "../hi.lproj/Localizable.strings"),
+])
+def test_translation_path_finds_the_lproj_directory(tmp_path, monkeypatch, cwd, source, target):
+    (tmp_path / "Base.lproj" / "sub").mkdir(parents=True)
+    (tmp_path / "en.lproj").mkdir()
+    monkeypatch.chdir(tmp_path / cwd)
+
+    assert StringsFile.translation_path(source, "hi") == Path(target)
 
 
 def test_unfinished_comments_are_refused_in_linear_time(tmp_path):

@@ -16,7 +16,7 @@ from functools import cached_property
 from pathlib import Path
 
 from llm_localize.formats.base import TranslationFile, load_json, splice, write_file
-from llm_localize.formats.monolingual import Message, MonolingualFile
+from llm_localize.formats.monolingual import Message, MonolingualFile, _written_like
 from llm_localize.plurals import plural_categories, plural_forms
 from llm_localize.units import TranslationUnit
 
@@ -42,6 +42,20 @@ class StringsFile(MonolingualFile):
     name = "strings"
     extensions = (".strings",)
     instructions = INSTRUCTIONS
+
+    @classmethod
+    def translation_path(cls, source_path, language, source_language="en"):
+        """``Base.lproj/Localizable.strings`` gives ``hi.lproj/Localizable.strings``, as ``en.lproj`` does.
+
+        The ``.lproj`` directory is the source's nearest, even one the
+        current directory is in.
+        """
+        source = Path(os.path.abspath(source_path))
+        for directory in source.parents:
+            if directory.suffix == ".lproj":
+                target = directory.with_name(f"{language}.lproj") / source.relative_to(directory)
+                return _written_like(target, source_path)
+        return super().translation_path(source_path, language, source_language)
 
     def source_path_candidates(self):
         candidates = list(super().source_path_candidates())
