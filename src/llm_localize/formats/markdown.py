@@ -31,6 +31,7 @@ RAW_HTML_RE = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:[\s>]|$)", re.I
 HTML_BLOCK_RE = re.compile(r"^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*|/[A-Za-z])[\s/>]")
 COMMENT_RE = re.compile(r"^ {0,3}<!--")
 
+BACKTICKS_RE = re.compile(r"`+")
 TAG_RE = re.compile(r"<[^<>]+>")
 
 
@@ -102,6 +103,47 @@ def _read(path):
         parser = _Parser(f.read())
     parser.parse()
     return parser
+
+
+def _code_span_positions(text):
+    r"""Return ``(start, end)`` of each code span: a backtick run, up to the next run as long.
+
+    Found in one pass, as CommonMark pairs runs; a run nothing closes is
+    plain text.
+
+    >>> text = "a `x` b ``y`z`` c ``` d"
+    >>> [text[start:end] for start, end in _code_span_positions(text)]
+    ['`x`', '``y`z``']
+    >>> _code_span_positions(r"\`<b>`"), _code_span_positions(r"`C:\`")
+    ([], [(0, 5)])
+    """
+    runs = []  # (where it starts as an opening run, where it starts as a closing one, where it ends)
+    for match in BACKTICKS_RE.finditer(text):
+        start = match.start()
+        # A backslash makes the backtick after it plain text, so an opening run starts after that one.
+        # In a code span a backslash is plain text, so a closing run is all of its backticks.
+        runs.append((start + _backslashes_before(text, start) % 2, start, match.end()))
+    following, closing = {}, [None] * len(runs)
+    for index in reversed(range(len(runs))):
+        opening, start, end = runs[index]
+        closing[index] = following.get(end - opening) if opening < end else None
+        following[end - start] = index
+    spans, index = [], 0
+    while index < len(runs):
+        if closing[index] is None:
+            index += 1
+            continue
+        spans.append((runs[index][0], runs[closing[index]][2]))
+        index = closing[index] + 1
+    return spans
+
+
+def _backslashes_before(text, index):
+    """Return how many backslashes come right before ``index``; an odd number escapes what's there."""
+    start = index
+    while start and text[start - 1] == "\\":
+        start -= 1
+    return index - start
 
 
 def _heading_parts(match):
