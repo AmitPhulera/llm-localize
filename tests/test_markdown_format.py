@@ -339,6 +339,17 @@ def test_a_heading_stays_on_one_line(tmp_path):
     assert target.read_text(encoding="utf-8") == "# Installer Avant de commencer\n\nTexte.\n"
 
 
+def test_a_carriage_return_in_a_translation_ends_a_line_as_a_newline_does(tmp_path):
+    (tmp_path / "s.md").write_text("# Install\n\n> Note\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                   ScriptedClient([{"0": "Installer\r# Titre", "1": "Remarque\rsuite"}]), "fr")
+
+    # Renderers take a \r alone for a line break: the heading stays on its line, and the quote's lines in it
+    assert target.read_text(encoding="utf-8") == "# Installer # Titre\n\n> Remarque\n> suite\n"
+
+
 def test_unclosed_tags_take_linear_time(tmp_path):
     (tmp_path / "s.md").write_text("<a " + "<" * 200000 + "\n", encoding="utf-8")
 

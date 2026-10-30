@@ -48,7 +48,8 @@ class _Unit:
     def render(self, translation):
         if self.encode:
             translation = self.encode(translation)
-        lines = translation.split("\n")
+        # Split as the document's lines are, so a \r can't start a line without the block's prefix
+        lines = re.split(r"\r\n?|\n", translation)
         # Lines end as the block's last one does, so a document with \r\n line endings keeps them
         newline = "\r\n" if self.suffix.endswith("\r\n") else "\n"
         return self.first_prefix + newline.join(
@@ -470,7 +471,7 @@ class _Parser:
 
 def _one_line(text):
     """Join a translation's lines, for a block that must stay on one line, like a heading."""
-    return text.replace("\r\n", " ").replace("\n", " ")
+    return re.sub(r"\r\n?|\n", " ", text)
 
 
 def _first_table_cell(text):
