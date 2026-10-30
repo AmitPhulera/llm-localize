@@ -4,6 +4,10 @@ The document is split into blocks: headings and paragraphs. Each block
 is one message, sent with the headings above it as context.
 """
 import re
+from functools import cached_property
+
+from llm_localize.formats.monolingual import Message, MonolingualFile
+from llm_localize.units import TranslationUnit
 
 # A heading line; its closing #s, if any, are split off by _heading_parts, which a regex would do in quadratic time
 HEADING_RE = re.compile(r"^( {0,3}#{1,6}[ \t]+)(.*)$")
@@ -21,6 +25,31 @@ class _Unit:
         return self.first_prefix + "\n".join(
             lines[:1] + [self.prefix + line if line else self.prefix.rstrip() for line in lines[1:]]
         ) + self.suffix
+
+
+class MarkdownFile(MonolingualFile):
+    name = "markdown"
+    extensions = (".md", ".markdown")
+
+    @cached_property
+    def _parser(self):
+        return _read(self.source_path)
+
+    @property
+    def _document(self):
+        return self._parser.pieces
+
+    def read_messages(self, path):
+        return {piece.key: Message(text=piece.text, context=piece.context)
+                for piece in _read(path).pieces if isinstance(piece, _Unit)}
+
+    def untranslated_units(self):
+        # The source file itself has nothing to translate, and writing a copy over it would destroy it
+        if self.is_source:
+            return []
+        # Every block, every run: a target can't be matched block by block to a source that changed
+        return [TranslationUnit(key=key, source=message.text, context=message.context)
+                for key, message in self.source_messages.items()]
 
 
 def _read(path):
