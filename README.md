@@ -135,7 +135,7 @@ llm-localize fr/report.docx         # a French copy of report.docx (or en/report
 llm-localize report.fr.docx
 ```
 
-A `.docx` file is a ZIP of XML, read with the standard library. Each paragraph of the body, tables, headers, footers, footnotes and endnotes is one message, with the headings above it as context. Word stores a paragraph as runs of differently formatted text, so a paragraph with several is sent with each run in a tag, `<g1>Click </g1><g2>Save</g2>`, and must come back with the same tags in the same order and no text outside them. Each run then gets its own translated text, so bold, italics and links stay on the right words.
+A `.docx` file is a ZIP of XML, read with the standard library. Each paragraph of the body, tables, headers, footers, footnotes and endnotes is one message, with the headings above it as context. Word stores a paragraph as runs of differently formatted text, so a paragraph with several is sent with each run in a tag, `<g1>Click </g1><g2>Save</g2>`, and must come back with the same tags in the same order and no text outside them. Each run then gets its own translated text, so bold, italics and links stay on the right words. Tabs, breaks, images and fields between runs stay where they are.
 
 Only the text inside each run changes; styles, images and everything else are copied exactly. As with Markdown, every run translates the whole document.
 

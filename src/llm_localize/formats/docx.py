@@ -5,9 +5,10 @@ footers, footnotes and endnotes is one message. Word splits a paragraph
 into runs of differently formatted text (bold, italic, a link), so a
 paragraph with more than one is sent with each run's text in a tag,
 ``<g1>Click </g1><g2>here</g2>``, and each run gets its translated text
-back. Only the text inside ``<w:t>`` elements is changed, by byte
-offset, so the rest of the document is kept exactly. Old binary ``.doc``
-files aren't supported: convert them first, e.g. with LibreOffice's
+back. Tabs, breaks, images and fields between runs stay where they are.
+Only the text inside ``<w:t>`` elements is changed, by byte offset, so
+the rest of the document is kept exactly. Old binary ``.doc`` files
+aren't supported: convert them first, e.g. with LibreOffice's
 ``soffice --headless --convert-to docx``.
 """
 import io
@@ -29,6 +30,11 @@ GROUP_RE = re.compile(r"<g(\d+)>(.*?)</g\1>", re.S)
 GROUP_TAG_RE = re.compile(r"</?g\d+>")
 HEADING_STYLE_RE = re.compile(r"^(?:heading|Heading)\s*(\d)$")
 
+# Elements that sit between runs' text and stay where they are, so text on either side is separate
+SEPARATORS = {"tab", "br", "cr", "drawing", "pict", "object", "fldChar", "instrText", "sym", "ptab",
+              "footnoteReference", "endnoteReference", "commentReference", "noBreakHyphen", "softHyphen",
+              "hyperlink", "fldSimple", "txbxContent"}
+
 
 class _Text:
     """One ``<w:t>``: its name as written, where its start tag and content are, and its text."""
@@ -47,7 +53,7 @@ class _Paragraph:
         self.part = part
         self.groups = []  # each a list of _Text with the same formatting and nothing between them
         self.style = ""
-        self.open_group = None  # the format key of the group text can still be added to
+        self.open_group = None  # (format key, link) of the group text can still be added to
 
     def add(self, text, format_key):
         if self.open_group != format_key or not self.groups:
@@ -237,6 +243,7 @@ def _paragraphs(part, data):
     parser.buffer_text = True
     paragraphs, open_paragraphs, stack = [], [], []
     runs = []  # (format key) of each open run
+    links = []
     current_text = []
 
     def local(tag):
@@ -258,10 +265,15 @@ def _paragraphs(part, data):
             open_paragraphs[-1].style = attrs.get("w:val", "")
         elif name == "r":
             runs.append(b"")
+        elif name == "hyperlink":
+            open_paragraphs[-1].separate()
+            links.append(start_index)
         elif name == "t" and runs:
             text = _Text(start_index, inner_start, data[start_index:inner_start])
-            open_paragraphs[-1].add(text, runs[-1])
+            open_paragraphs[-1].add(text, (runs[-1], links[-1] if links else None))
             current_text.append(text)
+        elif name in SEPARATORS:
+            open_paragraphs[-1].separate()
 
     def end(tag):
         name, start_index, inner_start = stack.pop()
@@ -277,6 +289,10 @@ def _paragraphs(part, data):
             text = current_text.pop()
             text.inner_end = inner_start if self_closing else end_index
             text.self_closing = self_closing
+        if name == "hyperlink" and links:
+            links.pop()
+        if name in SEPARATORS and open_paragraphs:
+            open_paragraphs[-1].separate()
 
     def characters(content):
         if current_text:

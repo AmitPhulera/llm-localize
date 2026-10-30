@@ -64,9 +64,9 @@ def test_paragraphs(report):
     assert [(unit.source, unit.context) for unit in units] == [
         ("Install", ""),
         ("<g1>Click the</g1><g2> Save</g2><g3> button & wait.</g3>", "Section: Install"),
-        ("Name:Value", "Section: Install"),
+        ("<g1>Name:</g1><g2>Value</g2>", "Section: Install"),
         ("<g1>our site</g1><g2> has more.</g2>", "Section: Install"),
-        ("today is the date", "Section: Install"),
+        ("<g1>today</g1><g2> is the date</g2>", "Section: Install"),
         ("Cell", "Section: Install"),
         ("Confidential", ""),
     ]
@@ -88,9 +88,9 @@ def test_translations_go_into_their_runs(report):
     client = ScriptedClient([{
         "0": "Installation",
         "1": "<g1>Cliquez sur le</g1><g2> bouton Enregistrer</g2><g3> et attendez.</g3>",
-        "2": "Nom :Valeur",
+        "2": "<g1>Nom :</g1><g2>Valeur</g2>",
         "3": "<g1>notre site</g1><g2> en dit plus.</g2>",
-        "4": "aujourd'hui est la date",
+        "4": "<g1>aujourd'hui</g1><g2> est la date</g2>",
         "5": "Cellule",
         "6": "Confidentiel & privé",
     }])
@@ -103,6 +103,7 @@ def test_translations_go_into_their_runs(report):
             '<w:r w:rsidR="00B2"><w:t xml:space="preserve"></w:t></w:r>') in document
     assert ('<w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> bouton Enregistrer</w:t></w:r>'
             '<w:r w:rsidR="00D4"><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"></w:t>') in document
+    assert '<w:t xml:space="preserve">Nom :</w:t><w:tab/><w:t xml:space="preserve">Valeur</w:t>' in document
     assert '<w:hyperlink r:id="rId5"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>' \
            '<w:t xml:space="preserve">notre site</w:t>' in document
     assert '<w:t xml:space="preserve">Cellule</w:t></w:r><w:r><w:t xml:space="preserve"></w:t></w:r>' in document
@@ -136,7 +137,7 @@ def test_cli(report, capsys):
     assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
 
     # The fake puts "T: " before the tags, so paragraphs with several runs are rejected
-    assert capsys.readouterr().out == f"{path} (de): translated 5 of 7\n  rejected 2: HTML tags 2\n"
+    assert capsys.readouterr().out == f"{path} (de): translated 3 of 7\n  rejected 4: HTML tags 4\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):
