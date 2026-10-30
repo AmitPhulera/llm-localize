@@ -8,9 +8,15 @@ paragraph with more than one is sent with each run's text in a tag,
 supported: convert them first, e.g. with LibreOffice's ``soffice
 --headless --convert-to docx``.
 """
+import os
+import re
+import zipfile
+import zlib
 from xml.parsers import expat
 
 from llm_localize.formats.xml_utils import tag_end
+
+PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
 
 
 class _Text:
@@ -49,6 +55,36 @@ class _Paragraph:
         if len(texts) == 1:
             return texts[0]
         return "".join(f"<g{index}>{text}</g{index}>" for index, text in enumerate(texts, start=1))
+
+
+def _messages(paragraphs):
+    """Return ``{key: (paragraph, context)}`` for paragraphs with text."""
+    messages, headings = {}, []
+    for index, paragraph in enumerate(paragraphs):
+        text = "".join(paragraph.texts)
+        if not text.strip():
+            continue
+        context = "Section: " + " > ".join(title for _, title in headings) if headings else ""
+        messages[f"{paragraph.part}:{index}"] = (paragraph, context)
+    return messages
+
+
+def _read(path):
+    """Return ``(parts, paragraphs)``: the translatable parts' names, and their paragraphs in order."""
+    if not os.path.exists(path):
+        return [], []
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = [name for name in package.namelist() if PART_RE.match(name)]
+            # The body first, then headers, footers and notes
+            names.sort(key=lambda name: (not name.endswith("document.xml"), name))
+            paragraphs = []
+            for name in names:
+                paragraphs.extend(_paragraphs(name, package.read(name)))
+    # Like a corrupt deflate stream, or ZIP features Python doesn't support
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as e:
+        raise ValueError(f"{path} is not a .docx file: {e}") from e
+    return names, paragraphs
 
 
 def _paragraphs(part, data):
