@@ -448,23 +448,19 @@ def _split_row(line):
     >>> _split_row("| ``y|`z`` | ` | b |")
     ['|', (' ', '``y|`z``', ' '), '|', (' ', '`', ' '), '|', (' ', 'b', ' '), '|']
     """
-    pieces, cell, code_run, index = [], "", "", 0
+    spans = dict(_code_span_positions(line))
+    pieces, cell, index = [], "", 0
     while index < len(line):
+        if index in spans:
+            cell += line[index:spans[index]]
+            index = spans[index]
+            continue
         char = line[index]
-        if char == "\\" and index + 1 < len(line) and not code_run:
+        if char == "\\" and index + 1 < len(line):
             cell += line[index:index + 2]
             index += 2
             continue
-        if char == "`":
-            run = re.match(r"`+", line[index:]).group()
-            if run == code_run:
-                code_run = ""
-            elif not code_run and re.search(rf"(?<!`){run}(?!`)", line[index + len(run):]):
-                code_run = run
-            cell += run
-            index += len(run)
-            continue
-        if char == "|" and not code_run:
+        if char == "|":
             pieces.append(cell)
             pieces.append("|")
             cell = ""
