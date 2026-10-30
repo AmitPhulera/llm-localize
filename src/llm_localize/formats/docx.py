@@ -27,6 +27,7 @@ from llm_localize.units import TranslationUnit, section_context
 PART_RE = re.compile(r"^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$")
 GROUP_RE = re.compile(r"<g(\d+)>(.*?)</g\1>", re.S)
 GROUP_TAG_RE = re.compile(r"</?g\d+>")
+HEADING_STYLE_RE = re.compile(r"^(?:heading|Heading)\s*(\d)$")
 
 
 class _Text:
@@ -136,17 +137,32 @@ def _escape(text):
 
 
 def _messages(paragraphs):
-    """Return ``{key: (paragraph, context)}`` for paragraphs with text."""
-    messages, headings = {}, []
+    """Return ``{key: (paragraph, context)}`` for paragraphs with text, with headings above them as context."""
+    messages, headings, part = {}, [], None
     for index, paragraph in enumerate(paragraphs):
+        if paragraph.part != part:
+            # Headers, footers and notes don't sit under the body's headings
+            headings, part = [], paragraph.part
         text = "".join(paragraph.texts)
         # Text that itself reads like a group tag would split the translation wrongly between runs, or
         # fail the check of them, so a paragraph with such text is left as it is
         if not text.strip() or GROUP_TAG_RE.search(text):
             continue
+        level = _heading_level(paragraph.style)
+        if level:
+            headings = [(lvl, title) for lvl, title in headings if lvl < level]
         context = section_context([title for _, title in headings])
         messages[f"{paragraph.part}:{index}"] = (paragraph, context)
+        if level:
+            headings.append((level, text.strip()))
     return messages
+
+
+def _heading_level(style):
+    if style == "Title":
+        return 1
+    match = HEADING_STYLE_RE.match(style)
+    return int(match.group(1)) + 1 if match else 0
 
 
 def _read(path):
@@ -213,6 +229,7 @@ def _paragraphs(part, data):
         name = local(tag)
         start_index = parser.CurrentByteIndex
         inner_start = tag_end(data, start_index)
+        parent = stack[-1][0] if stack else ""
         stack.append((name, start_index, inner_start))
         if name == "p":
             paragraph = _Paragraph(part)
@@ -220,6 +237,8 @@ def _paragraphs(part, data):
             paragraphs.append(paragraph)
         elif not open_paragraphs:
             return
+        elif name == "pStyle" and parent == "pPr":
+            open_paragraphs[-1].style = attrs.get("w:val", "")
         elif name == "r":
             runs.append(b"")
         elif name == "t" and runs:

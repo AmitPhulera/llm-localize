@@ -63,11 +63,11 @@ def test_paragraphs(report):
 
     assert [(unit.source, unit.context) for unit in units] == [
         ("Install", ""),
-        ("<g1>Click the</g1><g2> Save</g2><g3> button & wait.</g3>", ""),
-        ("Name:Value", ""),
-        ("<g1>our site</g1><g2> has more.</g2>", ""),
-        ("today is the date", ""),
-        ("Cell", ""),
+        ("<g1>Click the</g1><g2> Save</g2><g3> button & wait.</g3>", "Section: Install"),
+        ("Name:Value", "Section: Install"),
+        ("<g1>our site</g1><g2> has more.</g2>", "Section: Install"),
+        ("today is the date", "Section: Install"),
+        ("Cell", "Section: Install"),
         ("Confidential", ""),
     ]
 
