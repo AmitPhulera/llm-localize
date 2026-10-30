@@ -118,6 +118,25 @@ def test_translations_keep_the_structure(docs):
     assert "- [ ] T: Todo item\n" in text
 
 
+@pytest.mark.parametrize("translation, reason", [
+    ("Lancez `pip installer acme`.", "inline code"),
+    ("Lancez `pip install acme`.", None),
+    ("Lisez le [guide](https://example.com/guide-fr) ou la [FAQ][faq].", "links"),
+    ("Lisez le [guide](https://example.com/guide) ou la [FAQ][foire].", "links"),
+    ("Lisez le [mode d'emploi](https://example.com/guide) ou la [foire aux questions][faq].", None),
+    ("Un <b>gras</b> perdu", "HTML tags"),
+])
+def test_find_problem(docs, translation, reason):
+    markdown_file = open_file(docs / "fr" / "guide.md")
+    source = {
+        "Lancez": "Run `pip install acme`.",
+        "Lisez": "Read the [guide](https://example.com/guide) or the [FAQ][faq].",
+        "Un": "A <i>bold</i> loss",
+    }[translation.split()[0]]
+
+    assert markdown_file.find_problem(source, translation) == reason
+
+
 @pytest.mark.parametrize("target, source", [
     ("docs/fr/guide.md", "docs/guide.md"),
     ("docs/guide.fr.md", "docs/guide.md"),
@@ -179,6 +198,20 @@ def test_code_inside_a_list_item_is_not_translated(tmp_path):
     units = open_file(tmp_path / "fr" / "guide.md").untranslated_units()
 
     assert [unit.source for unit in units] == ["Example", "More about it."]
+
+
+def test_label_order_is_explained(docs):
+    assert "in the order they come in the source" in open_file(docs / "fr" / "guide.md").instructions
+
+
+@pytest.mark.parametrize("source, translation, reason", [
+    ("Read [guide](docs/a_(b).md)", "Lisez [guide](docs/a_(b).evil)", "links"),
+    ("Read [guide](docs/a_(b).md)", "Lisez le [guide](docs/a_(b).md)", None),
+    ('Read [guide](https://x.example "Guide")', 'Lisez [guide](https://x.example "Mode d\'emploi")', None),
+    ("See [one][a] and [two][b].", "Voir [un][b] et [deux][a].", "links"),
+])
+def test_links_keep_their_targets(docs, source, translation, reason):
+    assert open_file(docs / "fr" / "guide.md").find_problem(source, translation) == reason
 
 
 def test_table_cells_keep_code_spans_of_several_backticks(tmp_path):
@@ -310,6 +343,7 @@ def test_a_title_translated_with_a_line_break_stays_one_value(tmp_path):
 
 
 @pytest.mark.parametrize("text", [
+    "a " + "`" * 20000,  # backtick runs nothing closes
     "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
     ">\n" * 20000 + "> text\n" + ">\n" * 20000,  # a blockquote's blank lines
     "| " + "`a" * 50000 + " |\n|---|\n",  # a table row full of backticks
@@ -389,6 +423,13 @@ def test_front_matter_takes_linear_time(tmp_path):
     assert units[0].source == "A" + " " * 200000 + "B"
 
 
+def test_a_code_span_may_end_with_a_backslash(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("Open `C:\\`", "Ouvrez `C:\\`") is None
+    assert markdown.find_problem("Open `C:\\`", "Ouvrez `D:\\`") == "inline code"
+
+
 def test_a_heading_stays_on_one_line(tmp_path):
     (tmp_path / "s.md").write_text("# Install\n\nText.\n", encoding="utf-8")
     target = tmp_path / "fr" / "s.md"
@@ -419,6 +460,12 @@ def test_front_matter_values_yaml_would_read_as_other_types_are_quoted(tmp_path,
                    ScriptedClient([{"0": value, "1": "Texte."}]), "fr")
 
     assert target.read_text(encoding="utf-8").startswith(f'---\ntitle: "{value}"\n---\n')
+
+
+def test_an_escaped_backtick_cant_turn_code_into_html(docs):
+    markdown = open_file(docs / "fr" / "guide.md")
+
+    assert markdown.find_problem("`<img src=x onerror=alert(1)>`", "\\`<img src=x onerror=alert(1)>`") is not None
 
 
 def test_unclosed_tags_take_linear_time(tmp_path):

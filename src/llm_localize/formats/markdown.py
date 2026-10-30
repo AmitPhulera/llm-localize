@@ -8,6 +8,7 @@ they are. Every run translates the whole document, since a changed
 source can't be matched to the old translation block by block.
 """
 import re
+from collections import Counter
 from functools import cached_property
 
 from llm_localize.formats.base import write_file
@@ -47,11 +48,13 @@ COMMENT_RE = re.compile(r"^ {0,3}<!--")
 FRONT_MATTER_KEY_RE = re.compile(rf"^({'|'.join(FRONT_MATTER_KEYS)})([ \t]*:[ \t]*)")
 FRONT_MATTER_COMMENT_RE = re.compile(r"[ \t]+#")
 
+
 BACKTICKS_RE = re.compile(r"`+")
 # Plain YAML values a loader reads as something else, like a boolean or a number
 YAML_IMPLICIT_RE = re.compile(r"(?i)~|null|true|false|yes|no|on|off|y|n|[-+]?\.?(?:inf|nan)"
                               r"|[-+]?(?:\d[\d_]*(?:\.[\d_]*)?|\.\d+)(?:e[-+]?\d+)?|0[box][\da-f_]+"
                               r"|\d{4}-\d\d?-\d\d?(?:[ tT].*)?")
+LINK_LABEL_RE = re.compile(r"\]\[([^\]]*)\]|\[\^([^\]]+)\]")
 TAG_RE = re.compile(r"<[^<>]+>")
 
 
@@ -78,6 +81,15 @@ class _Unit:
 class MarkdownFile(MonolingualFile):
     name = "markdown"
     extensions = (".md", ".markdown")
+    instructions = (
+        "Messages are blocks of a Markdown document, with the headings above them as context. Keep the "
+        "Markdown syntax: emphasis markers, `inline code` (never translate inside backticks), link and "
+        "image targets in (...), reference labels in [...], footnote markers like [^1], and HTML tags. "
+        "Translate link text and image alt text, but not text in [...] that's a reference to a link defined "
+        "elsewhere. Keep reference labels and footnote markers in the order they come in the source, "
+        "rewording the sentence if needed, since each one is checked against its position. Keep line breaks "
+        "within a block."
+    )
 
     def source_path_candidates(self):
         yield from super().source_path_candidates()
@@ -104,6 +116,18 @@ class MarkdownFile(MonolingualFile):
         # Every block, every run: a target can't be matched block by block to a source that changed
         return [TranslationUnit(key=key, source=message.text, context=message.context)
                 for key, message in self.source_messages.items()]
+
+    def find_problem(self, source, translation):
+        source_spans, source_text = _split_code(source)
+        translation_spans, translation_text = _split_code(translation)
+        if Counter(source_spans) != Counter(translation_spans):
+            return "inline code"
+        if Counter(_link_targets(source_text)) != Counter(_link_targets(translation_text)):
+            return "links"
+        # In order, so [one][a] and [two][b] can't become [un][b] and [deux][a]
+        if LINK_LABEL_RE.findall(source_text) != LINK_LABEL_RE.findall(translation_text):
+            return "links"
+        return super().find_problem(source_text, translation_text)
 
     @cached_property
     def _applied(self):
@@ -275,6 +299,21 @@ def _code_span_positions(text):
         spans.append((runs[index][0], runs[closing[index]][2]))
         index = closing[index] + 1
     return spans
+
+
+def _split_code(text):
+    """Return ``(code spans, text)``: the spans, and the text with each blanked out, so placeholders and links
+    inside them aren't checked.
+
+    >>> _split_code("Run `ls` or `dir`.")
+    (['`ls`', '`dir`'], 'Run `` or ``.')
+    """
+    spans, pieces, previous = [], [], 0
+    for start, end in _code_span_positions(text):
+        spans.append(text[start:end])
+        pieces.append(text[previous:start] + "``")
+        previous = end
+    return spans, "".join(pieces) + text[previous:]
 
 
 def _backslashes_before(text, index):
