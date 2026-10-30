@@ -26,6 +26,9 @@ class TranslationFile(abc.ABC):
     instructions = ""
     # False for formats whose save rewrites something big, like a whole archive: saved once at the end
     save_after_each_batch = True
+    # True for formats whose target is a whole copy of the source, like a Markdown document, written
+    # even when nothing in it is translated yet
+    copies_the_source = False
 
     def __init__(self, path):
         self.path = str(path)

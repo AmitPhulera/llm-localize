@@ -7,7 +7,7 @@ from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
 from llm_localize.formats.markdown import MarkdownFile
 
-from .fakes import FakeClient, ScriptedClient
+from .fakes import FailingClient, FakeClient, ScriptedClient
 
 GUIDE = '''---
 title: "Getting started"
@@ -700,6 +700,37 @@ def test_many_labels_are_checked_quickly(tmp_path):
     problems = {markdown.find_problem(f"See [l{i}].", f"Voir [l{i}].") for i in range(labels)}
     assert problems == {None} and time.perf_counter() - started < 2
     assert markdown.find_problem("See [l1].", "Voir [l2].") == "links"
+
+
+def test_a_copy_is_written_even_when_every_block_is_rejected(tmp_path):
+    (tmp_path / "s.md").write_text("# Hi {name}\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    result = translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                            ScriptedClient([{"0": "Salut"}]), "fr")
+
+    assert (result.translated, dict(result.rejected)) == (0, {"placeholders": 1})
+    assert target.read_text(encoding="utf-8") == "# Hi {name}\n"
+
+
+def test_a_run_whose_batches_all_fail_keeps_the_existing_copy(tmp_path):
+    (tmp_path / "s.md").write_text("# Hello\n\nSome text.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+    translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(prefix="FR: "), "fr")
+
+    result = translate_file(open_file(target, source_path=tmp_path / "s.md"), FailingClient("k"), "fr")
+
+    assert result.failed_batches == 1
+    assert target.read_text(encoding="utf-8") == "# FR: Hello\n\nFR: Some text.\n"
+
+
+def test_a_document_with_nothing_to_translate_is_copied(tmp_path):
+    (tmp_path / "s.md").write_text("```\ncode\n```\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"), FakeClient(), "fr")
+
+    assert target.read_text(encoding="utf-8") == "```\ncode\n```\n"
 
 
 def test_an_escaped_backtick_cant_turn_code_into_html(docs):

@@ -188,6 +188,8 @@ class MarkdownFile(MonolingualFile):
     def apply(self, key, translation):
         self._applied[key] = translation
 
+    copies_the_source = True
+
     def save(self):
         """Write the translated copy: every block's translation, or its source text if it has none yet."""
         text = "".join(

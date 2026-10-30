@@ -8,6 +8,7 @@ validation are dropped, counted by reason, and retried on the next run.
 """
 import json
 import logging
+import os
 import re
 import threading
 from collections import Counter
@@ -303,6 +304,10 @@ def translate_file(translation_file, client, language, source_language="en", bat
             finally:
                 if applied and not translation_file.save_after_each_batch:
                     translation_file.save()
+    # A document's copy is written even when nothing in it was translated: the source's text, for now. An
+    # existing copy is left as it is, so a run whose batches all fail can't undo an earlier one's work.
+    if not applied and translation_file.copies_the_source and not os.path.exists(translation_file.path):
+        translation_file.save()
 
     if cleanup:
         result.cleared = translation_file.cleanup()
