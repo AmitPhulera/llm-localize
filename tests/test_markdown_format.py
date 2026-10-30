@@ -2,8 +2,10 @@ import time
 
 import pytest
 
+from llm_localize.cli import main
 from llm_localize.engine import translate_file
 from llm_localize.formats import open_file
+from llm_localize.formats.markdown import MarkdownFile
 
 from .fakes import FakeClient
 
@@ -18,8 +20,8 @@ This line wraps.
 
 @pytest.fixture
 def docs(tmp_path):
-    (tmp_path / "docs" / "en").mkdir(parents=True)
-    (tmp_path / "docs" / "en" / "guide.md").write_text(GUIDE, encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "guide.md").write_text(GUIDE, encoding="utf-8")
     return tmp_path / "docs"
 
 
@@ -50,6 +52,33 @@ def test_translations_keep_the_structure(docs):
     assert result.translated == 3
     text = path.read_text(encoding="utf-8")
     assert "# T: Getting started\n\nT: Welcome to **Acme**." in text
+
+
+@pytest.mark.parametrize("target, source", [
+    ("docs/fr/guide.md", "docs/guide.md"),
+    ("docs/guide.fr.md", "docs/guide.md"),
+    ("docs/fr/guide.md", "docs/en/guide.md"),
+])
+def test_source_from_path(tmp_path, target, source):
+    (tmp_path / source).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / source).write_text("# Hi\n")
+
+    markdown_file = open_file(tmp_path / target, source_language="en")
+
+    assert (markdown_file.language, markdown_file.source_path) == ("fr", str(tmp_path / source))
+
+
+def test_a_path_without_a_language_needs_a_source(docs):
+    with pytest.raises(ValueError, match="pass it with --source"):
+        MarkdownFile(docs / "guide.md", language="fr").untranslated_units()
+
+
+def test_cli(docs, capsys):
+    path = docs / "de" / "guide.md"
+
+    assert main([str(path), "--provider", "tests.fakes.FakeClient", "--api-key", "k"]) == 0
+
+    assert capsys.readouterr().out == f"{path} (de): translated 3 of 3\n"
 
 
 def test_the_source_itself_is_left_alone(tmp_path):

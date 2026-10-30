@@ -115,12 +115,12 @@ Each unit holds its source and translation, so like a PO file, one file is one l
 ### Markdown
 
 ```bash
-llm-localize docs/fr/guide.md                      # from docs/en/guide.md
-llm-localize docs/guide.fr.md                      # from docs/guide.en.md
+llm-localize docs/fr/guide.md                      # from docs/en/guide.md, or docs/guide.md
+llm-localize docs/guide.fr.md                      # from docs/guide.en.md, or docs/guide.md
 llm-localize translated/guide.md --lang fr --source docs/guide.md
 ```
 
-The target path names the language, as for JSON, and the source is the same path with the source language.
+The target path names the language, as for JSON, and the source is the same path with the source language, or with no language at all.
 
 - The document is split into blocks: headings and paragraphs. Each is sent with the headings above it as context.
 - Translating the source file itself, as a glob might, does nothing.

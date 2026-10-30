@@ -1,4 +1,4 @@
-"""Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/en/guide.md``.
+"""Markdown documents, translated into a copy per language, like ``docs/fr/guide.md`` from ``docs/guide.md``.
 
 The document is split into blocks: headings and paragraphs. Each block
 is one message, sent with the headings above it as context. Every run
@@ -35,6 +35,12 @@ class _Unit:
 class MarkdownFile(MonolingualFile):
     name = "markdown"
     extensions = (".md", ".markdown")
+
+    def source_path_candidates(self):
+        yield from super().source_path_candidates()
+        # Also without the language: docs/fr/guide.md and guide.fr.md from docs/guide.md and guide.md
+        if self.path_without_language():
+            yield self.path_without_language()
 
     @cached_property
     def _parser(self):

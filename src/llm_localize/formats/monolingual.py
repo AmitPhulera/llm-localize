@@ -93,6 +93,24 @@ class MonolingualFile(TranslationFile):
             parts[part_index] = ".".join(tokens)
             yield Path(*parts)
 
+    def path_without_language(self):
+        """Return the path with its language code taken out, as a source might be named, or None.
+
+        ``docs/fr/guide.md`` gives ``docs/guide.md``, and ``guide.fr.md`` gives ``guide.md``.
+        """
+        match = self._language_in_path()
+        if not match:
+            return None
+        part_index, token_index, _ = match
+        parts = list(Path(self.path).parts)
+        tokens = parts[part_index].split(".")
+        if len(tokens) == 1:
+            del parts[part_index]
+        else:
+            del tokens[token_index]
+            parts[part_index] = ".".join(tokens)
+        return Path(*parts)
+
     def _language_in_path(self):
         """Return ``(part index, token index, code)`` for the language code in the path, or None.
 
