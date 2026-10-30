@@ -26,6 +26,7 @@ from llm_localize.formats.xml_utils import (
     line_indent,
     open_tag,
     tag_end,
+    to_utf8,
 )
 
 NAMESPACE_RE = re.compile(r"""\sxmlns:([\w.-]+)\s*=\s*("[^"]*"|'[^']*')""")
@@ -448,6 +449,9 @@ def _read(path):
     # An empty file, as an editor or touch makes, is a target with nothing in it yet
     if not data.strip():
         return _Resources()
+    # Read as bytes, assumed to be UTF-8, as Android's own tools require
+    if to_utf8(data, path)[1]:
+        raise ValueError(f"{path} is not UTF-8, which Android resource files must be")
     resources = _Resources(data)
     parser = expat.ParserCreate("utf-8")
     stack = []

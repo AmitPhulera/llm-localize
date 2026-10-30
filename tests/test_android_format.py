@@ -284,6 +284,16 @@ def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
                                                   '<resources>\n</resources>\n')
 
 
+def test_a_file_in_another_encoding_is_refused(tmp_path):
+    source = tmp_path / "res" / "values" / "strings.xml"
+    source.parent.mkdir(parents=True)
+    # Read as UTF-8, its translation would come out garbled
+    source.write_bytes(SOURCE.replace('encoding="utf-8"', 'encoding="utf-16"').encode("utf-16"))
+
+    with pytest.raises(ValueError, match="strings.xml is not UTF-8"):
+        open_file(tmp_path / "res" / "values-fr" / "strings.xml").untranslated_units()
+
+
 def test_an_existing_target_gets_the_entities_its_translations_use(tmp_path):
     write(tmp_path / "res" / "values" / "strings.xml", '<?xml version="1.0" encoding="utf-8"?>\n'
           '<!DOCTYPE resources [<!ENTITY appname "Notes">]>\n'
