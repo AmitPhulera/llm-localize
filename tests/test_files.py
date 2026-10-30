@@ -114,6 +114,33 @@ def test_limits(content, options, message):
     assert client.calls == []
 
 
+def test_zip_bomb():
+    upload = io.BytesIO()
+    with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr("word/document.xml", "0" * 2_000)
+
+    with pytest.raises(ValueError, match="unpacks to 2000 bytes; the limit is 1000"):
+        translator_with(max_unpacked_bytes=1000).translate(upload.getvalue(), "big.docx", "fr")
+
+
+@pytest.mark.parametrize("damage", ["deflate", "version"])
+def test_a_corrupt_zip_raises_value_error(damage):
+    upload = io.BytesIO()
+    with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr("word/document.xml", "<w:document/>" * 100)
+    data = bytearray(upload.getvalue())
+    if damage == "deflate":
+        start = data.index(b"word/document.xml") + len("word/document.xml")
+        data[start:start + 8] = b"\xff" * 8
+    else:
+        # A ZIP version Python can't read
+        central = data.index(b"PK\x01\x02")
+        data[central + 6:central + 8] = (99).to_bytes(2, "little")
+
+    with pytest.raises(ValueError, match="not a valid ZIP archive|not a .docx file"):
+        translator_with().translate(bytes(data), "report.docx", "fr")
+
+
 def test_unknown_format():
     with pytest.raises(ValueError, match="No translation format registered for notes.txt"):
         translator_with().translate(b"x", "notes.txt", "fr")

@@ -9,10 +9,11 @@ upload is the source and the result is the new language's file.
 
 Uploads are untrusted: the content only ever goes in a temporary
 directory under a fixed name, only the extension of the given name is
-used, and limits on size and message count stop a file before any LLM
-call.
+used, and limits on size, archive size and message count stop a file
+before any LLM call.
 """
 import tempfile
+import zipfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,6 +104,7 @@ class FileTranslator(BaseTranslator):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / f"source{suffix}"
             source.write_bytes(content)
+            self._check_archive(source)
             if issubclass(format_class, MonolingualFile):
                 output = Path(directory) / f"translation{suffix}"
                 translation_file = format_class.open(output, language=language, source_language=source_language,
@@ -148,3 +150,15 @@ class FileTranslator(BaseTranslator):
                 rejected=result.rejected,
                 errors=result.errors,
             )
+
+    def _check_archive(self, path):
+        """Refuse a ZIP whose contents unpack to more than ``max_unpacked_bytes``, like a zip bomb."""
+        if not zipfile.is_zipfile(path):
+            return
+        try:
+            with zipfile.ZipFile(path) as archive:
+                size = sum(info.file_size for info in archive.infolist())
+        except (zipfile.BadZipFile, NotImplementedError, EOFError, ValueError) as e:
+            raise ValueError(f"File is not a valid ZIP archive: {e}") from e
+        if size > self.max_unpacked_bytes:
+            raise ValueError(f"File unpacks to {size} bytes; the limit is {self.max_unpacked_bytes}")
