@@ -68,7 +68,9 @@ class StringsFile(MonolingualFile):
             if key in existing:
                 replacements.append((*existing[key]["value_span"], _quote(translation)))
             else:
-                comment = f"/* {comments[key]} */\n" if comments.get(key) else ""
+                # A comment holding */, which a // comment may, can't be written as /* ... */
+                comment = comments.get(key, "")
+                comment = f"// {comment}\n" if "*/" in comment else f"/* {comment} */\n" if comment else ""
                 additions.append(f"\n{comment}{_quote(key)} = {_quote(translation)};\n")
         addition = "".join(additions)
         if not text:

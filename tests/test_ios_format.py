@@ -115,6 +115,16 @@ def test_unfinished_comments_are_refused_in_linear_time(tmp_path):
     assert time.perf_counter() - started < 1
 
 
+def test_a_line_comment_holding_the_end_of_a_block_comment_stays_a_line_comment(tmp_path):
+    write(tmp_path / "en.lproj" / "Localizable.strings", '// Use */ to close a comment\n"hello" = "Hello";\n')
+    target = tmp_path / "fr.lproj" / "Localizable.strings"
+
+    translate_file(open_file(target), FakeClient(), "fr")
+
+    assert target.read_text(encoding="utf-8") == '// Use */ to close a comment\n"hello" = "T: Hello";\n'
+    assert open_file(target).untranslated_units() == []
+
+
 def test_lines_of_line_comments_are_one_comment(tmp_path):
     write(tmp_path / "en.lproj" / "Localizable.strings",
           '/* File */\n// Submit button\n// on the form\n"a" = "Submit";\n')
