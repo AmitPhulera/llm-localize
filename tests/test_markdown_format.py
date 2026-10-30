@@ -399,6 +399,9 @@ def test_a_link_inside_another_keeps_the_outer_one_text(docs):
                                  "[extérieur](//evil.example) [intérieur](/safe)") == "links"
     assert markdown.find_problem("![outer [inner](/safe)](cat.png)", "![extérieur [intérieur](/safe)](cat.png)") \
         is None
+    # A link's text may hold an image, so that one is a link
+    assert markdown.find_problem("[outer [inner](/safe)](//evil.example)",
+                                 "[extérieur ![intérieur](/safe)](//evil.example)") == "links"
 
 
 def test_a_link_holding_a_link_to_a_definition_keeps_the_outer_one_text(docs):

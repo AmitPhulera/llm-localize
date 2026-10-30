@@ -406,7 +406,9 @@ def _link_targets(text, labels=frozenset()):
             close = title_close if real else close
         if real:
             covered = close
-            links.append(match.start())
+            # A link's text may hold an image, so only links count for holds_a_link
+            if not _is_image(text, closing[match.start()]):
+                links.append(match.start())
             destinations.append((match.end(), close))
             targets.append(text[start:end])
         else:
