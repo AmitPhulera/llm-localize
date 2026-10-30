@@ -231,6 +231,22 @@ def test_a_repeated_id_never_takes_another_units_key(xliff):
     assert [unit.source for unit in open_file(path).untranslated_units()] == ["First", "Second", "Third"]
 
 
+def test_character_references_are_checked_as_their_characters(xliff):
+    assert open_file(xliff(XLIFF_1)).find_problem("Hello", "Bonjour &#37;s") == "placeholders"
+    icu = "{n, select, yes {Hello &#37;s} other {Hello &#37;s}}"
+    assert open_file(xliff(XLIFF_1)).find_problem(icu, "{n, select, yes {Salut} other {Salut}}") == "ICU arguments"
+
+
+def test_escaped_markup_is_checked_as_markup(xliff):
+    xliff_file = open_file(xliff(XLIFF_1))
+    source = 'Read the &lt;a href="/terms"&gt;terms&lt;/a&gt;.'
+
+    assert xliff_file.find_problem(source, 'Lisez les &lt;a href="/terms"&gt;conditions&lt;/a&gt;.') is None
+    assert xliff_file.find_problem(source, 'Lisez les &lt;a href="javascript:x()"&gt;CGU&lt;/a&gt;.') == "links"
+    double_decoded = "&lt;b &#38;gt; onclick=x()&gt;Hi&lt;/b&gt;"
+    assert xliff_file.find_problem("&lt;b&gt;Hi&lt;/b&gt;", double_decoded) is not None
+
+
 def test_the_state_attribute_is_set_not_text_in_another(xliff):
     path = xliff('<xliff version="1.2"><file target-language="fr"><body><trans-unit id="a"><source>Hi</source>'
                  '<target note=\' state="new"\' state="new"></target></trans-unit></body></file></xliff>')

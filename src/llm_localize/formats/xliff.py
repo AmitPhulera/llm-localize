@@ -14,13 +14,14 @@ import re
 from collections import Counter
 from functools import cached_property
 from xml.parsers import expat
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import quoteattr, unescape
 
 from llm_localize import icu
 from llm_localize.formats.base import TranslationFile, splice, write_file
 from llm_localize.formats.monolingual import _is_language_code
 from llm_localize.formats.xml_utils import (
     BARE_AMPERSAND_RE,
+    decode_character_references,
     from_utf8,
     line_indent,
     open_tag,
@@ -97,13 +98,14 @@ class XliffFile(TranslationFile):
         return units
 
     def find_problem(self, source, translation):
-        # Inline elements' attributes, like equiv-text="{{ name }}", aren't ICU, so the ICU check sees tokens
-        masked_source, masked_translation = _mask_elements(source, translation)
+        # Inline elements' attributes, like equiv-text="{{ name }}", aren't ICU, so the ICU check sees tokens.
+        # The rest is checked as an app reads it: &#37;s is %s, and &lt;a href="..."&gt; is a link.
+        masked_source, masked_translation = (_as_read(text) for text in _mask_elements(source, translation))
         if icu.is_icu_choice(masked_source):
             problem = icu.find_problem(masked_source, masked_translation, list(plural_categories(self.language)),
                                        ordinal_categories(self.language))
         else:
-            problem = super().find_problem(source, translation)
+            problem = super().find_problem(_as_read(source), _as_read(translation))
         if problem:
             return problem
         try:
@@ -148,6 +150,15 @@ class XliffFile(TranslationFile):
                 element = newline + start_tag + text + b"</" + name + b">"
                 replacements.append((segment.source_end, segment.source_end, element))
         write_file(self.path, from_utf8(splice(data, replacements), parsed.encoding, parsed.bom))
+
+
+def _as_read(text):
+    """Return a segment's text as XML reads it, with its character references and entities like &lt; replaced.
+
+    >>> _as_read("50&#37; &lt;b&gt;bold&lt;/b&gt; &amp;lt; &quot;")
+    '50% <b>bold</b> &lt; "'
+    """
+    return unescape(decode_character_references(text), {"&quot;": '"', "&apos;": "'"})
 
 
 def _mask_elements(*texts):
