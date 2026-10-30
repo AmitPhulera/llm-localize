@@ -372,3 +372,38 @@ class _Parser:
             lines.append(current[len(indent):] if current.startswith(indent) else current.strip())
             self.index += 1
         self.unit("\n".join(lines), first_prefix=indent, prefix=indent, suffix=self.ending(self.index - 1))
+
+
+def _split_row(line):
+    r"""Split a table row into literal pipes and ``(leading space, cell text, trailing space)`` cells.
+
+    Pipes escaped with a backslash don't split cells.
+
+    >>> _split_row("| a | b\\|c |")
+    ['|', (' ', 'a', ' '), '|', (' ', 'b\\|c', ' '), '|']
+    """
+    pieces, cell, code_run, index = [], "", "", 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and index + 1 < len(line) and not code_run:
+            cell += line[index:index + 2]
+            index += 2
+            continue
+        if char == "|" and not code_run:
+            pieces.append(cell)
+            pieces.append("|")
+            cell = ""
+        else:
+            cell += char
+        index += 1
+    pieces.append(cell)
+    result = []
+    for piece in pieces:
+        if piece == "|" or not piece.strip():
+            if piece:
+                result.append(piece)
+            continue
+        stripped = piece.strip()
+        start = piece.index(stripped)
+        result.append((piece[:start], stripped, piece[start + len(stripped):]))
+    return result
