@@ -279,7 +279,11 @@ def _link_targets(text):
     ends = _closing_parentheses(text)
     # Where each whitespace and each character that can end a destination or title is, found by bisecting,
     # so no link is scanned again from each one inside it
-    spaces = [match.start() for match in re.finditer(r"\s", text)]
+    # A line break after a backslash may be part of a destination, as some renderers have it
+    spaces = [match.start() for match in re.finditer(r"\s", text)
+              if match.group() != "\n" or not _backslashes_before(text, match.start()) % 2]
+    pointy_breaks = [match.start() for match in re.finditer(r"[\n<]", text)
+                     if match.group() == "\n" or not _backslashes_before(text, match.start()) % 2]
     # An escaped one doesn't end a title: [a](b "\")") is one link
     closers = {char: [match.start() for match in re.finditer(re.escape(char), text)
                       if not _backslashes_before(text, match.start()) % 2] for char in "\"'()>"}
@@ -305,25 +309,41 @@ def _link_targets(text):
         image = opener and text[opener - 1] == "!" and not _backslashes_before(text, opener - 1) % 2
         return not image and bisect.bisect_left(links, opener) < len(links)
 
+    # Where each real link's destination starts and its ")" is: a [ there opens no link text
+    destinations = []
+
+    def in_a_destination(opener):
+        found = bisect.bisect_right(destinations, (opener, len(text))) - 1
+        return found >= 0 and opener <= destinations[found][1]
+
     targets, covered = [], 0
     for match in re.finditer(r"\]\(", text):
         if match.start() < covered:
             continue
         close = ends[match.end()]
+        start = skip_spaces(match.end(), len(text))
+        if text.startswith("<", start):
+            # <...> holds no line break or other <, and parentheses in it needn't balance, so the link's ")"
+            # is the first unbalanced one after it
+            bracket = first(closers[">"], start, len(text))
+            if bracket is None or first(pointy_breaks, start + 1, bracket) is not None:
+                # Not a destination, and nothing else starting with < is
+                targets.append("\0" + text[start:start + 2048])
+                continue
+            end = bracket + 1
+            close = ends[end]
+        else:
+            start = min(start, close)
+            space = first(spaces, start, close)
+            end = space if space is not None else close
         if close >= len(text):
             # Never closed, so not a link
             continue
-        start = skip_spaces(match.end(), close)
-        if text.startswith("<", start):
-            bracket = first(closers[">"], start, close)
-            end = bracket + 1 if bracket is not None else close
-        else:
-            space = first(spaces, start, close)
-            end = space if space is not None else close
         # A link if only a title, in quotes or parentheses, comes between its destination and its ")"
         after = skip_spaces(end, close)
-        opened_here = match.start() in closing and not holds_a_link(match.start())
-        real = after == close and opened_here
+        opened_here = (match.start() in closing and not holds_a_link(match.start())
+                       and not in_a_destination(closing[match.start()]))
+        real = after == close < len(text) and opened_here
         if not real and opened_here and after > end and text[after] in "\"'(":
             # Its ")" comes after the title, which may hold one, as in [a](b "c)d")
             title_end = first(closers[")" if text[after] == "(" else text[after]], after + 1, len(text))
@@ -336,6 +356,7 @@ def _link_targets(text):
         if real:
             covered = close
             links.append(match.start())
+            destinations.append((match.end(), close))
             targets.append(text[start:end])
         else:
             # Not a link, but counted the same way in both texts, at a bounded cost

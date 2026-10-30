@@ -389,9 +389,12 @@ def test_a_link_ends_where_commonmark_ends_it(docs):
 
     # \" doesn't end the title, which is never closed, so [b](//evil.example) is the link
     assert markdown.find_problem("See [a](/safe).", r'Voir [a](/safe "[b](//evil.example)\").') == "links"
-    # A ) in a title isn't the link's
+    # A ) in a title isn't the link's, nor one in <...>, where parentheses needn't balance
     assert markdown.find_problem("[a [b](c)](/x)", '[a](/x "y)z") [b](c)') == "links"
     assert markdown.find_problem("See [a](/ok).", "Voir [a](/ok ([c](//evil.example))).") == "links"
+    assert markdown.find_problem("[a [b](c)](<x(>)", "[a](<x(>) [b](c)") == "links"
+    # A [ in a link's destination doesn't start link text
+    assert markdown.find_problem("[a](b[) c](/x)", "[a](b[) [c](/x)") == "links"
     assert markdown.find_problem('See [a](/x "y)z").', 'Voir [a](/x "y)z").') is None
 
 
