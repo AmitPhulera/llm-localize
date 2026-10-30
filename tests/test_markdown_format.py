@@ -299,6 +299,16 @@ def test_only_text_is_sent(tmp_path, source, messages):
     assert [unit.source for unit in units] == messages
 
 
+def test_a_title_translated_with_a_line_break_stays_one_value(tmp_path):
+    (tmp_path / "s.md").write_text("---\ntitle: Hello\n---\n\nText.\n", encoding="utf-8")
+    target = tmp_path / "fr" / "s.md"
+
+    translate_file(open_file(target, source_path=tmp_path / "s.md"),
+                   ScriptedClient([{"0": "Bonjour\nfoo: bar", "1": "Texte."}]), "fr")
+
+    assert target.read_text(encoding="utf-8").startswith('---\ntitle: "Bonjour\\nfoo: bar"\n---\n')
+
+
 @pytest.mark.parametrize("text", [
     "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
     ">\n" * 20000 + "> text\n" + ">\n" * 20000,  # a blockquote's blank lines

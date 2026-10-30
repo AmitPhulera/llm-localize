@@ -33,6 +33,8 @@ YAML_ESCAPE_RE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}
 YAML_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n", "v": "\v", "f": "\f", "r": "\r",
                 "e": "\x1b", " ": " ", '"': '"', "/": "/", "\\": "\\", "N": "\x85", "_": "\xa0",
                 "L": "\u2028", "P": "\u2029"}
+YAML_CONTROL_ESCAPES = {"\t": "\\t", "\n": "\\n", "\r": "\\r", "\0": "\\0"}
+CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 # A block scalar's indicator, like | or >-, whose value is on the indented lines below
 YAML_BLOCK_RE = re.compile(r"[|>][+-]?\d?[+-]?")
 # A plain YAML value that needs quoting: one starting with an indicator, or holding ": " or " #"
@@ -183,16 +185,29 @@ def _yaml_unescape(match):
 
 
 def _yaml_encode(text, quote):
-    """Write text as a YAML value in its original quoting, adding double quotes when plain text needs them.
+    r"""Write text as a YAML value in its original quoting, adding double quotes when plain text needs them.
+
+    Line breaks and other control characters are written as escapes in
+    double quotes, so a value stays on its line and can't add keys.
 
     >>> _yaml_encode("L'application", "'"), _yaml_encode('Un "titre"', '"'), _yaml_encode("Étapes : 2", "")
-    ("'L''application'", '"Un \\\\"titre\\\\""', '"Étapes : 2"')
+    ("'L''application'", '"Un \\"titre\\""', '"Étapes : 2"')
+    >>> print(_yaml_encode("Bonjour\nfoo: bar", ""), _yaml_encode("Line\tbreak", "'"))
+    "Bonjour\nfoo: bar" "Line\tbreak"
     """
-    if quote == "'":
+    control = CONTROL_RE.search(text)
+    if quote == "'" and not control:
         return "'" + text.replace("'", "''") + "'"
-    if quote == '"' or YAML_UNSAFE_RE.search(text) or not text:
-        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if quote or control or YAML_UNSAFE_RE.search(text) or not text:
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return '"' + CONTROL_RE.sub(_yaml_control_escape, escaped) + '"'
     return text
+
+
+def _yaml_control_escape(match):
+    character = match.group()
+    return YAML_CONTROL_ESCAPES.get(character) or (
+        f"\\x{ord(character):02x}" if ord(character) < 0x100 else f"\\u{ord(character):04x}")
 
 
 def _code_span_positions(text):
