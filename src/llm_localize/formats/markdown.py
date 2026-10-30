@@ -200,12 +200,29 @@ class _Parser:
         self.index += 1
 
     def blockquote(self):
-        lines, prefix = [], QUOTE_RE.match(self.line()).group()
+        text = []  # the indexes of the quoted lines
         while self.index < len(self.lines) and QUOTE_RE.match(self.line() or ""):
-            lines.append(self.line()[QUOTE_RE.match(self.line()).end():])
+            text.append(self.index)
             self.index += 1
-        self.unit("\n".join(lines), first_prefix=prefix, prefix=prefix.rstrip() + " ",
-                  suffix=self.ending(self.index - 1))
+        self.quote_text(text)
+
+    def quoted(self, index):
+        """Return a quoted line without its ``>`` marker."""
+        line = self.lines[index].rstrip("\r\n")
+        return line[QUOTE_RE.match(line).end():]
+
+    def quote_text(self, indexes):
+        """Add quoted lines of text as a message, and the blank quoted lines around it as they are."""
+        text = [position for position, index in enumerate(indexes) if self.quoted(index).strip()]
+        if not text:
+            self.pieces.extend(self.lines[index] for index in indexes)
+            return
+        first, last = text[0], text[-1]
+        self.pieces.extend(self.lines[index] for index in indexes[:first])
+        prefix = QUOTE_RE.match(self.lines[indexes[first]]).group()
+        self.unit("\n".join(self.quoted(index) for index in indexes[first:last + 1]), first_prefix=prefix,
+                  prefix=prefix.rstrip() + " ", suffix=self.ending(indexes[last]))
+        self.pieces.extend(self.lines[index] for index in indexes[last + 1:])
 
     def list_item(self):
         match = LIST_RE.match(self.line())

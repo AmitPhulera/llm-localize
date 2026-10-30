@@ -188,6 +188,7 @@ def test_only_line_endings_end_lines(tmp_path, newline):
 
 @pytest.mark.parametrize("text", [
     "\n" * 20000 + "a\n" * 20000,  # many lines after many blank lines
+    ">\n" * 20000 + "> text\n" + ">\n" * 20000,  # a blockquote's blank lines
 ])
 def test_untrusted_documents_take_linear_time(tmp_path, text):
     (tmp_path / "s.md").write_text(text, encoding="utf-8")
