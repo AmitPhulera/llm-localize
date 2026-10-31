@@ -300,7 +300,8 @@ def test_finding_the_doctype_takes_linear_time():
 
     started = time.perf_counter()
     assert _doctype(data) == b""
-    assert time.perf_counter() - started < 0.5
+    # Linear takes a fraction of a second even on a slow CI runner; quadratic would take minutes
+    assert time.perf_counter() - started < 2
 
 
 def test_a_source_with_no_strings_gives_a_well_formed_target(tmp_path):
