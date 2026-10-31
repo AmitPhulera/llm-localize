@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 
+from llm_localize import __version__
 from llm_localize.formats import FORMATS, format_class_for_path, get_format_class
 from llm_localize.formats.monolingual import MonolingualFile
 from llm_localize.languages import language_code
@@ -167,6 +168,7 @@ def main(argv=None):
     parser.add_argument('--source', help="For formats with one file per language, like JSON: the file to "
                                          "translate from (default: the file beside each path, with the "
                                          "language in its path swapped for --source-lang)")
+    parser.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument('-q', '--quiet', action='store_const', const=0, dest='verbosity', default=1,
                            help="Only show the summary, warnings and errors")
