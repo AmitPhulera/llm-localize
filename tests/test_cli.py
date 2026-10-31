@@ -9,6 +9,7 @@ from unittest.mock import patch
 import polib
 import pytest
 
+from llm_localize import __version__
 from llm_localize.cli import logging_to, main
 from llm_localize.engine import FileResult
 from llm_localize.runner import summarize
@@ -58,6 +59,14 @@ def test_quiet_only_prints_summary(po_path, capsys):
 
     out, err = capsys.readouterr()
     assert (out, err) == (f"{po_path} (es): translated 1 of 1\n", "")
+
+
+def test_version(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out == f"llm-localize {__version__}\n"
 
 
 def test_logging_is_put_back_after_a_run_inside_a_program():

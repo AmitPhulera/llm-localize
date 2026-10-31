@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1]
+
+- `llm-localize --version` prints the installed version.
+
 ## [0.1.0]
 
 First release.
