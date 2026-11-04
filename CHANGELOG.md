@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2]
+
+- The README shows an example run with rejected translations, production use, `uvx` and local models.
+
 ## [0.1.1]
 
 - `llm-localize --version` prints the installed version.
