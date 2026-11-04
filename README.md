@@ -2,6 +2,8 @@
 
 Fill in missing translations in your i18n files with an LLM, without breaking them.
 
+The core has run in production in [CommCare HQ](https://github.com/dimagi/commcare-hq) for about two years. It has one dependency, polib, and calls OpenAI, Anthropic, Gemini, xAI or a local model (Ollama, vLLM, LM Studio) over plain HTTP, with no provider SDKs.
+
 LLMs translate well but are careless with the parts of a message that aren't prose. `llm-localize` sends only untranslated messages, then checks each translation before it is written:
 
 - **Placeholders** (`%s`, `%(name)s`, `{name}`, Android's `%1$s`, iOS's `%@`) must match the source exactly. Named and numbered ones may move; unnamed ones (`%s`, `{}`) must stay in order.
@@ -14,11 +16,26 @@ LLMs translate well but are careless with the parts of a message that aren't pro
 
 A translation that fails a check is dropped, so that message stays untranslated and is retried on the next run. Fuzzy entries are retranslated and lose their `fuzzy` flag.
 
+In this run the model's French is fine, but three of its five translations would have broken the page: a renamed placeholder, a changed link and a dropped tag. Only the two good ones are written:
+
+```console
+$ llm-localize locale/fr/LC_MESSAGES/messages.po -v
+Translating locale/fr/LC_MESSAGES/messages.po to fr
+Rejected (placeholders): 'Hello, %(name)s!' -> 'Bonjour, %(nom)s !'
+Rejected (links): 'Read the <a href="https://example.com/docs">documentation</a> first.' -> 'Lisez d\'abord la <a href="https://example.fr/docs">documentation</a>.'
+Rejected (HTML tags): 'Open <b>Settings</b> to change your plan.' -> 'Ouvrez Paramètres pour changer votre forfait.'
+locale/fr/LC_MESSAGES/messages.po: 1/1 batches done, 2/5 translated
+No msgfmt errors in locale/fr/LC_MESSAGES/messages.po
+locale/fr/LC_MESSAGES/messages.po (fr): translated 2 of 5
+  rejected 3: placeholders 1, links 1, HTML tags 1
+```
+
 It runs on its own as a command line tool, or as a Django app. The engine is format-agnostic: it ships with gettext PO, JSON, Android, iOS, XLIFF, Markdown and Word formats (see [Formats](https://llm-localize.readthedocs.io/en/latest/reference/formats/)), and others plug in as small classes (see [Adding a format](https://llm-localize.readthedocs.io/en/latest/reference/extending/#adding-a-format)).
 
 ## Install
 
 ```bash
+uvx llm-localize locale/fr/LC_MESSAGES/messages.po   # try it without installing
 pip install llm-localize             # command line tool and Python API
 pip install "llm-localize[django]"   # plus the Django app
 uv tool install llm-localize         # just the command, in its own environment
@@ -33,6 +50,7 @@ export OPENAI_API_KEY=...          # or ANTHROPIC_API_KEY, GEMINI_API_KEY, XAI_A
 llm-localize locale/fr/LC_MESSAGES/messages.po
 llm-localize locales/fr.json locales/de.json          # from locales/en.json
 ./manage.py makemessages -a --translate               # Django, with llm_localize.contrib.django installed
+llm-localize messages.po --api-base http://localhost:11434/v1 --model qwen3   # a local model with Ollama, no key needed
 ```
 
 ## Documentation
